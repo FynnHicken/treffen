@@ -426,32 +426,71 @@
         </div>
     </div>
 
-    <!-- Join / Welcome Modal (Mandatory on First Entry per Tab - Mobile Optimized) -->
-    <div class="modal-backdrop" id="joinModal" style="display: none; z-index: 10000;">
-        <div class="modal-card join-card">
-            <div class="join-icon">🎉🎮</div>
-            <h2 class="join-title">Willkommen bei Treffen!</h2>
-            <p class="join-subtitle">
-                Wähle deinen Nickname und Avatar für den Spieleabend:
-            </p>
+    <!-- Welcome & Entry View: Profile setup + Party erstellen vs. Party beitreten -->
+    <div class="modal-backdrop welcome-backdrop" id="welcomeOverlay" style="display: none; z-index: 10000;">
+        <div class="modal-card welcome-card">
+            <div class="welcome-header">
+                <div class="welcome-icon">🎉🎮</div>
+                <h2 class="welcome-title" id="welcomeTitle">Willkommen bei Treffen!</h2>
+                <p class="welcome-subtitle" id="welcomeSubtitle">
+                    Wähle deinen Namen & Avatar für den gemeinsamen Spieleabend:
+                </p>
+                <div class="welcome-direct-badge" id="welcomeDirectBadge" style="display: none;">
+                    <span class="direct-badge-label">Party-Code:</span>
+                    <strong class="direct-badge-code" id="welcomeDirectCodeDisplay">------</strong>
+                </div>
+            </div>
 
-            <form id="joinForm" onsubmit="handleJoinSubmit(event)" class="join-form">
-                <div class="join-field">
-                    <label for="joinNicknameInput">Dein Nickname:</label>
-                    <input type="text" id="joinNicknameInput" maxlength="16" placeholder="Nickname eingeben..." required autocomplete="nickname">
+            <div class="welcome-profile-section">
+                <div class="welcome-field">
+                    <label for="welcomeNicknameInput">Dein Nickname:</label>
+                    <input type="text" id="welcomeNicknameInput" maxlength="16" placeholder="Dein Nickname..." autocomplete="nickname" required>
                 </div>
 
-                <div class="join-field">
+                <div class="welcome-field">
                     <label>Wähle deinen Avatar:</label>
-                    <div id="joinAvatarPicker" class="avatar-picker-grid join-avatar-grid">
+                    <div id="welcomeAvatarPicker" class="avatar-picker-grid welcome-avatar-grid">
                         <!-- Populated dynamically -->
                     </div>
                 </div>
+            </div>
 
-                <button type="submit" class="btn-primary-launch join-submit-btn">
-                    🎉 Party beitreten
+            <!-- Choice Actions (default when visiting treffen.ddns.net without room) -->
+            <div class="welcome-actions-section" id="welcomeChoiceActions">
+                <!-- Action 1: Create Party -->
+                <button type="button" class="btn-welcome-create" id="btnWelcomeCreate" onclick="handleWelcomeCreateParty()">
+                    <span class="btn-welcome-icon">👑</span>
+                    <div class="btn-welcome-text">
+                        <span class="btn-welcome-title">Party erstellen</span>
+                        <span class="btn-welcome-desc">Neuen Raum eröffnen & Host werden</span>
+                    </div>
                 </button>
-            </form>
+
+                <div class="welcome-divider">
+                    <span>ODER PARTY BEITRETEN</span>
+                </div>
+
+                <!-- Action 2: Join with Code -->
+                <div class="welcome-join-box">
+                    <label for="welcomeCodeInput" class="welcome-join-label">Party-Code eingeben:</label>
+                    <form onsubmit="handleWelcomeJoinParty(event)" class="welcome-join-form">
+                        <input type="text" id="welcomeCodeInput" maxlength="12" placeholder="z. B. 7K9PM2" autocomplete="off" spellcheck="false">
+                        <button type="submit" class="btn-welcome-join" id="btnWelcomeJoin">
+                            🚀 Beitreten
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Direct Join Action (when opened with ?room=XYZ in URL) -->
+            <div class="welcome-direct-section" id="welcomeDirectActions" style="display: none;">
+                <button type="button" class="btn-primary-launch welcome-direct-btn" id="btnWelcomeDirectJoin" onclick="handleWelcomeDirectJoin()">
+                    🚀 Party beitreten
+                </button>
+                <button type="button" class="btn-welcome-switch-mode" onclick="switchToWelcomeChoiceMode()">
+                    Oder stattdessen eigene Party erstellen
+                </button>
+            </div>
         </div>
     </div>
 

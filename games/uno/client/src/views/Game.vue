@@ -195,6 +195,7 @@ export default {
     },
     isTurn(val) {
       if (val) {
+        this.$store.state.soundController?.playEffect("turn_alert");
         this.startPlayersTurn();
       } else {
         this.canDrawClient = false;
@@ -219,6 +220,7 @@ export default {
 
       // player draw card animation
       if (cards.length > oldCards.length) {
+        this.$store.state.soundController?.playEffect("card_deal");
         const card = cards[this.room.you.lastDrawnCard];
 
         window.requestAnimationFrame(() => {
@@ -353,11 +355,9 @@ export default {
         this.animateOtherPlayCard(other, room.wildcard, true);
       }
 
-      // if (room.winner && window.innerHeight >= 650) {
-      //   setTimeout(() => {
-      //     window.GameAdsRenew("gameadsbanner");
-      //   }, 600);
-      // }
+      if (room.winner && !oldRoom.winner) {
+        this.$store.state.soundController?.playEffect("match_win");
+      }
     },
   },
   methods: {
@@ -394,6 +394,15 @@ export default {
       if (this.swapHandAnim) return;
 
       if (toStack) {
+        if (card) {
+          if (card.type === 1) this.$store.state.soundController?.playEffect("card_draw2");
+          else if (card.type === 2) this.$store.state.soundController?.playEffect("card_skip");
+          else if (card.type === 3) this.$store.state.soundController?.playEffect("card_reverse");
+          else if (card.type === 4) this.$store.state.soundController?.playEffect("wild_splash");
+          else if (card.type === 5) this.$store.state.soundController?.playEffect("card_draw4");
+          else this.$store.state.soundController?.playEffect("card_play");
+        }
+
         const box = cardElement.getBoundingClientRect();
         const centerX = window.innerWidth / 2;
         const centerY = window.innerHeight / 2;
@@ -414,6 +423,7 @@ export default {
           transform: transform,
         });
       } else {
+        this.$store.state.soundController?.playEffect("card_deal");
         const startBox = document
           .getElementById("stack-top-card")
           ?.getBoundingClientRect() || { x: window.innerWidth / 2, y: 150 };
@@ -512,12 +522,23 @@ export default {
       )
         return;
 
+      this.$store.state.soundController?.playEffect("card_shuffle");
       this.$store.state.socket.emit("draw-card");
       this.canDrawClient = false;
       this.drawing = true;
     },
     playCard(index) {
       if (!this.room.you.canPlay || !this.canPlayClient) return;
+
+      const card = this.playerCards && this.playerCards[index];
+      if (card) {
+        if (card.type === 1) this.$store.state.soundController?.playEffect("card_draw2");
+        else if (card.type === 2) this.$store.state.soundController?.playEffect("card_skip");
+        else if (card.type === 3) this.$store.state.soundController?.playEffect("card_reverse");
+        else if (card.type === 4) this.$store.state.soundController?.playEffect("wild_splash");
+        else if (card.type === 5) this.$store.state.soundController?.playEffect("card_draw4");
+        else this.$store.state.soundController?.playEffect("card_play");
+      }
 
       this.showKeepCard = false;
 
@@ -528,10 +549,17 @@ export default {
       this.$store.state.socket.emit("play-card", index);
     },
     callUno() {
+      this.$store.state.soundController?.playEffect("uno_call");
       this.$store.state.socket.emit("call-uno");
       this.hasCalledUnoClient = true;
     },
     playCallUnoAnimation(p) {
+      if (p === "you") {
+        this.$store.state.soundController?.playEffect("uno_call");
+      } else {
+        this.$store.state.soundController?.playEffect("uno_call_opponent");
+      }
+
       let transform = "scale(1) ";
       let anchor = "";
       switch (p) {

@@ -86,6 +86,8 @@ export default {
     handleClick(e) {
       if (this.back || this.index === null || !this.playable) return;
 
+      this.$store.state.soundController?.playEffect("card_select");
+
       // let user pick color of plus 4 or wildcard
       if (this.type === 4 || this.type === 5) {
         this.$emit("pick-color", this.index);
