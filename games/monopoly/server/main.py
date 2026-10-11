@@ -166,6 +166,14 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 if res.get("auction_ended"):
                     await finish_bot_turn_after_auction_if_needed(room_id)
 
+            elif action == "CONFIRM_CARD":
+                res = room.confirm_card(player_id)
+                await broadcast_room(room_id, {
+                    "type": "CARD_APPLIED",
+                    "result": res,
+                    "state": room.to_dict()
+                })
+
             elif action == "PAY_INCOME_TAX":
                 mode = data.get("mode", "flat")
                 res = room.pay_income_tax(player_id, mode)
@@ -290,6 +298,13 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 })
                 await handle_bot_turn_if_needed(room_id)
 
+            elif action == "RESET_LOBBY":
+                room.reset_to_lobby()
+                await broadcast_room(room_id, {
+                    "type": "LOBBY_RESET",
+                    "state": room.to_dict()
+                })
+
             elif action == "CHAT":
                 msg = data.get("message", "").strip()
                 if msg:
@@ -318,7 +333,7 @@ async def finish_bot_turn_after_auction_if_needed(room_id: str):
     if not room or room.status != "PLAYING" or room.auction_state:
         return
     curr = room.current_player()
-    if curr and curr.is_bot and not curr.is_bankrupt and room.rolled:
+    if curr and curr.is_bot and not curr.is_bankrupt:
         await asyncio.sleep(0.8)
         if curr.money < 0:
             room.auto_resolve_bot_debt(curr)
@@ -329,7 +344,7 @@ async def finish_bot_turn_after_auction_if_needed(room_id: str):
                 "result": bank_res,
                 "state": room.to_dict()
             })
-        else:
+        elif room.rolled:
             end_res = room.end_turn(curr.id)
             await broadcast_room(room_id, {
                 "type": "TURN_ENDED",
@@ -371,7 +386,17 @@ async def handle_bot_turn_if_needed(room_id: str):
             "result": roll_res,
             "state": room.to_dict()
         })
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(2.4)
+
+        while room.pending_action and room.pending_action.get("type") == "CARD_DRAWN":
+            await asyncio.sleep(3.2)
+            card_res = room.confirm_card(curr.id)
+            await broadcast_room(room_id, {
+                "type": "CARD_APPLIED",
+                "result": card_res,
+                "state": room.to_dict()
+            })
+            await asyncio.sleep(2.2 if card_res.get("moved") else 1.2)
 
         # Bot decision on pending action
         if room.pending_action and room.pending_action.get("type") == "BUY_OR_AUCTION":
@@ -409,13 +434,14 @@ async def handle_bot_turn_if_needed(room_id: str):
             await handle_bot_turn_if_needed(room_id)
             return
 
-        # Bot ends turn
-        end_res = room.end_turn(curr.id)
-        await broadcast_room(room_id, {
-            "type": "TURN_ENDED",
-            "result": end_res,
-            "state": room.to_dict()
-        })
+        # Bot ends turn (or rolls again immediately if room.rolled was reset due to Pasch)
+        if room.rolled:
+            end_res = room.end_turn(curr.id)
+            await broadcast_room(room_id, {
+                "type": "TURN_ENDED",
+                "result": end_res,
+                "state": room.to_dict()
+            })
         await handle_bot_turn_if_needed(room_id)
 
 # Mount static files dynamically

@@ -12,6 +12,7 @@
     let worldGroup = null; // Holds board, table, tokens, houses, dice, and table cards
     let boardMesh = null;
     let tokenMeshes = {}; // playerId -> THREE.Group
+    let tokenLoadRequests = {}; // playerId -> { key, player }
     let houseMeshes = {}; // sq_idx -> [THREE.Mesh]
     let diceGroup = null;
     let dice1 = null, dice2 = null;
@@ -129,21 +130,31 @@
         return geom;
     }
 
-    // Coordinates for square index 0..39
-    function getSquareCenter(sqIdx) {
+    // Coordinates for square index 0..39 (Token standing area in the non-colored street body)
+    function getSquareCenter(sqIdx, inJail = false) {
         let x = 0, z = 0;
+        const sideTokenMid = HALF_BOARD - CORNER_SIZE / 2 + 0.15; // Shifted outward away from the inner colored header strip
         if (sqIdx === 0) {
             x = HALF_BOARD - CORNER_SIZE / 2;
             z = HALF_BOARD - CORNER_SIZE / 2;
         } else if (sqIdx > 0 && sqIdx < 10) {
             x = HALF_BOARD - CORNER_SIZE - (sqIdx - 0.5) * INNER_STEP;
-            z = HALF_BOARD - CORNER_SIZE / 2;
+            z = sideTokenMid;
         } else if (sqIdx === 10) {
-            x = -HALF_BOARD + CORNER_SIZE / 2;
-            z = HALF_BOARD - CORNER_SIZE / 2;
+            const cx = -HALF_BOARD + CORNER_SIZE / 2;
+            const cz = HALF_BOARD - CORNER_SIZE / 2;
+            if (inJail) {
+                // Inside the orange "IM GEFÄNGNIS" cell (inner top-right of corner 10)
+                x = cx + 0.21;
+                z = cz - 0.21;
+            } else {
+                // Outer "NUR ZU BESUCH" walkway (outer bottom-left edge of corner 10)
+                x = cx - 0.39;
+                z = cz + 0.39;
+            }
         } else if (sqIdx > 10 && sqIdx < 20) {
             const step = sqIdx - 10;
-            x = -HALF_BOARD + CORNER_SIZE / 2;
+            x = -sideTokenMid;
             z = HALF_BOARD - CORNER_SIZE - (step - 0.5) * INNER_STEP;
         } else if (sqIdx === 20) {
             x = -HALF_BOARD + CORNER_SIZE / 2;
@@ -151,13 +162,13 @@
         } else if (sqIdx > 20 && sqIdx < 30) {
             const step = sqIdx - 20;
             x = -HALF_BOARD + CORNER_SIZE + (step - 0.5) * INNER_STEP;
-            z = -HALF_BOARD + CORNER_SIZE / 2;
+            z = -sideTokenMid;
         } else if (sqIdx === 30) {
             x = HALF_BOARD - CORNER_SIZE / 2;
             z = -HALF_BOARD + CORNER_SIZE / 2;
         } else if (sqIdx > 30 && sqIdx < 40) {
             const step = sqIdx - 30;
-            x = HALF_BOARD - CORNER_SIZE / 2;
+            x = sideTokenMid;
             z = -HALF_BOARD + CORNER_SIZE + (step - 0.5) * INNER_STEP;
         }
         return { x, z };
@@ -556,7 +567,7 @@
                 const size = new THREE.Vector3();
                 geom.boundingBox.getSize(size);
                 const maxDim = Math.max(size.x, size.z) || 1.0;
-                const scale = 0.28 / maxDim;
+                const scale = 0.17 / maxDim;
                 geom.scale(scale, scale, scale);
                 houseGeometry = geom;
             }).catch(() => {});
@@ -572,7 +583,7 @@
                 const size = new THREE.Vector3();
                 geom.boundingBox.getSize(size);
                 const maxDim = Math.max(size.x, size.z) || 1.0;
-                const scale = 0.38 / maxDim;
+                const scale = 0.25 / maxDim;
                 geom.scale(scale, scale, scale);
                 hotelGeometry = geom;
             }).catch(() => {});
@@ -648,7 +659,7 @@
             roughness: 0.3,
             metalness: 0.12
         });
-        const geom = houseGeometry || new THREE.BoxGeometry(0.24, 0.16, 0.22);
+        const geom = houseGeometry || new THREE.BoxGeometry(0.16, 0.14, 0.15);
         const mesh = new THREE.Mesh(geom, houseMat);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
@@ -661,7 +672,7 @@
             roughness: 0.28,
             metalness: 0.15
         });
-        const geom = hotelGeometry || new THREE.BoxGeometry(0.34, 0.24, 0.28);
+        const geom = hotelGeometry || new THREE.BoxGeometry(0.24, 0.18, 0.20);
         const mesh = new THREE.Mesh(geom, hotelMat);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
@@ -1126,27 +1137,95 @@
         syncPlayers: function(players) {
             if (!worldGroup) return;
 
-            const byPos = {};
-            players.forEach(p => {
-                if (!p.is_bankrupt) {
-                    if (!byPos[p.position]) byPos[p.position] = [];
-                    byPos[p.position].push(p);
+            const activeIds = new Set(players.filter(p => !p.is_bankrupt).map(p => p.id));
+            Object.keys(tokenMeshes).forEach(pid => {
+                if (!activeIds.has(pid)) {
+                    worldGroup.remove(tokenMeshes[pid]);
+                    delete tokenMeshes[pid];
+                }
+            });
+            Object.keys(tokenLoadRequests).forEach(pid => {
+                if (!activeIds.has(pid)) {
+                    delete tokenLoadRequests[pid];
                 }
             });
 
+            const getPosKey = (p) => (p.position === 10) ? (p.in_jail ? '10_jail' : '10_visit') : String(p.position);
+
+            const byPos = {};
             players.forEach(p => {
-                if (p.is_bankrupt) {
-                    if (tokenMeshes[p.id]) {
-                        worldGroup.remove(tokenMeshes[p.id]);
-                        delete tokenMeshes[p.id];
-                    }
-                    return;
+                if (!p.is_bankrupt) {
+                    const key = getPosKey(p);
+                    if (!byPos[key]) byPos[key] = [];
+                    byPos[key].push(p);
+                }
+            });
+
+            const computeTokenPosition = (p) => {
+                const key = getPosKey(p);
+                const siblings = byPos[key] || [p];
+                const sIdx = Math.max(0, siblings.findIndex(s => s.id === p.id));
+                const count = siblings.length;
+
+                if (p.position === 10 && !p.in_jail) {
+                    // L-shaped "NUR ZU BESUCH" outer walkway slots along bottom & left rim of Corner 10
+                    const cx = -HALF_BOARD + CORNER_SIZE / 2;
+                    const cz = HALF_BOARD - CORNER_SIZE / 2;
+                    const visitSlots = [
+                        { x: cx - 0.39, z: cz + 0.39 },
+                        { x: cx + 0.02, z: cz + 0.43 },
+                        { x: cx - 0.43, z: cz - 0.02 },
+                        { x: cx + 0.38, z: cz + 0.43 },
+                        { x: cx - 0.43, z: cz - 0.38 },
+                        { x: cx - 0.20, z: cz + 0.43 }
+                    ];
+                    const slot = visitSlots[sIdx % visitSlots.length];
+                    return { x: slot.x, y: 0.09, z: slot.z };
+                }
+
+                const center = getSquareCenter(p.position, !!p.in_jail);
+                let offX = 0, offZ = 0;
+                if (count > 1) {
+                    const radius = (p.position === 10 && p.in_jail) ? 0.14 : 0.22;
+                    const angle = (sIdx / count) * Math.PI * 2;
+                    offX = Math.cos(angle) * radius;
+                    offZ = Math.sin(angle) * radius;
+                }
+                return { x: center.x + offX, y: 0.09, z: center.z + offZ };
+            };
+
+            players.forEach(p => {
+                if (p.is_bankrupt) return;
+
+                const targetToken = p.token || 'dog';
+                const targetColor = p.color || '#e74c3c';
+                const existing = tokenMeshes[p.id];
+
+                if (existing && (existing.userData.token !== targetToken || existing.userData.color !== targetColor)) {
+                    worldGroup.remove(existing);
+                    delete tokenMeshes[p.id];
                 }
 
                 if (!tokenMeshes[p.id]) {
-                    loadTokenGeometry(p.token, (geom) => {
+                    const reqKey = `${targetToken}|${targetColor}`;
+                    const pending = tokenLoadRequests[p.id];
+                    if (pending && pending.key === reqKey) {
+                        pending.player = p;
+                        return;
+                    }
+                    tokenLoadRequests[p.id] = { key: reqKey, player: p };
+                    loadTokenGeometry(targetToken, (geom) => {
+                        const latestReq = tokenLoadRequests[p.id];
+                        if (!latestReq || latestReq.key !== reqKey) return;
+                        delete tokenLoadRequests[p.id];
+
+                        if (tokenMeshes[p.id]) {
+                            worldGroup.remove(tokenMeshes[p.id]);
+                            delete tokenMeshes[p.id];
+                        }
+
                         const mat = new THREE.MeshStandardMaterial({
-                            color: new THREE.Color(p.color || '#e74c3c'),
+                            color: new THREE.Color(targetColor),
                             metalness: 0.88,
                             roughness: 0.18
                         });
@@ -1160,7 +1239,7 @@
                         // Pedestal
                         const baseGeo = new THREE.CylinderGeometry(0.18, 0.22, 0.05, 24);
                         const baseMat = new THREE.MeshStandardMaterial({
-                            color: new THREE.Color(p.color || '#e74c3c'),
+                            color: new THREE.Color(targetColor),
                             roughness: 0.3,
                             metalness: 0.5
                         });
@@ -1169,27 +1248,17 @@
                         base.castShadow = true;
                         group.add(base);
 
-                        group.userData = { token: p.token, playerId: p.id };
+                        group.userData = { token: targetToken, color: targetColor, playerId: p.id };
                         tokenMeshes[p.id] = group;
                         worldGroup.add(group);
 
-                        const center = getSquareCenter(p.position);
-                        group.position.set(center.x, 0.09, center.z);
+                        const pos = computeTokenPosition(latestReq.player);
+                        group.position.set(pos.x, pos.y, pos.z);
                     });
                 } else {
                     const group = tokenMeshes[p.id];
-                    group.userData = { token: p.token, playerId: p.id };
-                    const center = getSquareCenter(p.position);
-                    const siblings = byPos[p.position] || [p];
-                    const sIdx = siblings.findIndex(s => s.id === p.id);
-                    const count = siblings.length;
-                    let offX = 0, offZ = 0;
-                    if (count > 1) {
-                        const angle = (sIdx / count) * Math.PI * 2;
-                        offX = Math.cos(angle) * 0.22;
-                        offZ = Math.sin(angle) * 0.22;
-                    }
-                    group.position.set(center.x + offX, 0.09, center.z + offZ);
+                    const pos = computeTokenPosition(p);
+                    group.position.set(pos.x, pos.y, pos.z);
                 }
             });
         },
@@ -1203,7 +1272,11 @@
             }
 
             let current = fromIdx;
-            const steps = (toIdx - fromIdx + 40) % 40;
+            const forwardSteps = (toIdx - fromIdx + 40) % 40;
+            const backwardSteps = (fromIdx - toIdx + 40) % 40;
+            const isBackward = (backwardSteps > 0 && backwardSteps <= 3);
+            const steps = isBackward ? backwardSteps : forwardSteps;
+            const stepDir = isBackward ? -1 : 1;
             if (steps === 0) {
                 if (onFinish) onFinish();
                 return;
@@ -1229,7 +1302,7 @@
                 }
 
                 stepCount++;
-                current = (current + 1) % 40;
+                current = (current + stepDir + 40) % 40;
                 const nextCenter = getSquareCenter(current);
                 const toPos = new THREE.Vector3(nextCenter.x, 0.09, nextCenter.z);
 
@@ -1375,7 +1448,7 @@
             requestAnimationFrame(rollAnim);
         },
 
-        // Update Houses and Hotels on Board
+        // Update Houses and Hotels on Board (strictly inside the colored header strip of each street tile)
         syncBuildings: function(boardState) {
             if (!worldGroup) return;
 
@@ -1384,25 +1457,62 @@
                 meshes.forEach(m => worldGroup.remove(m));
             }
             houseMeshes = {};
+            if (!boardState) return;
+
+            // Distance from board center (0,0) to the center of the inner colored header strip (~3.81)
+            const headerStripDist = (HALF_BOARD - CORNER_SIZE) + 0.16;
 
             for (const [sqIdxStr, st] of Object.entries(boardState)) {
                 const sqIdx = parseInt(sqIdxStr);
                 const houses = st.houses;
                 if (houses <= 0) continue;
 
-                const center = getSquareCenter(sqIdx);
+                const sc = getSquareCenter(sqIdx);
                 houseMeshes[sqIdx] = [];
+
+                let stripX = sc.x;
+                let stripZ = sc.z;
+                let rotY = 0;
+                let alongZ = false;
+
+                if (sqIdx > 0 && sqIdx < 10) {
+                    // Bottom row: colored band is at inner top edge of tile (+headerStripDist)
+                    stripZ = headerStripDist;
+                    rotY = 0;
+                    alongZ = false;
+                } else if (sqIdx > 10 && sqIdx < 20) {
+                    // Left row: colored band is at inner right edge of tile (-headerStripDist)
+                    stripX = -headerStripDist;
+                    rotY = Math.PI / 2;
+                    alongZ = true;
+                } else if (sqIdx > 20 && sqIdx < 30) {
+                    // Top row: colored band is at inner bottom edge of tile (-headerStripDist)
+                    stripZ = -headerStripDist;
+                    rotY = Math.PI;
+                    alongZ = false;
+                } else if (sqIdx > 30 && sqIdx < 40) {
+                    // Right row: colored band is at inner left edge of tile (+headerStripDist)
+                    stripX = headerStripDist;
+                    rotY = -Math.PI / 2;
+                    alongZ = true;
+                }
 
                 if (houses === 5) {
                     const hotel = createHotelMesh();
-                    hotel.position.set(center.x, 0.09, center.z);
+                    hotel.rotation.y = rotY;
+                    hotel.position.set(stripX, 0.09, stripZ);
                     worldGroup.add(hotel);
                     houseMeshes[sqIdx].push(hotel);
                 } else {
                     for (let h = 0; h < houses; h++) {
                         const house = createHouseMesh();
-                        const off = (h - (houses - 1) / 2) * 0.16;
-                        house.position.set(center.x + off, 0.09, center.z);
+                        house.rotation.y = rotY;
+                        const off = (h - (houses - 1) / 2) * 0.175;
+                        if (alongZ) {
+                            house.position.set(stripX, 0.09, stripZ + off);
+                        } else {
+                            house.position.set(stripX + off, 0.09, stripZ);
+                        }
                         worldGroup.add(house);
                         houseMeshes[sqIdx].push(house);
                     }

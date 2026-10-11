@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Monopoly 3D - Wii Edition</title>
-    <link rel="stylesheet" href="static/css/style.css?v=2.5">
+    <link rel="stylesheet" href="static/css/style.css?v=3.3">
     <link rel="icon" href="static/assets/textures/board_wt_cl_go_cm.png">
     <script>
         (function() {
@@ -28,6 +28,29 @@
         <button class="btn-leave-seat-focus" onclick="window.MonopolyBoard3D.exitSeatFocus()">
             <span class="seat-focus-icon">↩</span> Zurück zur Brettansicht
         </button>
+    </div>
+
+    <!-- Floating "Du bist dran!" Turn Notification Popup -->
+    <div id="your-turn-popup" class="your-turn-popup" style="display:none;" onclick="window.MonopolyGame && window.MonopolyGame.hideYourTurnPopup && window.MonopolyGame.hideYourTurnPopup()">
+        <div class="your-turn-popup-card">
+            <div class="your-turn-popup-icon">🎲</div>
+            <div class="your-turn-popup-texts">
+                <div class="your-turn-popup-title" id="your-turn-popup-title">DU BIST DRAN!</div>
+                <div class="your-turn-popup-sub" id="your-turn-popup-sub">Würfle jetzt oder verwalte deine Straßen</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Rent Payment Notification Popup -->
+    <div id="rent-toast-popup" class="rent-toast-popup" style="display:none;" onclick="window.MonopolyGame && window.MonopolyGame.hideRentPopup && window.MonopolyGame.hideRentPopup()">
+        <div class="rent-toast-card" id="rent-toast-card">
+            <div class="rent-toast-icon" id="rent-toast-icon">💸</div>
+            <div class="rent-toast-texts">
+                <div class="rent-toast-title" id="rent-toast-title">MIETZAHLUNG</div>
+                <div class="rent-toast-sub" id="rent-toast-sub">Spieler zahlt Miete</div>
+            </div>
+            <div class="rent-toast-amount" id="rent-toast-amount">-0 DM</div>
+        </div>
     </div>
 
     <!-- UI Overlay Layer (Minimalist 2012 Console Aesthetic) -->
@@ -121,7 +144,7 @@
                 </button>
                 <button class="btn-action btn-end" id="btn-end-turn" disabled>
                     <span>⏹️</span>
-                    <span>Zug beenden</span>
+                    <span id="btn-end-turn-label">Zug beenden</span>
                 </button>
             </div>
         </footer>
@@ -191,13 +214,15 @@
     </div>
 
     <!-- 3. Chance / Community Chest Card Modal -->
-    <div class="modal-overlay" id="modal-card">
+    <div class="modal-overlay" id="modal-card" style="z-index: 2150;">
         <div class="modal-box" style="max-width:440px; text-align:center;">
-            <div class="modal-header" style="justify-content:center; margin-bottom:8px;">
+            <div class="modal-header" style="justify-content:center; margin-bottom:4px; flex-direction:column; gap:2px;">
                 <span class="modal-title" id="card-modal-title">EREIGNISKARTE</span>
+                <span id="card-modal-subtitle" style="font-size:12px; color:var(--text-muted); font-weight:600; display:none;"></span>
             </div>
             <!-- Full High-Res Authentic ROM Card Image -->
             <img id="card-modal-full-img" class="card-modal-full-img" src="" alt="Gezogene Karte" style="width:100%; max-width:410px; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.55); display:none; margin:0 auto;" />
+            <div id="card-modal-caption" style="font-size:13px; font-weight:600; color:#f1f5f9; background:rgba(255,255,255,0.06); padding:8px 12px; border-radius:8px; margin-top:10px; display:none;"></div>
             
             <!-- Traditional Layout Fallback -->
             <div class="chance-chest-card" id="card-modal-container">
@@ -207,7 +232,7 @@
                 <div class="chance-card-text" id="card-modal-text">Ziehe vor bis auf LOS!</div>
             </div>
 
-            <button class="btn-action btn-buy" style="margin-top:14px; width:100%;" onclick="window.MonopolyGame.closeModal('modal-card')">
+            <button class="btn-action btn-buy" id="btn-card-confirm" style="margin-top:14px; width:100%;" onclick="window.MonopolyGame.confirmCard()">
                 OK
             </button>
         </div>
@@ -311,13 +336,22 @@
         </div>
     </div>
 
+    <!-- 9. Game Over / Victory Modal (Siegerehrung) -->
+    <div class="modal-overlay" id="modal-gameover" style="z-index: 2300;">
+        <div class="modal-box" style="max-width:450px; text-align:center; border:2px solid #f1c40f; box-shadow:0 20px 60px rgba(241, 196, 15, 0.35);">
+            <div class="modal-body" id="gameover-modal-body">
+                <!-- Dynamically injected -->
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts with Cache Busting -->
     <script src="static/js/three.min.js"></script>
     <script src="static/js/OrbitControls.js"></script>
-    <script src="static/js/asset_config.js?v=3.1"></script>
-    <script src="static/js/audio.js?v=3.1"></script>
-    <script src="static/js/board3d.js?v=3.1"></script>
-    <script src="static/js/game_client.js?v=3.1"></script>
+    <script src="static/js/asset_config.js?v=3.3"></script>
+    <script src="static/js/audio.js?v=3.3"></script>
+    <script src="static/js/board3d.js?v=3.3"></script>
+    <script src="static/js/game_client.js?v=3.3"></script>
 
     <script>
         function launchMonopoly() {

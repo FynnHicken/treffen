@@ -18,10 +18,235 @@
     let squaresData = [];
     let viewedPlayerId = null;
     let isTokenInTransit = false;
+    let yourTurnPopupTimeout = null;
+    let endTurnTimerInterval = null;
+    let endTurnSecondsLeft = 0;
+    const END_TURN_TIMEOUT_SEC = 10;
 
     // Sound and Board instances
     const Sound = window.MonopolySound;
     const Board3D = window.MonopolyBoard3D;
+
+    function showYourTurnPopup(titleText = 'DU BIST DRAN!', subText = 'Würfle jetzt oder verwalte deine Straßen') {
+        const popup = document.getElementById('your-turn-popup');
+        const titleEl = document.getElementById('your-turn-popup-title');
+        const subEl = document.getElementById('your-turn-popup-sub');
+        if (!popup) return;
+
+        if (titleEl) titleEl.textContent = titleText;
+        if (subEl) subEl.textContent = subText;
+
+        if (yourTurnPopupTimeout) {
+            clearTimeout(yourTurnPopupTimeout);
+            yourTurnPopupTimeout = null;
+        }
+
+        popup.classList.remove('hiding');
+        popup.style.display = 'block';
+
+        yourTurnPopupTimeout = setTimeout(() => {
+            hideYourTurnPopup();
+        }, 2600);
+    }
+
+    function hideYourTurnPopup() {
+        const popup = document.getElementById('your-turn-popup');
+        if (!popup || popup.style.display === 'none') return;
+        if (yourTurnPopupTimeout) {
+            clearTimeout(yourTurnPopupTimeout);
+            yourTurnPopupTimeout = null;
+        }
+        popup.classList.add('hiding');
+        setTimeout(() => {
+            if (popup.classList.contains('hiding')) {
+                popup.style.display = 'none';
+                popup.classList.remove('hiding');
+            }
+        }, 250);
+    }
+
+    let rentPopupTimeout = null;
+
+    function showRentPopup(rentData, fallbackPayer) {
+        if (!rentData || !rentData.rent) return;
+        const popup = document.getElementById('rent-toast-popup');
+        const cardEl = document.getElementById('rent-toast-card');
+        const iconEl = document.getElementById('rent-toast-icon');
+        const titleEl = document.getElementById('rent-toast-title');
+        const subEl = document.getElementById('rent-toast-sub');
+        const amtEl = document.getElementById('rent-toast-amount');
+        if (!popup || !cardEl) return;
+
+        const rent = rentData.rent;
+        const payerId = rentData.payer_id || (fallbackPayer && fallbackPayer.id);
+        const payerName = rentData.payer || (fallbackPayer && fallbackPayer.name) || 'Spieler';
+        const ownerId = rentData.owner_id;
+        const ownerName = rentData.owner || 'Besitzer';
+        const sqName = rentData.square_name || (rentData.square_idx !== undefined && squaresData[rentData.square_idx] ? squaresData[rentData.square_idx].name : 'Grundstück');
+
+        const amIPayer = (payerId === playerId);
+        const amIOwner = (ownerId === playerId);
+
+        cardEl.classList.remove('rent-paid', 'rent-received');
+        if (amIPayer) {
+            cardEl.classList.add('rent-paid');
+            if (iconEl) iconEl.textContent = '💸';
+            if (titleEl) titleEl.textContent = 'MIETE FÄLLIG!';
+            if (subEl) subEl.textContent = `Du zahlst Miete für ${sqName} an ${ownerName}`;
+            if (amtEl) amtEl.textContent = `-${rent} DM`;
+        } else if (amIOwner) {
+            cardEl.classList.add('rent-received');
+            if (iconEl) iconEl.textContent = '💰';
+            if (titleEl) titleEl.textContent = 'MIETE ERHALTEN!';
+            if (subEl) subEl.textContent = `${payerName} zahlt dir Miete für ${sqName}`;
+            if (amtEl) amtEl.textContent = `+${rent} DM`;
+        } else {
+            if (iconEl) iconEl.textContent = '🏠';
+            if (titleEl) titleEl.textContent = 'MIETZAHLUNG';
+            if (subEl) subEl.textContent = `${payerName} zahlt Miete für ${sqName} an ${ownerName}`;
+            if (amtEl) amtEl.textContent = `${rent} DM`;
+        }
+
+        if (Sound) Sound.playMoney();
+
+        if (rentPopupTimeout) {
+            clearTimeout(rentPopupTimeout);
+            rentPopupTimeout = null;
+        }
+
+        popup.classList.remove('hiding');
+        popup.style.display = 'block';
+
+        rentPopupTimeout = setTimeout(() => {
+            hideRentPopup();
+        }, 3800);
+    }
+
+    function hideRentPopup() {
+        const popup = document.getElementById('rent-toast-popup');
+        if (!popup || popup.style.display === 'none') return;
+        if (rentPopupTimeout) {
+            clearTimeout(rentPopupTimeout);
+            rentPopupTimeout = null;
+        }
+        popup.classList.add('hiding');
+        setTimeout(() => {
+            if (popup.classList.contains('hiding')) {
+                popup.style.display = 'none';
+                popup.classList.remove('hiding');
+            }
+        }, 250);
+    }
+
+    let cardModalAutoCloseTimer = null;
+    let lastUserActivityAt = Date.now();
+    let lastPointerCoords = { x: 0, y: 0 };
+
+    function recordUserActivity() {
+        lastUserActivityAt = Date.now();
+        if (endTurnTimerInterval) {
+            endTurnSecondsLeft = END_TURN_TIMEOUT_SEC;
+            updateEndTurnButtonLabel();
+        }
+    }
+
+    ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(evtName => {
+        window.addEventListener(evtName, recordUserActivity, { passive: true });
+    });
+    window.addEventListener('pointermove', (e) => {
+        if (Math.hypot(e.clientX - lastPointerCoords.x, e.clientY - lastPointerCoords.y) > 3) {
+            lastPointerCoords.x = e.clientX;
+            lastPointerCoords.y = e.clientY;
+            recordUserActivity();
+        }
+    }, { passive: true });
+
+    function isManagementModalOpen() {
+        const modalIds = ['modal-card', 'modal-deed', 'modal-trade', 'modal-portfolio', 'modal-incoming-trade', 'modal-auction', 'modal-tax', 'modal-gameover'];
+        return modalIds.some(id => {
+            const el = document.getElementById(id);
+            return el && el.classList.contains('open');
+        });
+    }
+
+    function canPlayerEndTurnNow() {
+        if (!gameState || gameState.status !== 'PLAYING' || isTokenInTransit) return false;
+        const currPlayer = gameState.current_player;
+        const isMyTurn = (currPlayer && currPlayer.id === playerId);
+        if (!isMyTurn || !gameState.rolled) return false;
+        const myPlayer = gameState.players ? gameState.players.find(p => p.id === playerId) : null;
+        if (myPlayer && (myPlayer.money < 0 || myPlayer.is_bankrupt)) return false;
+        const pendingType = (gameState.pending_action && gameState.pending_action.type) || null;
+        const blockedByPending = (pendingType === 'BUY_OR_AUCTION' || pendingType === 'TAX_CHOICE' || pendingType === 'CARD_DRAWN' || !!gameState.auction_state);
+        return !blockedByPending;
+    }
+
+    function updateEndTurnButtonLabel() {
+        const btnEnd = document.getElementById('btn-end-turn');
+        const labelEl = document.getElementById('btn-end-turn-label');
+        if (!btnEnd || !labelEl) return;
+
+        const isActivelyInteracting = isManagementModalOpen() || ((Date.now() - lastUserActivityAt) < 1200);
+        if (endTurnTimerInterval && endTurnSecondsLeft > 0 && !isActivelyInteracting) {
+            labelEl.textContent = `Zug beenden (${endTurnSecondsLeft}s)`;
+            btnEnd.classList.add('countdown-active');
+        } else {
+            labelEl.textContent = 'Zug beenden';
+            btnEnd.classList.remove('countdown-active');
+        }
+    }
+
+    function clearEndTurnTimer() {
+        if (endTurnTimerInterval) {
+            clearInterval(endTurnTimerInterval);
+            endTurnTimerInterval = null;
+        }
+        endTurnSecondsLeft = 0;
+        updateEndTurnButtonLabel();
+    }
+
+    function resetEndTurnTimer() {
+        lastUserActivityAt = Date.now();
+        if (endTurnTimerInterval) {
+            endTurnSecondsLeft = END_TURN_TIMEOUT_SEC;
+            updateEndTurnButtonLabel();
+        }
+    }
+
+    function syncEndTurnTimer() {
+        if (!canPlayerEndTurnNow()) {
+            clearEndTurnTimer();
+            return;
+        }
+
+        if (!endTurnTimerInterval) {
+            lastUserActivityAt = Date.now();
+            endTurnSecondsLeft = END_TURN_TIMEOUT_SEC;
+            updateEndTurnButtonLabel();
+            endTurnTimerInterval = setInterval(() => {
+                if (!canPlayerEndTurnNow()) {
+                    clearEndTurnTimer();
+                    return;
+                }
+                // Only count down when the player is idle (no open modals and no mouse/keyboard/touch activity)
+                if (isManagementModalOpen() || (Date.now() - lastUserActivityAt) < 1000) {
+                    endTurnSecondsLeft = END_TURN_TIMEOUT_SEC;
+                    updateEndTurnButtonLabel();
+                    return;
+                }
+                endTurnSecondsLeft -= 1;
+                if (endTurnSecondsLeft <= 0) {
+                    clearEndTurnTimer();
+                    closeModal('modal-card');
+                    sendWsMessage({ action: 'END_TURN' });
+                } else {
+                    updateEndTurnButtonLabel();
+                }
+            }, 1000);
+        } else {
+            updateEndTurnButtonLabel();
+        }
+    }
 
     function resolveUrl(path) {
         if (window.MonopolyAssets && window.MonopolyAssets.resolveUrl) {
@@ -237,17 +462,52 @@
     function handleServerMessage(msg) {
         console.log('Server message:', msg.type, msg);
 
+        if (msg.type === 'DICE_ROLLED') {
+            isTokenInTransit = true;
+            clearEndTurnTimer();
+        } else if (msg.type === 'CARD_APPLIED') {
+            if (msg.result && msg.result.moved && !(msg.result.player && msg.result.player.in_jail)) {
+                isTokenInTransit = true;
+            }
+            clearEndTurnTimer();
+        }
+
         if (msg.state) {
             const prevState = gameState;
+            const wasMyTurn = (prevState && prevState.status === 'PLAYING' && prevState.current_player && prevState.current_player.id === playerId);
+            const prevRolled = prevState ? !!prevState.rolled : false;
             gameState = msg.state;
             if (msg.state.squares) squaresData = msg.state.squares;
+            const nowMyTurn = (gameState && gameState.status === 'PLAYING' && gameState.current_player && gameState.current_player.id === playerId);
 
             updateLobbyUI();
-            updateHUD();
+            if (!isTokenInTransit) {
+                updateHUD();
+            } else {
+                const btnRoll = document.getElementById('btn-roll');
+                if (btnRoll) {
+                    btnRoll.disabled = true;
+                    btnRoll.classList.remove('can-roll');
+                }
+                const btnEnd = document.getElementById('btn-end-turn');
+                if (btnEnd) {
+                    btnEnd.disabled = true;
+                }
+            }
+
+            if (nowMyTurn && !wasMyTurn) {
+                showYourTurnPopup('DU BIST DRAN!', 'Würfle jetzt oder verwalte deine Straßen');
+            } else if (nowMyTurn && wasMyTurn && prevRolled && !gameState.rolled && msg.type !== 'DICE_ROLLED' && msg.type !== 'CARD_APPLIED') {
+                showYourTurnPopup('PASCH! NOCHMAL DRAN!', 'Du darfst direkt noch einmal würfeln!');
+            } else if (!nowMyTurn) {
+                hideYourTurnPopup();
+            }
 
             // Sync 3D Board
             if (window.MonopolyBoard3D) {
-                window.MonopolyBoard3D.syncPlayers(gameState.players);
+                if (!isTokenInTransit) {
+                    window.MonopolyBoard3D.syncPlayers(gameState.players);
+                }
                 window.MonopolyBoard3D.syncBuildings(gameState.board_state);
                 window.MonopolyBoard3D.syncTableDeeds(gameState.board_state, gameState.players, playerId);
                 if (!isTokenInTransit) {
@@ -263,7 +523,26 @@
             // Detect Game Start
             if (prevState && prevState.status === 'LOBBY' && gameState.status === 'PLAYING') {
                 closeModal('modal-lobby');
+                closeModal('modal-gameover');
                 if (Sound) Sound.playMoney();
+            }
+
+            // Detect Game Over / Victory
+            if (gameState.status === 'GAME_OVER') {
+                clearEndTurnTimer();
+                hideYourTurnPopup();
+                const wasGameOver = (prevState && prevState.status === 'GAME_OVER');
+                const winObj = gameState.winner || (gameState.players ? gameState.players.find(p => !p.is_bankrupt) : null);
+                if (!wasGameOver && Sound) {
+                    if (winObj && winObj.id === playerId && Sound.playWin) {
+                        Sound.playWin();
+                    } else if (Sound.playLose) {
+                        Sound.playLose();
+                    }
+                }
+                showGameOverModal();
+            } else {
+                closeModal('modal-gameover');
             }
 
             // Hub embedding notification
@@ -275,22 +554,31 @@
         switch (msg.type) {
             case 'GAME_STARTED':
                 closeModal('modal-lobby');
+                closeModal('modal-gameover');
                 if (Sound) Sound.playMoney();
+                break;
+
+            case 'LOBBY_RESET':
+                closeModal('modal-gameover');
+                openModal('modal-lobby');
                 break;
 
             case 'DICE_ROLLED':
                 handleDiceRollEvent(msg.result);
                 break;
 
+            case 'CARD_APPLIED':
+                handleCardAppliedEvent(msg.result);
+                break;
+
             case 'TURN_ENDED':
-                if (window.MonopolyBoard3D && window.MonopolyBoard3D.hideDrawnCards) {
-                    window.MonopolyBoard3D.hideDrawnCards();
-                }
+                clearEndTurnTimer();
                 break;
 
             case 'PROPERTY_BOUGHT':
                 if (Sound) Sound.playMoney();
                 closeModal('modal-deed');
+                resetEndTurnTimer();
                 break;
 
             case 'AUCTION_UPDATED':
@@ -301,19 +589,23 @@
                     closeModal('modal-auction');
                     if (Sound) Sound.playMoney();
                 }
+                syncEndTurnTimer();
                 break;
 
             case 'TAX_PAID':
                 if (Sound) Sound.playMoney();
                 closeModal('modal-tax');
+                syncEndTurnTimer();
                 break;
 
             case 'HOUSE_BUILT':
                 if (Sound) Sound.playBuild();
+                resetEndTurnTimer();
                 break;
 
             case 'HOUSE_SOLD':
                 if (Sound) Sound.playMoney();
+                resetEndTurnTimer();
                 break;
 
             case 'BAIL_PAID':
@@ -322,6 +614,7 @@
 
             case 'WENT_TO_JAIL':
                 if (Sound) Sound.playJail();
+                syncEndTurnTimer();
                 break;
 
             case 'CARD':
@@ -329,14 +622,12 @@
                     const dDeck = msg.deck || 'Ereignis';
                     const dText = msg.card.text;
                     const dImg = msg.card.image || msg.card.card_image_filename;
+                    const drawerName = msg.player || (gameState && gameState.current_player && gameState.current_player.name) || '';
                     const engine = window.MonopolyBoard3D || Board3D;
                     if (engine && engine.showDrawnCard) {
                         engine.showDrawnCard(dDeck, dText, dImg);
                     }
-                    const isMyTurn = (gameState && gameState.current_player && gameState.current_player.id === playerId);
-                    if (isMyTurn) {
-                        showCardModal(dDeck, dText, dImg, true);
-                    }
+                    showCardModal(dDeck, dText, dImg, true, drawerName);
                 }
                 break;
 
@@ -352,10 +643,12 @@
             case 'TRADE_ACCEPTED':
                 if (Sound) Sound.playMoney();
                 closeModal('modal-incoming-trade');
+                resetEndTurnTimer();
                 break;
 
             case 'TRADE_REJECTED':
                 closeModal('modal-incoming-trade');
+                resetEndTurnTimer();
                 break;
         }
 
@@ -376,7 +669,7 @@
         }
 
         // Check if pending action is a drawn card
-        if (!isTokenInTransit && gameState && gameState.pending_action && gameState.pending_action.type === 'CARD') {
+        if (!isTokenInTransit && gameState && gameState.pending_action && (gameState.pending_action.type === 'CARD_DRAWN' || gameState.pending_action.type === 'CARD')) {
             const cAct = gameState.pending_action;
             const cImg = cAct.card ? (cAct.card.image || cAct.card.card_image_filename) : null;
             const engine = window.MonopolyBoard3D || Board3D;
@@ -386,54 +679,201 @@
         }
     }
 
+    function confirmCard() {
+        if (cardModalAutoCloseTimer) {
+            clearTimeout(cardModalAutoCloseTimer);
+            cardModalAutoCloseTimer = null;
+        }
+        closeModal('modal-card');
+        const isMyTurn = (gameState && gameState.current_player && gameState.current_player.id === playerId);
+        if (isMyTurn && gameState && gameState.pending_action && gameState.pending_action.type === 'CARD_DRAWN') {
+            sendWsMessage({ action: 'CONFIRM_CARD' });
+        }
+    }
+
+    function handleCardAppliedEvent(res) {
+        if (!res || res.error) {
+            isTokenInTransit = false;
+            updateHUD();
+            return;
+        }
+        if (cardModalAutoCloseTimer) {
+            clearTimeout(cardModalAutoCloseTimer);
+            cardModalAutoCloseTimer = null;
+        }
+        closeModal('modal-card');
+
+        const isMyTurn = (res.player && res.player.id === playerId);
+
+        function finishAfterCardEffect() {
+            isTokenInTransit = false;
+            if (window.MonopolyBoard3D && gameState) {
+                window.MonopolyBoard3D.syncPlayers(gameState.players);
+            }
+            if (res.passed_go && Sound) {
+                Sound.playPassGo ? Sound.playPassGo() : Sound.playMoney();
+            } else if (!res.moved && Sound) {
+                Sound.playMoney();
+            }
+
+            if (res.action) {
+                if (res.action.type === 'CARD_DRAWN' || res.action.type === 'CARD') {
+                    const cCard = res.action.card || res.action;
+                    const cDeck = res.action.deck || 'Ereignis';
+                    const cText = (cCard && cCard.text) ? cCard.text : '';
+                    const cImg = cCard ? (cCard.image || cCard.card_image_filename) : null;
+                    const drawerName = res.action.player || (res.player && res.player.name) || '';
+                    const engine = window.MonopolyBoard3D || Board3D;
+                    if (engine && engine.showDrawnCard) {
+                        engine.showDrawnCard(cDeck, cText, cImg);
+                    }
+                    showCardModal(cDeck, cText, cImg, true, drawerName);
+                } else if (res.action.type === 'RENT_PAID') {
+                    showRentPopup(res.action, res.player);
+                } else if (res.action.type === 'BUY_OR_AUCTION') {
+                    if (isMyTurn && res.action.square) {
+                        showDeedModal(res.action.square.index);
+                    }
+                } else if (res.action.type === 'TAX_CHOICE') {
+                    if (isMyTurn) {
+                        showTaxChoiceModal(res.action);
+                    }
+                } else if (res.action.type === 'WENT_TO_JAIL') {
+                    if (Sound) Sound.playJail();
+                    showYourTurnPopup(
+                        '🚔 AB INS GEFÄNGNIS!',
+                        isMyTurn ? 'Du wanderst direkt ins Gefängnis!' : `${res.player.name} wandert direkt ins Gefängnis!`
+                    );
+                }
+            }
+
+            if (isMyTurn && gameState && !gameState.rolled && !(res.player && res.player.in_jail) && (!res.action || res.action.type !== 'CARD_DRAWN')) {
+                showYourTurnPopup('PASCH! NOCHMAL DRAN!', 'Du hast einen Pasch gewürfelt und darfst direkt nochmal!');
+            }
+
+            updateHUD();
+            syncEndTurnTimer();
+        }
+
+        if (res.moved && Board3D && !(res.player && res.player.in_jail)) {
+            isTokenInTransit = true;
+            Board3D.animateMoveToken(res.player.id, res.old_pos, res.new_pos, () => {
+                finishAfterCardEffect();
+            }, true);
+        } else {
+            finishAfterCardEffect();
+        }
+    }
+
     // Dice Roll & Animated Token Hop sequence
     function handleDiceRollEvent(res) {
-        if (!res || !res.dice) return;
+        if (!res || !res.dice) {
+            isTokenInTransit = false;
+            updateHUD();
+            return;
+        }
         const [d1, d2] = res.dice;
         const isMyTurn = (res.player && res.player.id === playerId);
         isTokenInTransit = true;
+        clearEndTurnTimer();
+        closeModal('modal-card');
+
+        const drawnCardObj = (res.action && (res.action.type === 'CARD_DRAWN' || res.action.type === 'CARD'))
+            ? res.action
+            : (res.action && res.action.drawn_card ? res.action.drawn_card : null);
+        let cardModalShownForRoll = false;
+
+        function presentDrawnCardIfAny() {
+            if (!drawnCardObj || cardModalShownForRoll) return;
+            cardModalShownForRoll = true;
+            const dDeck = drawnCardObj.deck || 'Ereignis';
+            const cardInner = drawnCardObj.card || drawnCardObj;
+            const dText = (cardInner && cardInner.text) ? cardInner.text : (drawnCardObj.text || 'Karte');
+            const dImg = cardInner ? (cardInner.image || cardInner.card_image_filename || drawnCardObj.image) : null;
+            const drawerName = drawnCardObj.player || (res.player && res.player.name) || '';
+            const engine = window.MonopolyBoard3D || Board3D;
+            if (engine && engine.showDrawnCard) {
+                engine.showDrawnCard(dDeck, dText, dImg);
+            }
+            showCardModal(dDeck, dText, dImg, true, drawerName);
+        }
+
+        function finalizeLandingSequence() {
+            isTokenInTransit = false;
+            if (window.MonopolyBoard3D && gameState) {
+                window.MonopolyBoard3D.syncPlayers(gameState.players);
+            }
+            if (Sound && res.passed_go) {
+                Sound.playPassGo ? Sound.playPassGo() : Sound.playMoney();
+            }
+            if (res.action) {
+                presentDrawnCardIfAny();
+                if (res.action.type === 'CARD' || res.action.type === 'CARD_DRAWN') {
+                    if (res.action.rent_event) {
+                        showRentPopup(res.action.rent_event, res.player);
+                    }
+                } else if (res.action.type === 'RENT_PAID') {
+                    showRentPopup(res.action, res.player);
+                } else if (res.action.type === 'BUY_OR_AUCTION') {
+                    if (isMyTurn && res.action.square) {
+                        showDeedModal(res.action.square.index);
+                    }
+                } else if (res.action.type === 'TAX_CHOICE') {
+                    if (isMyTurn) {
+                        showTaxChoiceModal(res.action);
+                    }
+                } else if (res.action.type === 'WENT_TO_JAIL') {
+                    if (Sound) Sound.playJail();
+                    showYourTurnPopup(
+                        '🚔 AB INS GEFÄNGNIS!',
+                        isMyTurn ? 'Du wanderst direkt ins Gefängnis!' : `${res.player.name} wandert direkt ins Gefängnis!`
+                    );
+                }
+            } else if (!gameState || !gameState.last_card) {
+                if (window.MonopolyBoard3D && window.MonopolyBoard3D.hideDrawnCards) {
+                    window.MonopolyBoard3D.hideDrawnCards();
+                }
+            }
+            if (isMyTurn && gameState && !gameState.rolled && d1 === d2 && !(res.player && res.player.in_jail) && (!res.action || res.action.type !== 'CARD_DRAWN')) {
+                showYourTurnPopup('PASCH! NOCHMAL DRAN!', 'Du hast einen Pasch gewürfelt und darfst direkt nochmal!');
+            }
+            updateHUD();
+            syncEndTurnTimer();
+        }
 
         if (Board3D) {
             Board3D.rollDice(d1, d2, () => {
                 if (res.old_pos !== undefined && res.new_pos !== undefined) {
                     Board3D.animateMoveToken(res.player.id, res.old_pos, res.new_pos, () => {
-                        isTokenInTransit = false;
-                        if (Sound && res.passed_go) {
-                            Sound.playPassGo ? Sound.playPassGo() : Sound.playMoney();
-                        }
-                        if (res.action) {
-                            if (res.action.type === 'CARD') {
-                                const dDeck = res.action.deck || 'Ereignis';
-                                const dText = (res.action.card && res.action.card.text) ? res.action.card.text : 'Karte';
-                                const dImg = res.action.card ? (res.action.card.image || res.action.card.card_image_filename) : null;
-                                const engine = window.MonopolyBoard3D || Board3D;
-                                if (engine && engine.showDrawnCard) {
-                                    engine.showDrawnCard(dDeck, dText, dImg);
-                                }
-                                if (isMyTurn) {
-                                    showCardModal(dDeck, dText, dImg, true);
-                                }
-                            } else if (res.action.type === 'BUY_OR_AUCTION') {
-                                if (isMyTurn && res.action.square) {
-                                    showDeedModal(res.action.square.index);
-                                }
-                            } else if (res.action.type === 'TAX_CHOICE') {
-                                if (isMyTurn) {
-                                    showTaxChoiceModal(res.action);
-                                }
+                        const finalPos = (res.final_pos !== undefined) ? res.final_pos : (res.player ? res.player.position : res.new_pos);
+                        if (finalPos !== res.new_pos) {
+                            presentDrawnCardIfAny();
+                            if (res.player && res.player.in_jail) {
+                                // Directly move token into Jail immediately after landing on tile 30
+                                finalizeLandingSequence();
+                            } else {
+                                Board3D.animateMoveToken(res.player.id, res.new_pos, finalPos, () => {
+                                    finalizeLandingSequence();
+                                }, true);
                             }
-                        } else if (!gameState || !gameState.last_card) {
-                            if (window.MonopolyBoard3D && window.MonopolyBoard3D.hideDrawnCards) {
-                                window.MonopolyBoard3D.hideDrawnCards();
-                            }
+                        } else {
+                            finalizeLandingSequence();
                         }
                     }, true);
                 } else {
-                    isTokenInTransit = false;
+                    // e.g. 3 doubles in a row -> straight to jail, or stayed in jail
+                    if (res.double && res.player && res.player.in_jail) {
+                        if (Sound) Sound.playJail();
+                        showYourTurnPopup(
+                            '🚔 3x PASCH = GEFÄNGNIS!',
+                            isMyTurn ? '3x Pasch! Du gehst direkt ins Gefängnis!' : `${res.player.name} geht wegen 3x Pasch ins Gefängnis!`
+                        );
+                    }
+                    finalizeLandingSequence();
                 }
             }, true);
         } else {
-            isTokenInTransit = false;
+            finalizeLandingSequence();
         }
     }
 
@@ -466,6 +906,23 @@
         const addBotBtn = document.getElementById('btn-add-bot');
         if (addBotBtn) {
             addBotBtn.style.display = isHost ? 'inline-block' : 'none';
+        }
+
+        const myPlayer = gameState.players.find(p => p.id === playerId);
+        if (myPlayer) {
+            if (myPlayer.token && myPlayer.token !== selectedToken) {
+                selectedToken = myPlayer.token;
+            }
+            if (myPlayer.color && myPlayer.color !== selectedColor) {
+                selectedColor = myPlayer.color;
+            }
+            document.querySelectorAll('.token-choice').forEach(el => {
+                el.classList.toggle('selected', el.getAttribute('data-token') === selectedToken);
+            });
+            document.querySelectorAll('.color-dot-pick').forEach(el => {
+                const cAttr = el.getAttribute('data-color');
+                el.classList.toggle('selected', cAttr ? cAttr.toLowerCase() === selectedColor.toLowerCase() : el.style.background.includes(selectedColor));
+            });
         }
 
         // Players list in lobby
@@ -547,7 +1004,9 @@
                 const isActive = (currPlayer && currPlayer.id === p.id);
                 const isMe = (p.id === playerId);
                 const tObj = TOKENS.find(t => t.id === p.token) || { icon: '♟️', name: p.token };
-                const sqName = squaresData[p.position] ? squaresData[p.position].name : 'LOS';
+                const sqName = (p.position === 10 && !p.in_jail)
+                    ? 'Gefängnis (Nur zu Besuch)'
+                    : (squaresData[p.position] ? squaresData[p.position].name : 'LOS');
                 const tokenGraphic = tObj.iconImg ? `<img src="${resolveUrl(tObj.iconImg)}" class="sidebar-token-img" alt="${tObj.name}" />` : `<span class="player-token-label">${tObj.icon}</span>`;
 
                 return `
@@ -697,7 +1156,8 @@
         const btnJailCard = document.getElementById('btn-jail-card');
 
         if (btnRoll) {
-            const canRoll = isMyTurn && !gameState.rolled && !gameState.auction_state && (!myPlayer || !myPlayer.is_bankrupt);
+            const pendingCard = (gameState.pending_action && gameState.pending_action.type === 'CARD_DRAWN');
+            const canRoll = isMyTurn && !gameState.rolled && !isTokenInTransit && !pendingCard && !gameState.auction_state && (!myPlayer || !myPlayer.is_bankrupt);
             btnRoll.disabled = !canRoll;
             btnRoll.classList.toggle('can-roll', canRoll);
         }
@@ -731,10 +1191,11 @@
 
         if (btnEnd) {
             const pendingType = (gameState.pending_action && gameState.pending_action.type) || null;
-            const blockedByPending = (pendingType === 'BUY_OR_AUCTION' || pendingType === 'TAX_CHOICE' || !!gameState.auction_state);
+            const blockedByPending = (pendingType === 'BUY_OR_AUCTION' || pendingType === 'TAX_CHOICE' || pendingType === 'CARD_DRAWN' || !!gameState.auction_state);
             const inDebt = (myPlayer && myPlayer.money < 0);
-            const canEnd = isMyTurn && gameState.rolled && !blockedByPending && !inDebt;
+            const canEnd = isMyTurn && gameState.rolled && !isTokenInTransit && !blockedByPending && !inDebt;
             btnEnd.disabled = !canEnd;
+            syncEndTurnTimer();
         }
 
         // Jail actions (only BEFORE rolling dice, per Parker rules page 2)
@@ -832,33 +1293,125 @@
         openModal('modal-tax');
     }
 
+    // Show Game Over / Victory Modal (Siegerehrung)
+    function showGameOverModal() {
+        const modalBody = document.getElementById('gameover-modal-body');
+        if (!modalBody || !gameState) return;
+
+        const winner = gameState.winner || (gameState.players ? gameState.players.find(p => !p.is_bankrupt) : null) || gameState.current_player;
+        if (!winner) return;
+
+        const didIWin = (winner.id === playerId);
+        const tObj = TOKENS.find(t => t.id === winner.token) || { icon: '🏆', name: winner.token || 'Spielfigur' };
+        const tokenGraphic = tObj.iconImg
+            ? `<img src="${resolveUrl(tObj.iconImg)}" alt="${tObj.name}" style="width:52px; height:52px; object-fit:contain;" />`
+            : `<span style="font-size:42px;">${tObj.icon}</span>`;
+
+        const propsCount = (winner.properties_count !== undefined)
+            ? winner.properties_count
+            : (gameState.board_state ? Object.values(gameState.board_state).filter(st => st.owner === winner.id).length : 0);
+        const wealth = (winner.wealth !== undefined) ? winner.wealth : winner.money;
+
+        modalBody.innerHTML = `
+            <div style="font-size:56px; line-height:1; margin-bottom:8px; filter:drop-shadow(0 6px 18px rgba(241,196,15,0.6));">
+                🏆
+            </div>
+            <div style="font-size:26px; font-weight:900; letter-spacing:0.6px; color:#f1c40f; text-shadow:0 2px 12px rgba(241,196,15,0.45); margin-bottom:6px;">
+                ${didIWin ? 'DU HAST GEWONNEN!' : `${winner.name.toUpperCase()} HAT GEWONNEN!`}
+            </div>
+            <div style="font-size:13px; color:#cbd5e1; margin-bottom:18px; line-height:1.45;">
+                ${didIWin
+                    ? 'Alle Mitspieler sind bankrott – du bist als Letzter übrig und beherrschst das Monopoly-Imperium!'
+                    : `Alle anderen Mitspieler sind bankrott – <strong>${winner.name}</strong> ist als Letzter übrig geblieben!`}
+            </div>
+            <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(241,196,15,0.35); border-radius:14px; padding:14px 16px; margin-bottom:18px; display:flex; align-items:center; gap:14px; text-align:left;">
+                <div style="width:64px; height:64px; border-radius:50%; border:3px solid ${winner.color || '#f1c40f'}; background:rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    ${tokenGraphic}
+                </div>
+                <div style="flex:1;">
+                    <div style="font-size:17px; font-weight:800; color:#fff; margin-bottom:4px;">
+                        ${winner.name} ${didIWin ? '(Du)' : ''}
+                    </div>
+                    <div style="font-size:12px; color:#94a3b8; display:flex; flex-direction:column; gap:2px;">
+                        <span>💵 Bargeld: <strong style="color:#2ecc71;">${(winner.money || 0).toLocaleString('de-DE')} DM</strong></span>
+                        <span>🏠 Grundstücke im Besitz: <strong style="color:#f8fafc;">${propsCount}</strong></span>
+                        <span>💎 Gesamtvermögen: <strong style="color:#f1c40f;">${(wealth || 0).toLocaleString('de-DE')} DM</strong></span>
+                    </div>
+                </div>
+            </div>
+            <button class="btn-action btn-buy" style="width:100%; justify-content:center; font-size:14px; padding:12px;" onclick="window.MonopolyGame.resetToLobby()">
+                🔄 Neue Runde (Zurück zur Lobby)
+            </button>
+        `;
+        openModal('modal-gameover');
+    }
+
     // Show Card Modal (Ereignis- / Gemeinschaftskarte with Authentic ROM Graphic or Illustration)
-    function showCardModal(deckType, text, cardImage, playSound = false) {
+    function showCardModal(deckType, text, cardImage, playSound = false, drawerName = null) {
         const titleEl = document.getElementById('card-modal-title');
+        const subtitleEl = document.getElementById('card-modal-subtitle');
+        const captionEl = document.getElementById('card-modal-caption');
         const containerEl = document.getElementById('card-modal-container');
         const textEl = document.getElementById('card-modal-text');
         const imgEl = document.getElementById('card-modal-img');
         const fullCardImgEl = document.getElementById('card-modal-full-img');
+        const confirmBtnEl = document.getElementById('btn-card-confirm');
+
+        if (cardModalAutoCloseTimer) {
+            clearTimeout(cardModalAutoCloseTimer);
+            cardModalAutoCloseTimer = null;
+        }
 
         const isChest = (deckType || '').toLowerCase().includes('gemein');
         if (titleEl) titleEl.textContent = isChest ? 'GEMEINSCHAFTSKARTE' : 'EREIGNISKARTE';
+
+        const activeDrawer = drawerName || (gameState && gameState.last_card && gameState.last_card.player) || '';
+        if (subtitleEl) {
+            if (activeDrawer) {
+                subtitleEl.textContent = `Gezogen von: ${activeDrawer}`;
+                subtitleEl.style.display = 'block';
+            } else {
+                subtitleEl.style.display = 'none';
+            }
+        }
+
+        const cleanText = (text || '').replace(/£\s*(\d+)/g, '$1 DM');
 
         if (cardImage && fullCardImgEl) {
             fullCardImgEl.src = resolveUrl('static/assets/chance_chest/cards/' + cardImage);
             fullCardImgEl.style.display = 'block';
             if (containerEl) containerEl.style.display = 'none';
+            if (captionEl && cleanText) {
+                captionEl.textContent = cleanText;
+                captionEl.style.display = 'block';
+            } else if (captionEl) {
+                captionEl.style.display = 'none';
+            }
         } else {
             if (fullCardImgEl) fullCardImgEl.style.display = 'none';
+            if (captionEl) captionEl.style.display = 'none';
             if (containerEl) {
                 containerEl.style.display = 'block';
                 containerEl.className = 'chance-chest-card ' + (isChest ? 'chest' : 'chance');
             }
-            if (textEl) textEl.textContent = text || '';
+            if (textEl) textEl.textContent = cleanText;
             if (imgEl) imgEl.src = getCardIllustration(text);
+        }
+
+        const isMyTurn = (gameState && gameState.current_player && gameState.current_player.id === playerId);
+        const isPendingCardConfirm = (gameState && gameState.pending_action && gameState.pending_action.type === 'CARD_DRAWN');
+        if (confirmBtnEl) {
+            confirmBtnEl.textContent = (isMyTurn && isPendingCardConfirm) ? 'OK — Ausführen' : 'OK';
         }
 
         openModal('modal-card');
         if (playSound && Sound) Sound.playCard();
+
+        if (!isMyTurn && !isPendingCardConfirm) {
+            cardModalAutoCloseTimer = setTimeout(() => {
+                closeModal('modal-card');
+            }, 6500);
+        }
     }
 
     // Show Besitzurkunde (Property Deed Modal with Authentic ROM Card Graphics)
@@ -1179,11 +1732,14 @@
     function openModal(id) {
         const el = document.getElementById(id);
         if (el) el.classList.add('open');
+        resetEndTurnTimer();
     }
 
     function closeModal(id) {
         const el = document.getElementById(id);
         if (el) el.classList.remove('open');
+        resetEndTurnTimer();
+        syncEndTurnTimer();
     }
 
     // Public controller API
@@ -1213,7 +1769,7 @@
             const colorRow = document.getElementById('color-palette-row');
             if (colorRow) {
                 colorRow.innerHTML = COLORS.map(c => `
-                    <div class="color-dot-pick ${c === selectedColor ? 'selected' : ''}" style="background:${c};" onclick="window.MonopolyGame.selectColor('${c}')"></div>
+                    <div class="color-dot-pick ${c === selectedColor ? 'selected' : ''}" data-color="${c}" style="background:${c};" onclick="window.MonopolyGame.selectColor('${c}')"></div>
                 `).join('');
             }
 
@@ -1224,6 +1780,7 @@
                 nameInput.oninput = (e) => {
                     playerName = e.target.value.trim() || 'Spieler';
                     try { localStorage.setItem('monopoly_player_name', playerName); } catch (e) {}
+                    sendWsMessage({ action: 'JOIN', name: playerName, token: selectedToken, color: selectedColor });
                 };
             }
 
@@ -1247,7 +1804,10 @@
             // Bind action buttons
             const btnRoll = document.getElementById('btn-roll');
             if (btnRoll) {
-                btnRoll.onclick = () => sendWsMessage({ action: 'ROLL_DICE' });
+                btnRoll.onclick = () => {
+                    hideYourTurnPopup();
+                    sendWsMessage({ action: 'ROLL_DICE' });
+                };
             }
 
             const btnBuy = document.getElementById('btn-buy');
@@ -1278,7 +1838,10 @@
 
             const btnEnd = document.getElementById('btn-end-turn');
             if (btnEnd) {
-                btnEnd.onclick = () => sendWsMessage({ action: 'END_TURN' });
+                btnEnd.onclick = () => {
+                    clearEndTurnTimer();
+                    sendWsMessage({ action: 'END_TURN' });
+                };
             }
 
             const btnBail = document.getElementById('btn-bail');
@@ -1536,6 +2099,13 @@
         },
 
         showCardModal: showCardModal,
+        confirmCard: confirmCard,
+        resetToLobby: function() {
+            closeModal('modal-gameover');
+            sendWsMessage({ action: 'RESET_LOBBY' });
+        },
+        hideYourTurnPopup: hideYourTurnPopup,
+        hideRentPopup: hideRentPopup,
         getMyPlayerId: function() { return playerId; },
         getCardIllustration: getCardIllustration,
         closeModal: closeModal

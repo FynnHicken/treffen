@@ -216,6 +216,7 @@ class GameRoom:
         self.pending_action: Optional[dict] = None
         self.pending_trade: Optional[dict] = None
         self.auction_state: Optional[dict] = None
+        self.winner: Optional[dict] = None
         self.created_at = time.time()
         self.log(f"Raum {room_id} erstellt.")
 
@@ -263,24 +264,68 @@ class GameRoom:
                 p.name = name
                 p.token = token
                 p.color = color
+                for other in self.players:
+                    if other.id != player_id and other.is_bot:
+                        if other.token == token:
+                            used_t = {x.token for x in self.players if x.id != other.id}
+                            for opt in TOKEN_OPTIONS:
+                                if opt["id"] not in used_t:
+                                    other.token = opt["id"]
+                                    break
+                        if other.color == color:
+                            used_c = {x.color for x in self.players if x.id != other.id}
+                            for c in PLAYER_COLORS:
+                                if c["hex"] not in used_c:
+                                    other.color = c["hex"]
+                                    break
                 return p
 
-        used_tokens = {p.token for p in self.players}
-        if token in used_tokens:
-            for opt in TOKEN_OPTIONS:
-                if opt["id"] not in used_tokens:
-                    token = opt["id"]
-                    break
-
-        used_colors = {p.color for p in self.players}
-        if color in used_colors:
-            for c in PLAYER_COLORS:
-                if c["hex"] not in used_colors:
-                    color = c["hex"]
-                    break
+        if is_bot:
+            used_tokens = {p.token for p in self.players}
+            if token in used_tokens:
+                for opt in TOKEN_OPTIONS:
+                    if opt["id"] not in used_tokens:
+                        token = opt["id"]
+                        break
+            used_colors = {p.color for p in self.players}
+            if color in used_colors:
+                for c in PLAYER_COLORS:
+                    if c["hex"] not in used_colors:
+                        color = c["hex"]
+                        break
+        else:
+            human_tokens = {p.token for p in self.players if not p.is_bot}
+            if token in human_tokens:
+                all_used = {p.token for p in self.players}
+                for opt in TOKEN_OPTIONS:
+                    if opt["id"] not in all_used:
+                        token = opt["id"]
+                        break
+            human_colors = {p.color for p in self.players if not p.is_bot}
+            if color in human_colors:
+                all_used_c = {p.color for p in self.players}
+                for c in PLAYER_COLORS:
+                    if c["hex"] not in all_used_c:
+                        color = c["hex"]
+                        break
 
         p = Player(player_id, name, token, color, is_bot)
         self.players.append(p)
+        if not is_bot:
+            for other in self.players:
+                if other.id != player_id and other.is_bot:
+                    if other.token == token:
+                        used_t = {x.token for x in self.players if x.id != other.id}
+                        for opt in TOKEN_OPTIONS:
+                            if opt["id"] not in used_t:
+                                other.token = opt["id"]
+                                break
+                    if other.color == color:
+                        used_c = {x.color for x in self.players if x.id != other.id}
+                        for c in PLAYER_COLORS:
+                            if c["hex"] not in used_c:
+                                other.color = c["hex"]
+                                break
         self.log(f"{name} ist dem Spiel beigetreten ({p.token}).")
         return p
 
@@ -291,9 +336,43 @@ class GameRoom:
         if self.current_player_idx >= len(self.players) and self.players:
             self.current_player_idx = 0
 
+    def _reset_round_state(self):
+        for p in self.players:
+            p.money = 1500
+            p.position = 0
+            p.in_jail = False
+            p.jail_turns = 0
+            p.jail_cards = 0
+            p.is_bankrupt = False
+            p.doubles_count = 0
+            p.creditor_id = None
+        self.board_state = {
+            i: {
+                "owner": None,
+                "houses": 0,
+                "mortgaged": False
+            } for i in range(40) if SQUARES[i]["type"] in ["property", "station", "utility"]
+        }
+        self.chance_deck = list(range(len(CHANCE_CARDS)))
+        random.shuffle(self.chance_deck)
+        self.chest_deck = list(range(len(COMMUNITY_CHEST_CARDS)))
+        random.shuffle(self.chest_deck)
+        self.rolled = False
+        self.pending_action = None
+        self.pending_trade = None
+        self.auction_state = None
+        self.last_card = None
+        self.winner = None
+
+    def reset_to_lobby(self):
+        self._reset_round_state()
+        self.status = "LOBBY"
+        self.log("🔄 Raum wurde für eine neue Runde in die Lobby zurückgesetzt.")
+
     def start_game(self):
         if len(self.players) < 2:
             raise ValueError("Mindestens 2 Spieler erforderlich.")
+        self._reset_round_state()
         self.status = "PLAYING"
         # Startspieler mit einem Würfel auswürfeln (Parker-Regel Seite 1)
         rolls = {}
@@ -307,9 +386,6 @@ class GameRoom:
                 winner_idx = idx
         roll_summary = ", ".join(f"{name}: {val}" for name, val in rolls.items())
         self.current_player_idx = winner_idx
-        self.rolled = False
-        self.pending_action = None
-        self.auction_state = None
         starter = self.players[self.current_player_idx]
         self.log(f"🎲 Startspieler-Auswürfeln ({roll_summary}) → {starter.name} beginnt!")
         self.log("Das Monopoly-Spiel hat begonnen! Möge der beste Immobilienmogul gewinnen!")
@@ -332,6 +408,7 @@ class GameRoom:
         d2 = random.randint(1, 6)
         self.dice = [d1, d2]
         self.rolled = True
+        self.last_card = None
         is_double = (d1 == d2)
 
         steps = d1 + d2
@@ -381,6 +458,23 @@ class GameRoom:
 
         return self.move_player(player, steps, is_double)
 
+    def _check_doubles_reroll(self, player: Optional[Player] = None) -> bool:
+        curr = player or self.current_player()
+        if not curr or curr != self.current_player():
+            return False
+        d1, d2 = self.dice
+        if d1 != d2 or curr.in_jail or curr.is_bankrupt or curr.doubles_count <= 0:
+            return False
+        if curr.money < 0 or self.auction_state:
+            return False
+        if self.pending_action and self.pending_action.get("type") in ["BUY_OR_AUCTION", "TAX_CHOICE", "CARD_DRAWN"]:
+            return False
+        if self.rolled:
+            self.rolled = False
+            self.log(f"🎲 Pasch! {curr.name} darf direkt noch einmal würfeln!")
+            return True
+        return False
+
     def move_player(self, player: Player, steps: int, is_double: bool) -> dict:
         old_pos = player.position
         new_pos = (old_pos + steps) % 40
@@ -393,17 +487,22 @@ class GameRoom:
 
         player.position = new_pos
         square = SQUARES[new_pos]
-        self.log(f"{player.name} landet auf {square['name']}.")
+        if new_pos == 10 and not player.in_jail:
+            self.log(f"{player.name} landet auf Gefängnis (Nur zu Besuch).")
+        else:
+            self.log(f"{player.name} landet auf {square['name']}.")
 
         # Handle square logic
         action = self.evaluate_square(player, square, steps)
         self.pending_action = action
+        self._check_doubles_reroll(player)
 
         return {
             "dice": self.dice,
             "double": is_double,
             "old_pos": old_pos,
             "new_pos": new_pos,
+            "final_pos": player.position,
             "passed_go": passed_go,
             "player": player.to_dict(),
             "action": action
@@ -452,7 +551,19 @@ class GameRoom:
                     self.log(f"💡 {player.name} zahlt 10-fache Würfelsumme ({rent} DM) an {owner.name}!")
                 else:
                     self.log(f"{player.name} zahlt {rent} DM Miete an {owner.name}!")
-                return {"type": "RENT_PAID", "rent": rent, "owner": owner.name}
+                return {
+                    "type": "RENT_PAID",
+                    "rent": rent,
+                    "payer_id": player.id,
+                    "payer": player.name,
+                    "owner_id": owner.id,
+                    "owner": owner.name,
+                    "square_name": square["name"],
+                    "square_idx": idx,
+                    "group": square.get("group"),
+                    "rent_multiplier": rent_multiplier,
+                    "force_utility_ten_x": force_utility_ten_x
+                }
             else:
                 self.log(f"{player.name} besucht das eigene Grundstück.")
                 return {"type": "END_TURN"}
@@ -492,9 +603,15 @@ class GameRoom:
                 "image": card.get("image") or card.get("card_image_filename", ""),
                 "player": player.name
             }
-            if self.pending_action and self.pending_action.get("type") in ["BUY_OR_AUCTION", "TAX_CHOICE"]:
-                return self.pending_action
-            return {"type": "CARD", "deck": "Ereignis", "card": card}
+            card_text = card.get("text") or card.get("text_de", "")
+            self.log(f"🃏 {player.name} zieht eine Ereigniskarte: {card_text}")
+            return {
+                "type": "CARD_DRAWN",
+                "deck": "Ereignis",
+                "card": card,
+                "player": player.name,
+                "roll_sum": roll_sum
+            }
 
         elif sq_type == "chest":
             card = self.draw_chest_card(player)
@@ -505,14 +622,60 @@ class GameRoom:
                 "image": card.get("image") or card.get("card_image_filename", ""),
                 "player": player.name
             }
-            if self.pending_action and self.pending_action.get("type") in ["BUY_OR_AUCTION", "TAX_CHOICE"]:
-                return self.pending_action
-            return {"type": "CARD", "deck": "Gemeinschaft", "card": card}
+            card_text = card.get("text") or card.get("text_de", "")
+            self.log(f"🃏 {player.name} zieht eine Gemeinschaftskarte: {card_text}")
+            return {
+                "type": "CARD_DRAWN",
+                "deck": "Gemeinschaft",
+                "card": card,
+                "player": player.name,
+                "roll_sum": roll_sum
+            }
 
         elif sq_type in ["go", "parking", "jail"]:
             return {"type": "END_TURN"}
 
         return {"type": "END_TURN"}
+
+    def confirm_card(self, player_id: str) -> dict:
+        player = self.current_player()
+        if not player or player.id != player_id:
+            return {"error": "Du bist nicht am Zug."}
+        if not self.pending_action or self.pending_action.get("type") != "CARD_DRAWN":
+            return {"error": "Keine offene Karte zu bestätigen."}
+
+        card = self.pending_action.get("card", {})
+        deck = self.pending_action.get("deck", "Ereignis")
+        roll_sum = self.pending_action.get("roll_sum", sum(self.dice))
+        old_pos = player.position
+        old_money = player.money
+
+        self.pending_action = None
+        self.apply_card(player, card, roll_sum)
+
+        new_pos = player.position
+        moved = (new_pos != old_pos)
+        passed_go = (moved and not player.in_jail and (player.money - old_money) >= 200)
+
+        if self.pending_action is None:
+            if player.in_jail and moved:
+                self.pending_action = {"type": "WENT_TO_JAIL"}
+            else:
+                self.pending_action = {"type": "END_TURN"}
+
+        self._check_doubles_reroll(player)
+
+        return {
+            "success": True,
+            "deck": deck,
+            "card": card,
+            "old_pos": old_pos,
+            "new_pos": new_pos,
+            "moved": moved,
+            "passed_go": passed_go,
+            "player": player.to_dict(),
+            "action": self.pending_action
+        }
 
     def pay_income_tax(self, player_id: str, mode: str = "flat") -> dict:
         player = self.current_player()
@@ -528,6 +691,7 @@ class GameRoom:
         self._record_payment(player, amount, "BANK")
         self.log(f"💸 {player.name} wählt bei der Einkommensteuer: {label}.")
         self.pending_action = {"type": "TAX_PAID", "tax": amount}
+        self._check_doubles_reroll(player)
         return {"success": True, "tax": amount, "player": player.to_dict()}
 
     def calculate_rent(self, sq_idx: int, roll_sum: int) -> int:
@@ -581,7 +745,6 @@ class GameRoom:
         # Karte wieder unten unter den Stapel schieben (außer Gefängnisfrei-Karte)
         if card.get("action") not in ["GET_OUT_OF_JAIL_FREE", "jail_free"]:
             self.chance_deck.append(c_idx)
-        self.apply_card(player, card, roll_sum)
         return card
 
     def draw_chest_card(self, player: Player) -> dict:
@@ -592,13 +755,10 @@ class GameRoom:
         card = COMMUNITY_CHEST_CARDS[c_idx]
         if card.get("action") not in ["GET_OUT_OF_JAIL_FREE", "jail_free"]:
             self.chest_deck.append(c_idx)
-        self.apply_card(player, card, 0)
         return card
 
     def apply_card(self, player: Player, card: dict, roll_sum: int):
         act = card.get("action", "")
-        card_text = card.get("text") or card.get("text_de", "")
-        self.log(f"Karte gezogen ({card.get('deck', '')}): {card_text}")
 
         if act in ["RECEIVE_MONEY", "money"]:
             amt = card.get("value") if "value" in card else card.get("amount", 0)
@@ -712,6 +872,7 @@ class GameRoom:
         state["owner"] = player.id
         self.log(f"{player.name} kauft {square['name']} für {price} DM!")
         self.pending_action = None
+        self._check_doubles_reroll(player)
         return {"success": True, "square": square, "player": player.to_dict()}
 
     # =========================================================================
@@ -738,6 +899,7 @@ class GameRoom:
             self.log(f"🔨 Niemand hat Bargeld für die Versteigerung von {square['name']}. Straße bleibt bei der Bank.")
             self.pending_action = {"type": "END_TURN"}
             self.auction_state = None
+            self._check_doubles_reroll(curr)
             return {"success": True, "auction_ended": True}
 
         self.auction_state = {
@@ -860,6 +1022,7 @@ class GameRoom:
 
             self.auction_state = None
             self.pending_action = {"type": "END_TURN"}
+            self._check_doubles_reroll()
             return {"success": True, "auction_ended": True}
 
         return {"success": True, "auction_ended": False, "auction": self.auction_state}
@@ -943,6 +1106,7 @@ class GameRoom:
         self._credit_money(player, refund)
         name = "ein HOTEL (zurück zu 4 Häusern)" if was_hotel else "ein Haus"
         self.log(f"{player.name} verkauft {name} auf {square['name']} (+{refund} DM)!")
+        self._check_doubles_reroll(player)
         return {"success": True, "houses": state["houses"], "money": player.money}
 
     # =========================================================================
@@ -1058,6 +1222,7 @@ class GameRoom:
 
         self.pending_trade = None
         self.log(f"✅ Handel zwischen {sender.name} und {target.name} erfolgreich abgeschlossen!")
+        self._check_doubles_reroll()
         return {"success": True}
 
     def reject_trade(self, player_id: str) -> dict:
@@ -1094,6 +1259,7 @@ class GameRoom:
             state["mortgaged"] = True
             self._credit_money(player, mortgage_val)
             self.log(f"{player.name} nimmt eine Hypothek auf {square['name']} auf (+{mortgage_val} DM).")
+            self._check_doubles_reroll(player)
             return {"success": True, "mortgaged": True, "money": player.money}
         else:
             cost = int(round(mortgage_val * 1.1))
@@ -1174,6 +1340,8 @@ class GameRoom:
             return {"error": "Du musst zuerst würfeln."}
         if self.auction_state:
             return {"error": "Bitte zuerst die laufende Versteigerung beenden."}
+        if self.pending_action and self.pending_action.get("type") == "CARD_DRAWN" and not player.is_bankrupt:
+            return {"error": "Bitte bestätige zuerst die gezogene Karte."}
         if self.pending_action and self.pending_action.get("type") == "BUY_OR_AUCTION" and not player.is_bankrupt:
             return {"error": "Bitte kaufe das Grundstück oder starte die Versteigerung."}
         if self.pending_action and self.pending_action.get("type") == "TAX_CHOICE" and not player.is_bankrupt:
@@ -1191,16 +1359,12 @@ class GameRoom:
 
         # Advance to next non-bankrupt player
         player.doubles_count = 0
-        active_players = [p for p in self.players if not p.is_bankrupt]
-        if len(active_players) <= 1:
-            self.status = "GAME_OVER"
-            winner = active_players[0] if active_players else player
-            self.log(f"🏆 {winner.name} hat das Spiel gewonnen!")
-            return {"success": True, "game_over": True, "winner": winner.to_dict()}
+        game_over_res = self._check_game_over(player)
+        if game_over_res:
+            return game_over_res
 
         self.rolled = False
         self.pending_action = None
-        self.last_card = None
 
         self.current_player_idx = (self.current_player_idx + 1) % len(self.players)
         while self.players[self.current_player_idx].is_bankrupt:
@@ -1209,6 +1373,25 @@ class GameRoom:
         next_p = self.current_player()
         self.log(f"{next_p.name} ist jetzt am Zug.")
         return {"success": True, "next_player": next_p.to_dict()}
+
+    def _check_game_over(self, fallback_player: Optional[Player] = None) -> Optional[dict]:
+        active_players = [p for p in self.players if not p.is_bankrupt]
+        if len(active_players) <= 1 and len(self.players) >= 2:
+            self.status = "GAME_OVER"
+            self.rolled = False
+            self.pending_action = None
+            self.auction_state = None
+            winner_obj = active_players[0] if active_players else (fallback_player or self.players[0])
+            props_count = sum(1 for st in self.board_state.values() if st["owner"] == winner_obj.id)
+            wealth = self.calculate_player_wealth(winner_obj)
+            self.winner = {
+                **winner_obj.to_dict(),
+                "wealth": wealth,
+                "properties_count": props_count
+            }
+            self.log(f"🏆 {winner_obj.name} hat das Spiel gewonnen!")
+            return {"success": True, "game_over": True, "winner": self.winner}
+        return None
 
     def declare_bankruptcy(self, player_id: str) -> dict:
         player = next((p for p in self.players if p.id == player_id), None)
@@ -1258,9 +1441,16 @@ class GameRoom:
         player.jail_cards = 0
         player.is_bankrupt = True
         player.creditor_id = None
-        self.pending_action = None
-        self.rolled = True
-        return self.end_turn(player_id)
+
+        game_over_res = self._check_game_over(player)
+        if game_over_res:
+            return game_over_res
+
+        if self.current_player() and self.current_player().id == player_id:
+            self.pending_action = None
+            self.rolled = True
+            return self.end_turn(player_id)
+        return {"success": True, "bankrupt_player": player.to_dict()}
 
     def to_dict(self) -> dict:
         return {
@@ -1268,6 +1458,7 @@ class GameRoom:
             "host_id": self.host_id,
             "party_id": self.party_id,
             "status": self.status,
+            "winner": self.winner,
             "players": [p.to_dict() for p in self.players],
             "current_player_idx": self.current_player_idx,
             "current_player": self.current_player().to_dict() if self.players else None,
