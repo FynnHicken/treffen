@@ -3,6 +3,8 @@ import { WebSocketServer, WebSocket } from 'ws';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
+const SOLO_ROOM_TTL_MS = 60000; // 60 seconds for unused rooms with <= 1 player
+
 class Room {
     constructor(code) {
         this.code = code;
@@ -16,7 +18,20 @@ class Room {
         this.activeGame = null;
         this.gameSettings = {};
         this.hostId = null;
+        this.creatorId = null;
+        this.hostTransferred = false;
         this.disconnectTimers = new Map(); // playerId -> timer
+        this.expiresAt = Date.now() + SOLO_ROOM_TTL_MS;
+    }
+
+    updateExpiryTimer(forceReset = false) {
+        if (this.players.size <= 1 && !this.activeGame) {
+            if (!this.expiresAt || forceReset) {
+                this.expiresAt = Date.now() + SOLO_ROOM_TTL_MS;
+            }
+        } else {
+            this.expiresAt = null;
+        }
     }
 
     addPlayer(user, ws) {
@@ -28,9 +43,25 @@ class Room {
             this.disconnectTimers.delete(user.id);
         }
 
-        // Host assignment: first active player or maintain existing host
-        const isFirst = this.players.size === 0 || !this.hostId;
-        const isHost = isFirst ? true : (this.hostId === user.id);
+        const wasEmpty = this.players.size === 0;
+
+        // Remember the original creator of this room
+        if (!this.creatorId && (wasEmpty || user.isCreator)) {
+            this.creatorId = user.id;
+        }
+
+        // If original creator reconnects and host was not manually transferred, restore creator as host
+        if (this.creatorId === user.id && !this.hostTransferred) {
+            this.hostId = user.id;
+        } else if (!this.hostId || !this.players.has(this.hostId)) {
+            if (this.hostId !== user.id && this.players.size === 0) {
+                this.hostId = user.id;
+            } else if (!this.hostId) {
+                this.hostId = user.id;
+            }
+        }
+
+        const isHost = (this.hostId === user.id);
 
         const player = {
             id: user.id,
@@ -44,15 +75,18 @@ class Room {
             lastSeen: Date.now()
         };
 
-        if (isHost) {
-            this.hostId = user.id;
-        }
-
         this.players.set(user.id, player);
         this.sockets.set(user.id, ws);
         this.socketToPlayerId.set(ws, user.id);
 
-        console.log(`[Room ${this.code}] Player joined: ${player.name} (${player.id}) [Host: ${isHost}]`);
+        // Ensure all other players have isHost = false
+        for (const [pid, p] of this.players.entries()) {
+            p.isHost = (pid === this.hostId);
+        }
+
+        this.updateExpiryTimer(wasEmpty);
+
+        console.log(`[Room ${this.code}] Player joined: ${player.name} (${player.id}) [Host: ${isHost}, currentHost: ${this.hostId}]`);
         this.broadcastRoster();
     }
 
@@ -88,7 +122,7 @@ class Room {
         this.socketToPlayerId.delete(ws);
         this.sockets.delete(playerId);
 
-        // Grace period of 4 seconds before removing player (handles page refresh / transient socket drop)
+        // Grace period of 15 seconds before removing player (handles app switching on mobile to share room code, page refresh, etc.)
         const timer = setTimeout(() => {
             this.disconnectTimers.delete(playerId);
             const player = this.players.get(playerId);
@@ -108,16 +142,25 @@ class Room {
                     console.log(`[Room ${this.code}] New host elected: ${remaining[0].name}`);
                 } else {
                     this.hostId = null;
+                    this.activeGame = null;
+                    this.activeModalGameId = null;
                 }
             }
 
+            if (this.players.size === 0 && this.disconnectTimers.size === 0) {
+                rooms.delete(this.code);
+                console.log(`[Room ${this.code}] Empty room removed.`);
+                return;
+            }
+
+            this.updateExpiryTimer(true);
             this.broadcastRoster();
             this.broadcast({
                 type: "PLAYER_LEFT",
                 playerId: playerId,
                 name: player.name
             });
-        }, 4000);
+        }, 15000);
 
         this.disconnectTimers.set(playerId, timer);
     }
@@ -157,6 +200,7 @@ class Room {
         if (!this.players.has(targetPlayerId)) return false;
         const previousHostId = this.hostId;
         this.hostId = targetPlayerId;
+        this.hostTransferred = true;
         const targetPlayer = this.players.get(targetPlayerId);
         console.log(`[Room ${this.code}] Host transferred from ${previousHostId} to ${targetPlayer ? targetPlayer.name : targetPlayerId}`);
         this.broadcastRoster();
@@ -173,25 +217,22 @@ class Room {
         const senderId = this.socketToPlayerId.get(ws) || (data && (data.userId || data.playerId));
         if (!senderId) return false;
         if (senderId === this.hostId) return true;
-        const player = this.players.get(senderId);
-        if (player && player.isHost) {
-            this.hostId = senderId;
-            return true;
-        }
         if (!this.hostId && this.players.size > 0) {
-            this.hostId = senderId;
-            if (player) player.isHost = true;
-            return true;
+            const firstPlayer = Array.from(this.players.values()).sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0))[0];
+            this.hostId = firstPlayer ? firstPlayer.id : senderId;
+            return senderId === this.hostId;
         }
         return false;
     }
 
     broadcastRoster() {
+        this.updateExpiryTimer(false);
         const playerList = Array.from(this.players.values()).sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
         playerList.forEach(p => {
             p.isHost = (p.id === this.hostId);
         });
 
+        const now = Date.now();
         this.broadcast({
             type: "ROSTER_SYNC",
             players: playerList,
@@ -200,7 +241,10 @@ class Room {
             votes: this.votes,
             activeModalGameId: this.activeModalGameId,
             activeGame: this.activeGame,
-            gameSettings: this.gameSettings
+            gameSettings: this.gameSettings,
+            expiresAt: this.expiresAt,
+            remainingMs: this.expiresAt ? Math.max(0, this.expiresAt - now) : null,
+            ttlTotalMs: SOLO_ROOM_TTL_MS
         });
     }
 
@@ -228,14 +272,38 @@ function getOrCreateRoom(code) {
     return rooms.get(cleanCode);
 }
 
+// Automatically clean up unused rooms with <= 1 player after 60 seconds
+setInterval(() => {
+    const now = Date.now();
+    for (const [code, room] of rooms.entries()) {
+        if (room.players.size <= 1 && !room.activeGame && room.expiresAt && now >= room.expiresAt) {
+            console.log(`[Room ${code}] Auto-deleting unused room (<= 1 player for 60s)`);
+            room.broadcast({
+                type: "ROOM_EXPIRED",
+                code: code,
+                reason: "Ungenutzter Raum (max. 1 Person) wurde nach 60 Sekunden automatisch geschlossen."
+            });
+            for (const ws of room.sockets.values()) {
+                try { ws.close(); } catch (e) {}
+            }
+            for (const t of room.disconnectTimers.values()) {
+                clearTimeout(t);
+            }
+            rooms.delete(code);
+        }
+    }
+}, 1000);
+
 // HTTP Server for Healthchecks & Open Rooms Listing
 const server = http.createServer((req, res) => {
     try {
         const reqUrl = new URL(req.url, 'http://localhost');
         if (reqUrl.pathname === '/rooms' || reqUrl.pathname === '/party-ws/rooms' || reqUrl.searchParams.get('rooms') === '1') {
+            const now = Date.now();
             const activeRooms = [];
             for (const [code, room] of rooms.entries()) {
                 if (room.players.size > 0) {
+                    room.updateExpiryTimer(false);
                     const playerList = Array.from(room.players.values()).sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
                     const host = playerList.find(p => p.id === room.hostId) || playerList[0];
                     activeRooms.push({
@@ -244,7 +312,10 @@ const server = http.createServer((req, res) => {
                         hostAvatar: host ? host.avatar : '👑',
                         playerCount: playerList.length,
                         players: playerList.map(p => ({ name: p.name, avatar: p.avatar })),
-                        activeGame: room.activeGame ? room.activeGame.gameId : null
+                        activeGame: room.activeGame ? room.activeGame.gameId : null,
+                        expiresAt: room.expiresAt,
+                        remainingMs: room.expiresAt ? Math.max(0, room.expiresAt - now) : null,
+                        ttlTotalMs: SOLO_ROOM_TTL_MS
                     });
                 }
             }
@@ -394,9 +465,16 @@ wss.on('connection', (ws, req) => {
                     if (room.isSenderHost(ws, data)) {
                         room.activeModalGameId = null;
                         room.activeGame = null;
+                        room.updateExpiryTimer(true);
                         room.broadcast({ type: 'EXIT_GAME' });
                         room.broadcastRoster();
                     }
+                    break;
+                }
+
+                case 'EXTEND_ROOM_TTL': {
+                    room.updateExpiryTimer(true);
+                    room.broadcastRoster();
                     break;
                 }
             }

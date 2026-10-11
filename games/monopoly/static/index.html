@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Monopoly 3D - Wii Edition</title>
-    <link rel="stylesheet" href="static/css/style.css?v=3.7">
+    <link rel="stylesheet" href="static/css/style.css?v=3.8">
     <link rel="icon" href="static/assets/textures/board_wt_cl_go_cm.png">
     <script>
         (function() {
@@ -72,6 +72,7 @@
                     <button class="btn-cam" id="btn-cam-2d" title="2D Draufsicht (Top-Down, Mobil)">2D</button>
                     <button class="btn-cam" id="btn-cam-25d" title="2.5D Schrägansicht (Tisch-Modus)">2.5D</button>
                     <button class="btn-cam" id="btn-cam-3d" title="3D Freie Kamera (Drehen & Zoomen)">3D</button>
+                    <button class="btn-cam" id="btn-cam-cards" title="Zur Kartenansicht auf dem Tisch wechseln" onclick="window.MonopolyBoard3D && window.MonopolyBoard3D.toggleSeatFocus && window.MonopolyBoard3D.toggleSeatFocus(0)">🃏 Karten</button>
                 </div>
                 <button class="btn-icon" id="btn-rot-left" title="Brett 90° nach links drehen">↺</button>
                 <button class="btn-icon" id="btn-rot-right" title="Brett 90° nach rechts drehen">↻</button>
@@ -132,6 +133,10 @@
                 <button class="btn-action btn-portfolio" id="btn-portfolio" title="Deinen Besitz verwalten">
                     <span>📋</span>
                     <span>Besitz</span>
+                </button>
+                <button class="btn-action" id="btn-card-view" title="Zur 3D-Kartenansicht am Tisch zoomen" style="background:rgba(52, 152, 219, 0.28); border:1px solid rgba(52, 152, 219, 0.6); color:#fff;" onclick="window.MonopolyBoard3D && window.MonopolyBoard3D.toggleSeatFocus && window.MonopolyBoard3D.toggleSeatFocus(0)">
+                    <span>🃏</span>
+                    <span id="btn-card-view-label">Zur Kartenansicht</span>
                 </button>
                 <button class="btn-action" id="btn-bankrupt" style="display:none; background:#c0392b; color:#fff;">
                     <span>💀</span>
@@ -386,10 +391,10 @@
     <!-- Scripts with Cache Busting -->
     <script src="static/js/three.min.js"></script>
     <script src="static/js/OrbitControls.js"></script>
-    <script src="static/js/asset_config.js?v=3.7"></script>
-    <script src="static/js/audio.js?v=3.7"></script>
-    <script src="static/js/board3d.js?v=3.7"></script>
-    <script src="static/js/game_client.js?v=3.7"></script>
+    <script src="static/js/asset_config.js?v=3.8"></script>
+    <script src="static/js/audio.js?v=3.8"></script>
+    <script src="static/js/board3d.js?v=3.8"></script>
+    <script src="static/js/game_client.js?v=3.8"></script>
 
     <script>
         function launchMonopoly() {

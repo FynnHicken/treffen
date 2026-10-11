@@ -2,13 +2,14 @@ import os
 import sys
 import json
 import uuid
+import time
 import asyncio
 from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Dict, Set
+from typing import Dict, Set, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SERVER_DIR = Path(__file__).resolve().parent
@@ -36,10 +37,54 @@ async def cache_static_assets(request, call_next):
         response.headers["Cache-Control"] = "public, max-age=604800, immutable"
     return response
 
+SOLO_ROOM_TTL_SEC = 60.0
+
 # In-memory rooms and WebSocket connections
 rooms: Dict[str, GameRoom] = {}
 connections: Dict[str, Dict[str, WebSocket]] = {} # room_id -> {player_id: ws}
 auction_tasks: Dict[str, asyncio.Task] = {}
+room_expiry: Dict[str, float] = {} # room_id -> unix timestamp when room expires
+
+def update_room_expiry(room_id: str, force_reset: bool = False):
+    room = rooms.get(room_id)
+    if not room:
+        room_expiry.pop(room_id, None)
+        return
+    if len(room.players) <= 1 and room.status == "LOBBY":
+        if room_id not in room_expiry or force_reset:
+            room_expiry[room_id] = time.time() + SOLO_ROOM_TTL_SEC
+    else:
+        room_expiry.pop(room_id, None)
+
+async def cleanup_expired_rooms_loop():
+    while True:
+        await asyncio.sleep(1.0)
+        now = time.time()
+        for r_id in list(rooms.keys()):
+            room = rooms.get(r_id)
+            if not room:
+                room_expiry.pop(r_id, None)
+                continue
+            update_room_expiry(r_id, False)
+            exp = room_expiry.get(r_id)
+            if exp and now >= exp and len(room.players) <= 1 and room.status == "LOBBY":
+                await broadcast_room(r_id, {
+                    "type": "ROOM_EXPIRED",
+                    "room_id": r_id,
+                    "message": "Ungenutzter Raum (max. 1 Person) wurde nach 60 Sekunden automatisch gelöscht."
+                })
+                conns = connections.pop(r_id, {})
+                for ws in list(conns.values()):
+                    try:
+                        await ws.close()
+                    except Exception:
+                        pass
+                rooms.pop(r_id, None)
+                room_expiry.pop(r_id, None)
+
+@app.on_event("startup")
+async def start_cleanup_task():
+    asyncio.create_task(cleanup_expired_rooms_loop())
 
 async def broadcast_room(room_id: str, message: dict):
     if room_id in connections:
@@ -63,12 +108,16 @@ async def get_config():
 
 @app.get("/api/rooms")
 async def list_rooms():
+    now = time.time()
     room_list = []
     for r_id, room in list(rooms.items()):
         active_conns = len(connections.get(r_id, {}))
         human_players = [p for p in room.players if not p.is_bot]
         if active_conns == 0:
             continue
+        update_room_expiry(r_id, False)
+        exp = room_expiry.get(r_id)
+        rem_ms = max(0, int((exp - now) * 1000)) if exp else None
         host_player = next((p for p in room.players if p.id == room.host_id), None)
         host_name = host_player.name if host_player else (human_players[0].name if human_players else "Host")
         room_list.append({
@@ -77,7 +126,9 @@ async def list_rooms():
             "player_count": len(room.players),
             "connected_count": active_conns,
             "status": room.status,
-            "players": [p.name for p in room.players]
+            "players": [p.name for p in room.players],
+            "remaining_ms": rem_ms,
+            "ttl_total_ms": int(SOLO_ROOM_TTL_SEC * 1000)
         })
     return {"rooms": room_list}
 
@@ -90,6 +141,7 @@ async def create_room(data: dict):
     room = GameRoom(room_id, host_id, party_id)
     rooms[room_id] = room
     connections[room_id] = {}
+    update_room_expiry(room_id, True)
     return {"room_id": room_id, "host_id": host_id}
 
 @app.websocket("/ws/{room_id}/{player_id}")
@@ -100,6 +152,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
     if room_id not in rooms:
         rooms[room_id] = GameRoom(room_id, player_id)
         connections[room_id] = {}
+        update_room_expiry(room_id, True)
 
     room = rooms[room_id]
     connections[room_id][player_id] = websocket
@@ -114,10 +167,14 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 name = data.get("name", f"Spieler {len(room.players)+1}")
                 token = data.get("token", "dog")
                 color = data.get("color", "#e74c3c")
+                if data.get("is_host") is True:
+                    room.host_id = player_id
                 room.add_player(player_id, name, token, color)
+                update_room_expiry(room_id, False)
                 await broadcast_room(room_id, {
                     "type": "STATE_UPDATE",
-                    "state": room.to_dict()
+                    "state": room.to_dict(),
+                    "remaining_ms": max(0, int((room_expiry[room_id] - time.time()) * 1000)) if room_id in room_expiry else None
                 })
 
             elif action == "START_GAME":

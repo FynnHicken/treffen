@@ -600,12 +600,37 @@
     }
 
     let openRoomsPollInterval = null;
+    let openRoomsAnimInterval = null;
 
     function stopOpenRoomsPolling() {
         if (openRoomsPollInterval) {
             clearInterval(openRoomsPollInterval);
             openRoomsPollInterval = null;
         }
+        if (openRoomsAnimInterval) {
+            clearInterval(openRoomsAnimInterval);
+            openRoomsAnimInterval = null;
+        }
+    }
+
+    function tickOpenRoomsExpiryBars() {
+        const now = Date.now();
+        document.querySelectorAll('.mono-room-expiry-bar').forEach(bar => {
+            const target = parseInt(bar.getAttribute('data-expires-at') || '0', 10);
+            const ttl = parseInt(bar.getAttribute('data-ttl') || '60000', 10);
+            if (!target) return;
+            const remMs = Math.max(0, target - now);
+            const pct = Math.max(0, Math.min(100, (remMs / ttl) * 100));
+            bar.style.width = `${pct}%`;
+            bar.style.background = remMs <= 15000 ? '#ef4444' : (remMs <= 30000 ? '#f59e0b' : '#2ecc71');
+            const badge = bar.parentElement && bar.parentElement.parentElement
+                ? bar.parentElement.parentElement.querySelector('.mono-room-expiry-sec')
+                : null;
+            if (badge) {
+                badge.textContent = `⏳ ${Math.ceil(remMs / 1000)}s`;
+                badge.style.color = remMs <= 15000 ? '#f87171' : '#fbbf24';
+            }
+        });
     }
 
     async function refreshOpenRooms() {
@@ -619,26 +644,44 @@
                 listEl.innerHTML = `<div style="font-size:12px; color:var(--text-muted); text-align:center; padding:14px;">Aktuell keine offenen Räume – erstelle oben einfach einen neuen Raum!</div>`;
                 return;
             }
+            const now = Date.now();
             listEl.innerHTML = rooms.map(r => {
                 const isLobby = (r.status === 'LOBBY');
                 const statusBadge = isLobby
                     ? `<span style="font-size:10px; background:#2ecc71; color:#000; padding:2px 6px; border-radius:4px; font-weight:800;">LOBBY</span>`
                     : `<span style="font-size:10px; background:#e67e22; color:#fff; padding:2px 6px; border-radius:4px; font-weight:800;">LÄUFT</span>`;
+                const hasExpiry = typeof r.remaining_ms === 'number' && r.remaining_ms > 0;
+                const ttl = r.ttl_ms || 60000;
+                const targetTs = hasExpiry ? (now + r.remaining_ms) : 0;
+                const remSec = hasExpiry ? Math.ceil(r.remaining_ms / 1000) : 0;
+                const pct = hasExpiry ? Math.max(0, Math.min(100, (r.remaining_ms / ttl) * 100)) : 100;
+                const expiryBadge = hasExpiry
+                    ? `<span class="mono-room-expiry-sec" style="font-size:10px; font-weight:700; color:#fbbf24; background:rgba(245,158,11,0.14); padding:2px 6px; border-radius:4px;">⏳ ${remSec}s</span>`
+                    : '';
+                const expiryBar = hasExpiry
+                    ? `<div style="width:100%; height:3px; background:rgba(255,255,255,0.08); border-radius:2px; overflow:hidden; margin-top:4px;">
+                           <div class="mono-room-expiry-bar" data-expires-at="${targetTs}" data-ttl="${ttl}" style="width:${pct}%; height:100%; background:#2ecc71; transition:width 0.2s linear, background-color 0.3s ease;"></div>
+                       </div>`
+                    : '';
                 return `
-                    <div class="lobby-player-row" style="padding:8px 10px;">
-                        <div style="display:flex; flex-direction:column; gap:2px;">
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <strong style="color:var(--accent-gold); font-size:14px; letter-spacing:1px;">#${r.room_id}</strong>
-                                ${statusBadge}
-                                <span style="font-size:12px; color:#cbd5e1;">Host: <strong>${r.host_name}</strong></span>
+                    <div class="lobby-player-row" style="padding:8px 10px; flex-direction:column; align-items:stretch; gap:4px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                            <div style="display:flex; flex-direction:column; gap:2px;">
+                                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                    <strong style="color:var(--accent-gold); font-size:14px; letter-spacing:1px;">#${r.room_id}</strong>
+                                    ${statusBadge}
+                                    <span style="font-size:12px; color:#cbd5e1;">Host: <strong>${r.host_name}</strong></span>
+                                    ${expiryBadge}
+                                </div>
+                                <div style="font-size:11px; color:var(--text-muted);">
+                                    👥 ${r.player_count} Spieler (${(r.players || []).join(', ')})
+                                </div>
                             </div>
-                            <div style="font-size:11px; color:var(--text-muted);">
-                                👥 ${r.player_count} Spieler (${(r.players || []).join(', ')})
-                            </div>
+                            <button class="btn-action btn-buy" style="font-size:12px; padding:6px 12px;" onclick="window.MonopolyGame.connectToRoom('${r.room_id}')">
+                                Beitreten →
+                            </button>
                         </div>
-                        <button class="btn-action btn-buy" style="font-size:12px; padding:6px 12px;" onclick="window.MonopolyGame.connectToRoom('${r.room_id}')">
-                            Beitreten →
-                        </button>
+                        ${expiryBar}
                     </div>
                 `;
             }).join('');
@@ -686,6 +729,7 @@
         refreshOpenRooms();
         stopOpenRoomsPolling();
         openRoomsPollInterval = setInterval(refreshOpenRooms, 3000);
+        openRoomsAnimInterval = setInterval(tickOpenRoomsExpiryBars, 200);
     }
 
     function showRoomLobbyStep() {
@@ -778,7 +822,8 @@
                 action: 'JOIN',
                 name: playerName,
                 token: selectedToken,
-                color: selectedColor
+                color: selectedColor,
+                is_host: (getQueryParam('host') === '1')
             });
         };
 
@@ -807,6 +852,12 @@
     // Message Dispatcher
     function handleServerMessage(msg) {
         console.log('Server message:', msg.type, msg);
+
+        if (msg.type === 'ROOM_EXPIRED') {
+            showToast(msg.message || 'Raum wurde nach 60s Inaktivität automatisch geschlossen.', 'warning');
+            showRoomSelector();
+            return;
+        }
 
         if (msg.type === 'DICE_ROLLED') {
             isTokenInTransit = true;

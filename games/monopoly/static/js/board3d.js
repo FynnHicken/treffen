@@ -1127,6 +1127,10 @@
             currentFocusedSeat = (seatIdx !== undefined) ? (seatIdx % 4) : 0;
             const bar = document.getElementById('seat-focus-bar');
             if (bar) bar.style.display = 'block';
+            const cardBtnLabel = document.getElementById('btn-card-view-label');
+            if (cardBtnLabel) cardBtnLabel.textContent = 'Aufs Spielbrett';
+            const camCardsBtn = document.getElementById('btn-cam-cards');
+            if (camCardsBtn) camCardsBtn.classList.add('active');
 
             const isMobile = window.innerWidth <= 850;
             const distMult = isMobile ? 1.25 : 1.0;
@@ -1147,8 +1151,21 @@
             currentFocusedSeat = null;
             const bar = document.getElementById('seat-focus-bar');
             if (bar) bar.style.display = 'none';
+            const cardBtnLabel = document.getElementById('btn-card-view-label');
+            if (cardBtnLabel) cardBtnLabel.textContent = 'Zur Kartenansicht';
+            const camCardsBtn = document.getElementById('btn-cam-cards');
+            if (camCardsBtn) camCardsBtn.classList.remove('active');
             this.setCameraPreset(cameraMode || '2.5d');
             if (window.MonopolySound) window.MonopolySound.playClick();
+        },
+
+        toggleSeatFocus: function(seatIdx) {
+            if (currentFocusedSeat !== null) {
+                this.exitSeatFocus();
+            } else {
+                this.focusSeatCards(seatIdx !== undefined ? seatIdx : 0);
+                if (window.MonopolySound) window.MonopolySound.playClick();
+            }
         },
 
         // Update Tokens on Board
