@@ -416,8 +416,8 @@
             <p style="color: var(--ink-light); margin-bottom: 16px; font-size: 0.95rem;">
                 Gib den 5- oder 6-stelligen Code deiner Freunde ein:
             </p>
-            <form onsubmit="handleCodeSubmit(event)" style="display: flex; flex-direction: column; gap: 14px;">
-                <input type="text" id="joinCodeInput" maxlength="12" placeholder="z. B. 7K9PM2" style="font-family: monospace; font-size: 1.3rem; font-weight: 800; text-transform: uppercase; text-align: center; letter-spacing: 0.18em; padding: 10px 14px; border-radius: 12px; border: var(--ink-border); box-shadow: 2px 2px 0px var(--ink); color: var(--ink); background: var(--bg-surface);" required autofocus>
+            <form onsubmit="handleCodeSubmit(event)" style="display: flex; flex-direction: column; gap: 14px;" autocomplete="off" data-form-type="other">
+                <input type="text" id="joinCodeInput" name="party_switch_token" maxlength="12" placeholder="z. B. 7K9PM2" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" data-form-type="other" data-lpignore="true" data-1p-ignore="true" style="font-family: monospace; font-size: 1.3rem; font-weight: 800; text-transform: uppercase; text-align: center; letter-spacing: 0.18em; padding: 10px 14px; border-radius: 12px; border: var(--ink-border); box-shadow: 2px 2px 0px var(--ink); color: var(--ink); background: var(--bg-surface);" required autofocus>
                 <div style="display: flex; gap: 10px; justify-content: center;">
                     <button type="submit" class="action-btn-sm" style="flex: 2; padding: 10px 16px; font-size: 1rem;">🚀 Beitreten</button>
                     <button type="button" class="action-btn-sm" onclick="generateNewRoomCode()" style="flex: 1; background: var(--bg-surface); color: var(--ink); border: var(--ink-border); padding: 10px 12px; font-size: 0.9rem;" title="Neuen zufälligen Code erzeugen">🎲 Neu</button>
@@ -444,7 +444,7 @@
             <div class="welcome-profile-section">
                 <div class="welcome-field">
                     <label for="welcomeNicknameInput">Dein Nickname:</label>
-                    <input type="text" id="welcomeNicknameInput" maxlength="16" placeholder="Dein Nickname..." autocomplete="nickname" required>
+                    <input type="text" id="welcomeNicknameInput" name="player_game_alias" maxlength="16" placeholder="Dein Nickname..." autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-form-type="other" data-lpignore="true" data-1p-ignore="true" required>
                 </div>
 
                 <div class="welcome-field">
@@ -473,8 +473,8 @@
                 <!-- Action 2: Join with Code -->
                 <div class="welcome-join-box">
                     <label for="welcomeCodeInput" class="welcome-join-label">Party-Code eingeben:</label>
-                    <form onsubmit="handleWelcomeJoinParty(event)" class="welcome-join-form">
-                        <input type="text" id="welcomeCodeInput" maxlength="12" placeholder="z. B. 7K9PM2" autocomplete="off" spellcheck="false">
+                    <form onsubmit="handleWelcomeJoinParty(event)" class="welcome-join-form" autocomplete="off" data-form-type="other">
+                        <input type="text" id="welcomeCodeInput" name="party_room_token" maxlength="12" placeholder="z. B. 7K9PM2" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" data-form-type="other" data-lpignore="true" data-1p-ignore="true">
                         <button type="submit" class="btn-welcome-join" id="btnWelcomeJoin">
                             🚀 Beitreten
                         </button>
@@ -508,7 +508,7 @@
             <div class="modal-content" style="display: flex; flex-direction: column; gap: 18px;">
                 <div>
                     <label style="font-weight: 700; display: block; margin-bottom: 6px;">Dein Name:</label>
-                    <input type="text" id="profileNameInput" maxlength="16" placeholder="Dein Name..." style="width: 100%; padding: 10px 14px; border: var(--ink-border); border-radius: 12px; font-family: var(--font-body); font-size: 1.1rem; background: var(--bg-surface); color: var(--ink);">
+                    <input type="text" id="profileNameInput" name="player_edit_alias" maxlength="16" placeholder="Dein Name..." autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-form-type="other" data-lpignore="true" data-1p-ignore="true" style="width: 100%; padding: 10px 14px; border: var(--ink-border); border-radius: 12px; font-family: var(--font-body); font-size: 1.1rem; background: var(--bg-surface); color: var(--ink);">
                 </div>
                 <div>
                     <label style="font-weight: 700; display: block; margin-bottom: 8px;">Wähle deinen Avatar:</label>
