@@ -9,7 +9,7 @@ class Room {
         this.players = new Map(); // id -> player object
         this.sockets = new Map(); // id -> WebSocket
         this.socketToPlayerId = new Map(); // ws -> playerId
-        this.votes = { skribbol: 0, uno: 0, codenames: 0, price_guess: 0 };
+        this.votes = { skribbol: 0, uno: 0, codenames: 0, price_guess: 0, monopoly: 0 };
         this.userVotes = new Map(); // playerId -> gameId
         this.isVotingActive = false;
         this.activeModalGameId = null;
@@ -123,7 +123,7 @@ class Room {
     }
 
     recalcVotes() {
-        const counts = { skribbol: 0, uno: 0, codenames: 0, price_guess: 0 };
+        const counts = { skribbol: 0, uno: 0, codenames: 0, price_guess: 0, monopoly: 0 };
         for (const gameId of this.userVotes.values()) {
             if (counts[gameId] !== undefined) {
                 counts[gameId]++;
@@ -228,8 +228,35 @@ function getOrCreateRoom(code) {
     return rooms.get(cleanCode);
 }
 
-// HTTP Server for Healthchecks
+// HTTP Server for Healthchecks & Open Rooms Listing
 const server = http.createServer((req, res) => {
+    try {
+        const reqUrl = new URL(req.url, 'http://localhost');
+        if (reqUrl.pathname === '/rooms' || reqUrl.pathname === '/party-ws/rooms' || reqUrl.searchParams.get('rooms') === '1') {
+            const activeRooms = [];
+            for (const [code, room] of rooms.entries()) {
+                if (room.players.size > 0) {
+                    const playerList = Array.from(room.players.values()).sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
+                    const host = playerList.find(p => p.id === room.hostId) || playerList[0];
+                    activeRooms.push({
+                        code: code,
+                        hostName: host ? host.name : 'Host',
+                        hostAvatar: host ? host.avatar : '👑',
+                        playerCount: playerList.length,
+                        players: playerList.map(p => ({ name: p.name, avatar: p.avatar })),
+                        activeGame: room.activeGame ? room.activeGame.gameId : null
+                    });
+                }
+            }
+            res.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            });
+            res.end(JSON.stringify({ rooms: activeRooms }));
+            return;
+        }
+    } catch (e) {}
+
     if (req.url === '/health' || req.url === '/') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({

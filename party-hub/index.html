@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Treffen – Dein Spieleabend</title>
-    <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="themes.css">
+    <link rel="stylesheet" href="styles.css?v=2.1">
+    <link rel="stylesheet" href="themes.css?v=2.1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Comic+Neue:wght@400;700&family=Orbitron:wght@600;800&family=Outfit:wght@400;600;700&family=Patrick+Hand&family=Plus+Jakarta+Sans:wght@600;800&display=swap" rel="stylesheet">
@@ -31,8 +31,8 @@
                     <button class="icon-btn" id="qrCodeBtn" title="QR-Code für Smartphones anzeigen">
                         📱
                     </button>
-                    <button class="icon-btn" id="changeRoomBtn" title="Code eingeben oder wechseln">
-                        ✏️
+                    <button class="icon-btn" id="changeRoomBtn" title="Raum wechseln, beitreten oder neu erstellen" style="padding: 3px 8px; font-weight: 700; font-size: 0.82rem;">
+                        🚪 Raum wechseln
                     </button>
                 </div>
             </div>
@@ -409,30 +409,42 @@
 
     <!-- Change Room / Enter Code Modal -->
     <div class="modal-backdrop" id="codeModal" style="display: none;">
-        <div class="modal-card" style="max-width: 400px; text-align: center;">
+        <div class="modal-card" style="max-width: 460px; text-align: center;">
             <button class="close-modal-btn" onclick="closeCodeModal()">✕</button>
-            <div style="font-size: 2.4rem; margin-bottom: 8px;">🔑</div>
-            <h2 style="margin-bottom: 6px;">Party-Code eingeben</h2>
-            <p style="color: var(--ink-light); margin-bottom: 16px; font-size: 0.95rem;">
-                Gib den 5- oder 6-stelligen Code deiner Freunde ein:
+            <div style="font-size: 2.2rem; margin-bottom: 4px;">🚪</div>
+            <h2 style="margin-bottom: 4px;">Party-Raum wechseln</h2>
+            <p style="color: var(--ink-light); margin-bottom: 12px; font-size: 0.92rem;">
+                Erstelle einen neuen Raum oder tritt der Party deiner Freunde bei:
             </p>
-            <form onsubmit="handleCodeSubmit(event)" style="display: flex; flex-direction: column; gap: 14px;">
-                <input type="text" id="joinCodeInput" maxlength="12" placeholder="z. B. 7K9PM2" style="font-family: monospace; font-size: 1.3rem; font-weight: 800; text-transform: uppercase; text-align: center; letter-spacing: 0.18em; padding: 10px 14px; border-radius: 12px; border: var(--ink-border); box-shadow: 2px 2px 0px var(--ink); color: var(--ink); background: var(--bg-surface);" required autofocus>
-                <div style="display: flex; gap: 10px; justify-content: center;">
-                    <button type="submit" class="action-btn-sm" style="flex: 2; padding: 10px 16px; font-size: 1rem;">🚀 Beitreten</button>
-                    <button type="button" class="action-btn-sm" onclick="generateNewRoomCode()" style="flex: 1; background: var(--bg-surface); color: var(--ink); border: var(--ink-border); padding: 10px 12px; font-size: 0.9rem;" title="Neuen zufälligen Code erzeugen">🎲 Neu</button>
-                </div>
+
+            <button type="button" class="btn-primary-launch" onclick="generateNewRoomCode()" style="width: 100%; justify-content: center; margin-bottom: 10px; padding: 11px 16px; font-size: 1.05rem;">
+                ➕ Neuen Party-Raum erstellen
+            </button>
+
+            <form onsubmit="handleCodeSubmit(event)" style="display: flex; gap: 8px; width: 100%; margin-bottom: 10px;">
+                <input type="text" id="joinCodeInput" maxlength="12" placeholder="RAUM-CODE (z. B. 7K9PM2)" style="flex: 1; font-family: monospace; font-size: 1.1rem; font-weight: 800; text-transform: uppercase; text-align: center; letter-spacing: 0.14em; padding: 10px 12px; border-radius: 12px; border: var(--ink-border); box-shadow: 2px 2px 0px var(--ink); color: var(--ink); background: var(--bg-surface);" required>
+                <button type="submit" class="action-btn-sm" style="padding: 10px 16px; font-size: 0.98rem; white-space: nowrap;">🚀 Beitreten</button>
             </form>
+
+            <div style="text-align: left; width: 100%; background: var(--bg-surface-elevated); border: var(--ink-border); border-radius: 12px; padding: 10px 12px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                    <span style="font-weight: 800; font-size: 0.85rem; color: var(--ink);">🌐 Offene Party-Räume</span>
+                    <button type="button" class="icon-btn" onclick="refreshPartyOpenRooms()" title="Aktualisieren" style="font-size: 0.78rem; padding: 2px 8px;">🔄</button>
+                </div>
+                <div id="codeModalOpenRoomsList" style="display: flex; flex-direction: column; gap: 6px; max-height: 150px; overflow-y: auto;">
+                    <div style="font-size: 0.82rem; color: var(--ink-light); text-align: center; padding: 8px;">Suche nach aktiven Räumen...</div>
+                </div>
+            </div>
         </div>
     </div>
 
     <!-- Join / Welcome Modal (Mandatory on First Entry per Tab - Mobile Optimized) -->
     <div class="modal-backdrop" id="joinModal" style="display: none; z-index: 10000;">
-        <div class="modal-card join-card">
+        <div class="modal-card join-card" style="max-width: 480px;">
             <div class="join-icon">🎉🎮</div>
             <h2 class="join-title">Willkommen bei Treffen!</h2>
             <p class="join-subtitle">
-                Wähle deinen Nickname und Avatar für den Spieleabend:
+                Wähle deinen Namen & Avatar und entscheide, ob du einen neuen Raum erstellst oder einem bestehenden Raum beitrittst:
             </p>
 
             <form id="joinForm" onsubmit="handleJoinSubmit(event)" class="join-form">
@@ -448,9 +460,39 @@
                     </div>
                 </div>
 
-                <button type="submit" class="btn-primary-launch join-submit-btn">
-                    🎉 Party beitreten
-                </button>
+                <!-- Room Selection Actions -->
+                <div style="border-top: 1.5px dashed rgba(148, 163, 184, 0.35); padding-top: 10px; margin-top: 2px; display: flex; flex-direction: column; gap: 10px;">
+                    <!-- Option 1: Create New Room -->
+                    <button type="button" class="btn-primary-launch join-submit-btn" onclick="handleCreateNewRoomFromJoin()" style="margin-top: 0;">
+                        ➕ Neuen Party-Raum erstellen
+                    </button>
+
+                    <!-- Option 2: Join Room by Code -->
+                    <div style="background: var(--bg-surface-elevated); border: var(--ink-border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;">
+                        <label for="welcomeRoomCodeInput" style="font-size: 0.82rem; font-family: var(--font-heading); font-weight: 700; color: var(--ink);">
+                            🔑 Bestehendem Raum mit Code beitreten:
+                        </label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="welcomeRoomCodeInput" maxlength="12" placeholder="CODE (z. B. 7K9PM2)" style="flex: 1; font-family: monospace; font-size: 1.05rem; font-weight: 800; text-transform: uppercase; text-align: center; letter-spacing: 0.14em; padding: 8px 10px; border-radius: 10px; border: var(--ink-border); background: var(--bg-surface); color: var(--ink);">
+                            <button type="button" class="action-btn-sm" onclick="handleJoinByCodeFromJoin()" style="padding: 8px 14px; font-size: 0.95rem; white-space: nowrap;">
+                                🚀 Beitreten
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Option 3: Live Open Rooms List -->
+                    <div style="background: var(--bg-surface-elevated); border: var(--ink-border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <span style="font-size: 0.82rem; font-family: var(--font-heading); font-weight: 700; color: var(--ink);">
+                                🌐 Offene Party-Räume auf dem Server:
+                            </span>
+                            <button type="button" class="icon-btn" onclick="refreshPartyOpenRooms()" title="Aktualisieren" style="font-size: 0.76rem; padding: 2px 7px;">🔄</button>
+                        </div>
+                        <div id="welcomeOpenRoomsList" style="display: flex; flex-direction: column; gap: 6px; max-height: 135px; overflow-y: auto;">
+                            <div style="font-size: 0.8rem; color: var(--ink-light); text-align: center; padding: 6px;">Suche nach aktiven Räumen...</div>
+                        </div>
+                    </div>
+                </div>
             </form>
         </div>
     </div>
@@ -488,6 +530,6 @@
     <!-- Toast Notification -->
     <div class="toast" id="toast">Link kopiert!</div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2.1"></script>
 </body>
 </html>

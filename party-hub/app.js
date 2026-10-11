@@ -30,31 +30,21 @@ function generatePartyCode(len = 6) {
     return code;
 }
 
-// Read room code from URL ?room=... or ?code=..., or generate a random 6-character code
+// Read room code from URL ?room=... or ?code=...
 const urlParams = new URLSearchParams(window.location.search);
-let rawCode = (urlParams.get("room") || urlParams.get("code") || "").trim().toUpperCase();
+let initialUrlCode = (urlParams.get("room") || urlParams.get("code") || "").trim().toUpperCase();
+const HAS_INITIAL_URL_ROOM = !!initialUrlCode;
 
-if (!rawCode) {
-    rawCode = generatePartyCode(6);
-    // Keep URL synchronized without full page reload so copying the link from address bar always preserves the code
-    try {
-        const newUrl = new URL(window.location.href);
-        newUrl.searchParams.set("room", rawCode);
-        window.history.replaceState({ room: rawCode }, "", newUrl.toString());
-    } catch (e) {
-        console.warn("Could not update URL state:", e);
-    }
-}
+let ROOM_CODE = initialUrlCode || generatePartyCode(6);
 
-const ROOM_CODE = rawCode;
-
-const STORAGE_KEY_PLAYERS = `partyhub_roster_${ROOM_CODE}`;
-const STORAGE_KEY_USER = `partyhub_user_${ROOM_CODE}`;
-const STORAGE_KEY_JOINED = `partyhub_joined_${ROOM_CODE}`;
-const STORAGE_KEY_VOTES = `partyhub_votes_${ROOM_CODE}`;
+let STORAGE_KEY_PLAYERS = `partyhub_roster_${ROOM_CODE}`;
+let STORAGE_KEY_USER = `partyhub_user_${ROOM_CODE}`;
+let STORAGE_KEY_JOINED = `partyhub_confirmed_${ROOM_CODE}`;
+let STORAGE_KEY_VOTES = `partyhub_votes_${ROOM_CODE}`;
+const STORAGE_KEY_GLOBAL_PROFILE = "partyhub_global_profile";
 
 // Native cross-tab broadcast bus (fallback for same-device multi-tab)
-const channel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(`partyhub_bus_${ROOM_CODE}`) : null;
+let channel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(`partyhub_bus_${ROOM_CODE}`) : null;
 
 // ==========================================================================
 // Real-Time Multi-Device WebSocket Client
@@ -64,6 +54,10 @@ let socketReconnectTimer = null;
 let socketConnected = false;
 
 function initWebSocket() {
+    // Only connect WebSocket once the user has confirmed creating or joining a room
+    if (sessionStorage.getItem(STORAGE_KEY_JOINED) !== "true") {
+        return;
+    }
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         return;
     }
@@ -221,13 +215,13 @@ const partyState = {
 
 let tempSelectedAvatar = null;
 let tempJoinAvatar = null;
+let partyOpenRoomsPollTimer = null;
 
 // ==========================================================================
-// Multi-Tab Presence & Session Management
+// Multi-Tab Presence, Room Selection & Session Management
 // ==========================================================================
 
-function initUserSession() {
-    // Room info in UI
+function updateRoomCodeUI() {
     const roomCodeEl = document.getElementById("roomCodeDisplay");
     if (roomCodeEl) roomCodeEl.innerText = ROOM_CODE;
 
@@ -258,8 +252,100 @@ function initUserSession() {
             if (qrFallbackText) qrFallbackText.style.display = "block";
         };
     }
+}
 
-    const isJoined = sessionStorage.getItem(STORAGE_KEY_JOINED) === "true";
+function setActiveRoomCode(newCode) {
+    ROOM_CODE = (newCode || generatePartyCode(6)).trim().toUpperCase();
+    partyState.roomCode = ROOM_CODE;
+    STORAGE_KEY_PLAYERS = `partyhub_roster_${ROOM_CODE}`;
+    STORAGE_KEY_USER = `partyhub_user_${ROOM_CODE}`;
+    STORAGE_KEY_JOINED = `partyhub_confirmed_${ROOM_CODE}`;
+    STORAGE_KEY_VOTES = `partyhub_votes_${ROOM_CODE}`;
+
+    if (channel) {
+        try { channel.close(); } catch (e) {}
+    }
+    if (typeof BroadcastChannel !== "undefined") {
+        channel = new BroadcastChannel(`partyhub_bus_${ROOM_CODE}`);
+        setupChannelListener();
+    }
+
+    try {
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set("room", ROOM_CODE);
+        window.history.replaceState({ room: ROOM_CODE }, "", newUrl.toString());
+    } catch (e) {}
+
+    updateRoomCodeUI();
+}
+
+function stopPartyOpenRoomsPolling() {
+    if (partyOpenRoomsPollTimer) {
+        clearInterval(partyOpenRoomsPollTimer);
+        partyOpenRoomsPollTimer = null;
+    }
+}
+
+function startPartyOpenRoomsPolling() {
+    stopPartyOpenRoomsPolling();
+    refreshPartyOpenRooms();
+    partyOpenRoomsPollTimer = setInterval(refreshPartyOpenRooms, 2500);
+}
+
+window.refreshPartyOpenRooms = async function() {
+    const containers = [
+        document.getElementById("welcomeOpenRoomsList"),
+        document.getElementById("codeModalOpenRoomsList")
+    ].filter(Boolean);
+    if (containers.length === 0) return;
+
+    try {
+        const res = await fetch("/party-ws/rooms", { cache: "no-store" });
+        const data = await res.json();
+        const roomsList = (data && Array.isArray(data.rooms)) ? data.rooms : [];
+
+        const html = roomsList.length === 0
+            ? `<div style="font-size: 0.82rem; color: var(--ink-light); text-align: center; padding: 8px;">Aktuell keine offenen Räume – erstelle oben einfach einen neuen Raum!</div>`
+            : roomsList.map(r => {
+                const gameTitles = {
+                    skribbol: "🎨 skribbl",
+                    uno: "🃏 UNO",
+                    codenames: "🕵️‍♂️ Codenames",
+                    price_guess: "🏷️ Guess The Price",
+                    monopoly: "🎩 Monopoly 3D"
+                };
+                const statusLabel = r.activeGame && gameTitles[r.activeGame]
+                    ? `<span style="font-size: 0.72rem; background: #fef08a; color: #854d0e; padding: 2px 6px; border-radius: 6px; font-weight: 800;">Spielt ${gameTitles[r.activeGame]}</span>`
+                    : `<span style="font-size: 0.72rem; background: #86efac; color: #14532d; padding: 2px 6px; border-radius: 6px; font-weight: 800;">🟢 Offen</span>`;
+                return `
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; border-radius: 10px; background: var(--bg-surface); border: var(--ink-border);">
+                        <div style="display: flex; flex-direction: column; gap: 2px; text-align: left;">
+                            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                <strong style="font-family: monospace; font-size: 0.95rem; letter-spacing: 0.08em; color: var(--primary);">#${r.code}</strong>
+                                ${statusLabel}
+                                <span style="font-size: 0.8rem; color: var(--ink);">👑 ${r.hostAvatar || ''} <strong>${r.hostName}</strong></span>
+                            </div>
+                            <span style="font-size: 0.75rem; color: var(--ink-light);">👥 ${r.playerCount} ${r.playerCount === 1 ? 'Spieler' : 'Spieler'}</span>
+                        </div>
+                        <button type="button" class="action-btn-sm" onclick="joinOpenPartyRoom('${r.code}')" style="padding: 6px 12px; font-size: 0.85rem; white-space: nowrap;">
+                            Beitreten →
+                        </button>
+                    </div>
+                `;
+            }).join("");
+
+        containers.forEach(el => { el.innerHTML = html; });
+    } catch (e) {
+        containers.forEach(el => {
+            el.innerHTML = `<div style="font-size: 0.8rem; color: var(--ink-light); text-align: center; padding: 6px;">Keine aktiven Räume gefunden.</div>`;
+        });
+    }
+};
+
+function initUserSession() {
+    updateRoomCodeUI();
+
+    const isJoined = HAS_INITIAL_URL_ROOM && sessionStorage.getItem(STORAGE_KEY_JOINED) === "true";
     let savedUser = null;
     try {
         const stored = sessionStorage.getItem(STORAGE_KEY_USER);
@@ -273,7 +359,7 @@ function initUserSession() {
         updateHostPermissionsUI();
         syncPresence();
     } else {
-        // Tab has not confirmed nickname yet -> show welcome modal
+        // Show welcome & room selection modal
         showJoinModal();
         updateHostPermissionsUI();
         syncPresence();
@@ -284,12 +370,18 @@ function showJoinModal() {
     const modal = document.getElementById("joinModal");
     const input = document.getElementById("joinNicknameInput");
     const picker = document.getElementById("joinAvatarPicker");
+    const codeInput = document.getElementById("welcomeRoomCodeInput");
     if (!modal) return;
+
+    let globalProfile = null;
+    try {
+        const rawProfile = localStorage.getItem(STORAGE_KEY_GLOBAL_PROFILE);
+        if (rawProfile) globalProfile = JSON.parse(rawProfile);
+    } catch (e) {}
 
     let roster = getRosterFromStorage();
     const activePlayerNames = Object.values(roster).map(p => p.name);
 
-    // Pick first unused preset recommendation
     let chosenPreset = AVATAR_POOL.find(p => !activePlayerNames.includes(p.name));
     if (!chosenPreset) {
         const num = Object.keys(roster).length + 1;
@@ -300,12 +392,16 @@ function showJoinModal() {
         };
     }
 
-    tempJoinAvatar = chosenPreset.avatar;
+    tempJoinAvatar = (globalProfile && globalProfile.avatar) ? globalProfile.avatar : chosenPreset.avatar;
     if (input) {
-        input.value = "";
+        input.value = (globalProfile && globalProfile.name) ? globalProfile.name : "";
         setTimeout(() => {
-            input.focus();
+            if (!input.value) input.focus();
         }, 150);
+    }
+
+    if (codeInput) {
+        codeInput.value = HAS_INITIAL_URL_ROOM ? initialUrlCode : "";
     }
 
     if (picker) {
@@ -324,29 +420,60 @@ function showJoinModal() {
     }
 
     modal.style.display = "flex";
+    startPartyOpenRoomsPolling();
 }
 
-window.handleJoinSubmit = function(e) {
-    if (e) e.preventDefault();
-
+function enterPartyRoom(targetCode, isCreatingNew = false) {
+    const joinModal = document.getElementById("joinModal");
+    const isJoinModalVisible = joinModal && joinModal.style.display !== "none";
     const input = document.getElementById("joinNicknameInput");
-    const nickname = input && input.value.trim() ? input.value.trim() : "Gast";
-    const avatar = tempJoinAvatar || "🐶";
 
-    const hasServerHost = partyState.players && partyState.players.some(p => p.isHost);
-    let roster = getRosterFromStorage();
-    const hasActiveHost = hasServerHost || Object.values(roster).some(p => p.isHost);
-    const isHost = !hasActiveHost && Object.keys(roster).length === 0 && (!partyState.players || partyState.players.length === 0);
+    let nickname = "";
+    if (isJoinModalVisible && input) {
+        nickname = input.value.trim();
+        if (!nickname) {
+            input.focus();
+            showToast("⚠️ Bitte gib zuerst deinen Nickname ein!");
+            return;
+        }
+    } else if (partyState.currentUser && partyState.currentUser.name) {
+        nickname = partyState.currentUser.name;
+    } else {
+        try {
+            const rawProfile = localStorage.getItem(STORAGE_KEY_GLOBAL_PROFILE);
+            if (rawProfile) nickname = JSON.parse(rawProfile).name || "Gast";
+        } catch (e) {}
+        if (!nickname) nickname = "Gast";
+    }
 
+    const avatar = tempJoinAvatar || (partyState.currentUser && partyState.currentUser.avatar) || "🐶";
     const preset = AVATAR_POOL.find(p => p.name.toLowerCase() === nickname.toLowerCase() || p.avatar === avatar);
     const color = preset ? preset.color : "#6366f1";
 
+    // Close old WebSocket if switching rooms
+    if (socket) {
+        try {
+            socket.onclose = null;
+            socket.close();
+        } catch (e) {}
+        socket = null;
+        socketConnected = false;
+    }
+    clearTimeout(socketReconnectTimer);
+    partyState.players = [];
+
+    setActiveRoomCode(targetCode);
+
+    const existingId = partyState.currentUser && partyState.currentUser.id
+        ? partyState.currentUser.id
+        : "p_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 6);
+
     const newUser = {
-        id: "p_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 6),
+        id: existingId,
         name: nickname,
         avatar: avatar,
         color: color,
-        isHost: isHost,
+        isHost: isCreatingNew,
         status: "Bereit",
         isReady: true,
         joinedAt: Date.now(),
@@ -356,26 +483,61 @@ window.handleJoinSubmit = function(e) {
     try {
         sessionStorage.setItem(STORAGE_KEY_USER, JSON.stringify(newUser));
         sessionStorage.setItem(STORAGE_KEY_JOINED, "true");
+        localStorage.setItem(STORAGE_KEY_GLOBAL_PROFILE, JSON.stringify({
+            name: nickname,
+            avatar: avatar,
+            color: color
+        }));
     } catch (err) {}
 
     partyState.currentUser = newUser;
     partyState.isHost = newUser.isHost;
 
-    const modal = document.getElementById("joinModal");
-    if (modal) modal.style.display = "none";
+    if (joinModal) joinModal.style.display = "none";
+    const codeModal = document.getElementById("codeModal");
+    if (codeModal) codeModal.style.display = "none";
+    stopPartyOpenRoomsPolling();
 
     updateHeaderUserBadge();
+    initWebSocket();
     syncPresence();
-    
-    // Send join over live WebSocket
-    sendSocketMessage({
-        type: "JOIN",
-        room: ROOM_CODE,
-        user: newUser
-    });
     broadcast({ type: "PRESENCE_PING" });
 
-    showToast(`Willkommen bei Treffen, ${newUser.name}! 🎉`);
+    showToast(isCreatingNew
+        ? `🎉 Neuer Party-Raum #${ROOM_CODE} erstellt!`
+        : `🚀 Raum #${ROOM_CODE} beigetreten!`);
+}
+
+window.handleCreateNewRoomFromJoin = function() {
+    const newCode = generatePartyCode(6);
+    enterPartyRoom(newCode, true);
+};
+
+window.handleJoinByCodeFromJoin = function() {
+    const codeInput = document.getElementById("welcomeRoomCodeInput");
+    const code = (codeInput ? codeInput.value : "").trim().toUpperCase();
+    if (!code) {
+        if (codeInput) codeInput.focus();
+        showToast("⚠️ Bitte gib einen Raum-Code ein!");
+        return;
+    }
+    enterPartyRoom(code, false);
+};
+
+window.joinOpenPartyRoom = function(code) {
+    if (!code) return;
+    enterPartyRoom(code.trim().toUpperCase(), false);
+};
+
+window.handleJoinSubmit = function(e) {
+    if (e) e.preventDefault();
+    const codeInput = document.getElementById("welcomeRoomCodeInput");
+    const code = (codeInput ? codeInput.value : "").trim().toUpperCase();
+    if (code) {
+        handleJoinByCodeFromJoin();
+    } else {
+        handleCreateNewRoomFromJoin();
+    }
 };
 
 function getRosterFromStorage() {
@@ -1845,6 +2007,7 @@ window.openCodeModal = function() {
     const modal = document.getElementById("codeModal");
     if (modal) {
         modal.style.display = "flex";
+        startPartyOpenRoomsPolling();
         const input = document.getElementById("joinCodeInput");
         if (input) {
             input.value = "";
@@ -1856,6 +2019,10 @@ window.openCodeModal = function() {
 window.closeCodeModal = function() {
     const modal = document.getElementById("codeModal");
     if (modal) modal.style.display = "none";
+    const joinModal = document.getElementById("joinModal");
+    if (!joinModal || joinModal.style.display === "none") {
+        stopPartyOpenRoomsPolling();
+    }
 };
 
 window.handleCodeSubmit = function(e) {
@@ -1863,17 +2030,13 @@ window.handleCodeSubmit = function(e) {
     const input = document.getElementById("joinCodeInput");
     const code = (input ? input.value : "").trim().toUpperCase();
     if (code) {
-        const targetUrl = new URL(window.location.origin + window.location.pathname);
-        targetUrl.searchParams.set("room", code);
-        window.location.href = targetUrl.toString();
+        enterPartyRoom(code, false);
     }
 };
 
 window.generateNewRoomCode = function() {
     const newCode = generatePartyCode(6);
-    const targetUrl = new URL(window.location.origin + window.location.pathname);
-    targetUrl.searchParams.set("room", newCode);
-    window.location.href = targetUrl.toString();
+    enterPartyRoom(newCode, true);
 };
 
 window.copyShareUrl = function() {
