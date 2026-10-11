@@ -4,18 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Monopoly 3D - Wii Edition</title>
-    <link rel="stylesheet" href="static/css/style.css?v=3.6">
+    <link rel="stylesheet" href="static/css/style.css?v=3.7">
     <link rel="icon" href="static/assets/textures/board_wt_cl_go_cm.png">
     <script>
         (function() {
             var p = new URLSearchParams(window.location.search);
             var r = p.get('room') || p.get('lobby') || p.get('party') || p.get('roomId');
-            if (!r) {
-                r = Math.random().toString(36).substring(2, 8).toUpperCase();
-                var newUrl = window.location.pathname + '?room=' + r;
-                try { window.history.replaceState({ path: newUrl }, '', newUrl); } catch(e) {}
-            }
-            window.__INITIAL_ROOM_ID__ = r.toUpperCase();
+            window.__INITIAL_ROOM_ID__ = r ? r.toUpperCase() : null;
         })();
     </script>
 </head>
@@ -61,7 +56,7 @@
                 <div class="brand-badge">MONOPOLY</div>
                 <div class="room-chip" id="btn-copy-link" title="Klicke zum Kopieren des Einladungslinks">
                     <span>Raum:</span>
-                    <strong class="code" id="header-room-code"><script>document.write(window.__INITIAL_ROOM_ID__ || '------');</script></strong>
+                    <strong class="code" id="header-room-code"><script>document.write(window.__INITIAL_ROOM_ID__ || 'WAHL');</script></strong>
                     <span style="margin-left:4px; font-size:12px;">📋</span>
                 </div>
             </div>
@@ -152,16 +147,59 @@
 
     <!-- Modals -->
 
-    <!-- 1. Lobby Modal -->
+    <!-- 1. Lobby Modal (Step 1: Raum erstellen / beitreten & Step 2: Spiellobby) -->
     <div class="modal-overlay open" id="modal-lobby">
         <div class="modal-box">
             <div class="modal-header">
-                <div class="modal-title">Monopoly Spiellobby</div>
-                <div class="room-chip" style="cursor:default;">
-                    <span>Raum: <strong id="lobby-room-code"><script>document.write(window.__INITIAL_ROOM_ID__ || '------');</script></strong></span>
+                <div class="modal-title" id="lobby-modal-title">Monopoly 3D</div>
+                <div id="lobby-header-actions" style="display:flex; align-items:center; gap:8px;">
+                    <div class="room-chip" id="lobby-room-chip" style="cursor:default; display:none;">
+                        <span>Raum: <strong id="lobby-room-code"><script>document.write(window.__INITIAL_ROOM_ID__ || '------');</script></strong></span>
+                    </div>
+                    <button class="btn-action" id="btn-switch-room" style="display:none; font-size:11px; padding:5px 10px; background:rgba(255,255,255,0.12); color:#fff; border:1px solid rgba(255,255,255,0.2);" onclick="window.MonopolyGame.showRoomSelector()">
+                        🔄 Raum wechseln
+                    </button>
                 </div>
             </div>
-            <div class="modal-body">
+
+            <!-- STEP 1: Raum erstellen oder Raum beitreten -->
+            <div class="modal-body" id="lobby-step-select" style="display:none;">
+                <div>
+                    <label style="font-size:12px; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px;">DEIN SPIELERNAME</label>
+                    <input type="text" id="input-welcome-name" class="chat-input" style="font-size:15px; padding:10px; width:100%;" maxlength="18" placeholder="Name eingeben...">
+                </div>
+
+                <div style="background:rgba(46, 204, 113, 0.08); border:1px solid rgba(46, 204, 113, 0.35); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:8px;">
+                    <div style="font-size:13px; font-weight:800; color:#2ecc71;">🏠 Neuen Spielraum starten</div>
+                    <div style="font-size:12px; color:var(--text-muted);">Erstelle eine neue Lobby und lade deine Freunde per Raum-Code oder über die Raumliste ein.</div>
+                    <button class="btn-action btn-buy" style="width:100%; justify-content:center; font-size:15px; padding:11px;" onclick="window.MonopolyGame.createNewRoom()">
+                        ➕ Neuen Raum erstellen
+                    </button>
+                </div>
+
+                <div style="background:rgba(255, 255, 255, 0.04); border:1px solid rgba(255, 255, 255, 0.14); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:8px;">
+                    <div style="font-size:13px; font-weight:800; color:#f1c40f;">🔑 Mit Raum-Code beitreten</div>
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" id="input-join-room-code" class="chat-input" style="flex:1; font-size:15px; padding:9px 12px; text-transform:uppercase; font-weight:800; letter-spacing:1.5px;" maxlength="12" placeholder="CODE (z.B. AB12CD)">
+                        <button class="btn-action btn-trade" style="padding:9px 18px; font-size:14px;" onclick="window.MonopolyGame.joinRoomByInput()">
+                            Beitreten →
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <label style="font-size:12px; font-weight:700; color:var(--text-muted);">🌐 OFFENE RÄUME AUF DEM SERVER</label>
+                        <button onclick="window.MonopolyGame.refreshOpenRooms()" style="background:none; border:none; color:#3498db; font-size:12px; font-weight:700; cursor:pointer; padding:2px 6px;">🔄 Aktualisieren</button>
+                    </div>
+                    <div id="open-rooms-list" class="lobby-players-list" style="max-height:160px; overflow-y:auto;">
+                        <div style="font-size:12px; color:var(--text-muted); text-align:center; padding:12px;">Suche nach aktiven Räumen...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 2: Aktive Raum-Lobby -->
+            <div class="modal-body" id="lobby-step-room" style="display:none;">
                 <div>
                     <label style="font-size:12px; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px;">DEIN SPIELERNAME</label>
                     <input type="text" id="input-player-name" class="chat-input" style="font-size:15px; padding:10px;" maxlength="18" placeholder="Name eingeben...">
@@ -348,10 +386,10 @@
     <!-- Scripts with Cache Busting -->
     <script src="static/js/three.min.js"></script>
     <script src="static/js/OrbitControls.js"></script>
-    <script src="static/js/asset_config.js?v=3.6"></script>
-    <script src="static/js/audio.js?v=3.6"></script>
-    <script src="static/js/board3d.js?v=3.6"></script>
-    <script src="static/js/game_client.js?v=3.6"></script>
+    <script src="static/js/asset_config.js?v=3.7"></script>
+    <script src="static/js/audio.js?v=3.7"></script>
+    <script src="static/js/board3d.js?v=3.7"></script>
+    <script src="static/js/game_client.js?v=3.7"></script>
 
     <script>
         function launchMonopoly() {

@@ -581,34 +581,187 @@
             console.warn('Storage warning:', e);
         }
 
-        // Room ID from URL query ?room=XYZ or ?lobby=XYZ or ?party=XYZ or generate
-        roomId = window.__INITIAL_ROOM_ID__ || getQueryParam('room') || getQueryParam('lobby') || getQueryParam('party') || getQueryParam('roomId');
-        if (!roomId) {
-            roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
-            try {
-                const newUrl = window.location.pathname + '?room=' + roomId;
-                window.history.replaceState({ path: newUrl }, '', newUrl);
-            } catch (e) {}
-        }
-        roomId = roomId.toUpperCase();
+        // Room ID from URL query ?room=XYZ or ?lobby=XYZ or ?party=XYZ (null if none -> show Room Selector!)
+        const urlRoom = window.__INITIAL_ROOM_ID__ || getQueryParam('room') || getQueryParam('lobby') || getQueryParam('party') || getQueryParam('roomId');
+        roomId = urlRoom ? urlRoom.trim().toUpperCase() : null;
         window.__INITIAL_ROOM_ID__ = roomId;
 
-        // Update UI room code IMMEDIATELY on load so it NEVER shows '------'
         const headerRoomCode = document.getElementById('header-room-code');
-        if (headerRoomCode) headerRoomCode.textContent = roomId;
+        if (headerRoomCode) headerRoomCode.textContent = roomId || 'WAHL';
         const lobbyRoomCode = document.getElementById('lobby-room-code');
-        if (lobbyRoomCode) lobbyRoomCode.textContent = roomId;
+        if (lobbyRoomCode) lobbyRoomCode.textContent = roomId || '------';
 
         // Notify parent hub window if embedded in iframe
         try {
-            if (window.parent && window.parent !== window) {
+            if (window.parent && window.parent !== window && roomId) {
                 window.parent.postMessage({ type: 'MONOPOLY_READY', roomId: roomId, playerId: playerId }, '*');
             }
         } catch (e) {}
     }
 
+    let openRoomsPollInterval = null;
+
+    function stopOpenRoomsPolling() {
+        if (openRoomsPollInterval) {
+            clearInterval(openRoomsPollInterval);
+            openRoomsPollInterval = null;
+        }
+    }
+
+    async function refreshOpenRooms() {
+        const listEl = document.getElementById('open-rooms-list');
+        if (!listEl) return;
+        try {
+            const resp = await fetch(resolveUrl('api/rooms'), { cache: 'no-store' });
+            const data = await resp.json();
+            const rooms = (data && data.rooms) ? data.rooms : [];
+            if (rooms.length === 0) {
+                listEl.innerHTML = `<div style="font-size:12px; color:var(--text-muted); text-align:center; padding:14px;">Aktuell keine offenen Räume – erstelle oben einfach einen neuen Raum!</div>`;
+                return;
+            }
+            listEl.innerHTML = rooms.map(r => {
+                const isLobby = (r.status === 'LOBBY');
+                const statusBadge = isLobby
+                    ? `<span style="font-size:10px; background:#2ecc71; color:#000; padding:2px 6px; border-radius:4px; font-weight:800;">LOBBY</span>`
+                    : `<span style="font-size:10px; background:#e67e22; color:#fff; padding:2px 6px; border-radius:4px; font-weight:800;">LÄUFT</span>`;
+                return `
+                    <div class="lobby-player-row" style="padding:8px 10px;">
+                        <div style="display:flex; flex-direction:column; gap:2px;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <strong style="color:var(--accent-gold); font-size:14px; letter-spacing:1px;">#${r.room_id}</strong>
+                                ${statusBadge}
+                                <span style="font-size:12px; color:#cbd5e1;">Host: <strong>${r.host_name}</strong></span>
+                            </div>
+                            <div style="font-size:11px; color:var(--text-muted);">
+                                👥 ${r.player_count} Spieler (${(r.players || []).join(', ')})
+                            </div>
+                        </div>
+                        <button class="btn-action btn-buy" style="font-size:12px; padding:6px 12px;" onclick="window.MonopolyGame.connectToRoom('${r.room_id}')">
+                            Beitreten →
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        } catch (err) {
+            listEl.innerHTML = `<div style="font-size:12px; color:var(--text-muted); text-align:center; padding:12px;">Räume konnten nicht geladen werden.</div>`;
+        }
+    }
+
+    function showRoomSelector() {
+        if (socket) {
+            try {
+                socket.onclose = null;
+                socket.close();
+            } catch (e) {}
+            socket = null;
+        }
+        roomId = null;
+        gameState = null;
+        window.__INITIAL_ROOM_ID__ = null;
+        try {
+            window.history.replaceState({}, '', window.location.pathname);
+        } catch (e) {}
+
+        const titleEl = document.getElementById('lobby-modal-title');
+        if (titleEl) titleEl.textContent = 'Monopoly 3D — Raum wählen';
+
+        const chipEl = document.getElementById('lobby-room-chip');
+        if (chipEl) chipEl.style.display = 'none';
+
+        const switchBtn = document.getElementById('btn-switch-room');
+        if (switchBtn) switchBtn.style.display = 'none';
+
+        const headerRoomCode = document.getElementById('header-room-code');
+        if (headerRoomCode) headerRoomCode.textContent = 'WAHL';
+
+        const stepSelect = document.getElementById('lobby-step-select');
+        const stepRoom = document.getElementById('lobby-step-room');
+        if (stepSelect) stepSelect.style.display = 'flex';
+        if (stepRoom) stepRoom.style.display = 'none';
+
+        const welcomeNameInput = document.getElementById('input-welcome-name');
+        if (welcomeNameInput) welcomeNameInput.value = playerName;
+
+        openModal('modal-lobby');
+        refreshOpenRooms();
+        stopOpenRoomsPolling();
+        openRoomsPollInterval = setInterval(refreshOpenRooms, 3000);
+    }
+
+    function showRoomLobbyStep() {
+        stopOpenRoomsPolling();
+        const titleEl = document.getElementById('lobby-modal-title');
+        if (titleEl) titleEl.textContent = 'Monopoly Spiellobby';
+
+        const chipEl = document.getElementById('lobby-room-chip');
+        if (chipEl) chipEl.style.display = 'inline-flex';
+
+        const switchBtn = document.getElementById('btn-switch-room');
+        if (switchBtn) switchBtn.style.display = 'inline-flex';
+
+        const stepSelect = document.getElementById('lobby-step-select');
+        const stepRoom = document.getElementById('lobby-step-room');
+        if (stepSelect) stepSelect.style.display = 'none';
+        if (stepRoom) stepRoom.style.display = 'flex';
+
+        const headerRoomCode = document.getElementById('header-room-code');
+        if (headerRoomCode) headerRoomCode.textContent = roomId || '------';
+        const lobbyRoomCode = document.getElementById('lobby-room-code');
+        if (lobbyRoomCode) lobbyRoomCode.textContent = roomId || '------';
+
+        const nameInput = document.getElementById('input-player-name');
+        if (nameInput) nameInput.value = playerName;
+    }
+
+    function connectToRoom(targetRoomId) {
+        const cleanCode = (targetRoomId || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+        if (!cleanCode) return;
+
+        const welcomeNameInput = document.getElementById('input-welcome-name');
+        if (welcomeNameInput && welcomeNameInput.value.trim()) {
+            playerName = welcomeNameInput.value.trim();
+            try { localStorage.setItem('monopoly_player_name', playerName); } catch (e) {}
+        }
+
+        if (socket) {
+            try {
+                socket.onclose = null;
+                socket.close();
+            } catch (e) {}
+            socket = null;
+        }
+
+        roomId = cleanCode;
+        window.__INITIAL_ROOM_ID__ = roomId;
+        try {
+            const newUrl = window.location.pathname + '?room=' + roomId;
+            window.history.replaceState({ path: newUrl }, '', newUrl);
+        } catch (e) {}
+
+        showRoomLobbyStep();
+        openModal('modal-lobby');
+        connectWebSocket();
+    }
+
+    function createNewRoom() {
+        const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+        connectToRoom(newCode);
+    }
+
+    function joinRoomByInput() {
+        const codeInput = document.getElementById('input-join-room-code');
+        if (!codeInput) return;
+        const code = codeInput.value.trim().toUpperCase();
+        if (!code) {
+            codeInput.focus();
+            return;
+        }
+        connectToRoom(code);
+    }
+
     // Connect WebSocket
     function connectWebSocket() {
+        if (!roomId) return;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         let basePath = window.location.pathname;
         if (!basePath.endsWith('/')) {
@@ -639,6 +792,7 @@
         };
 
         socket.onclose = function() {
+            if (!roomId) return;
             console.log('WebSocket disconnected, reconnecting in 2s...');
             setTimeout(connectWebSocket, 2000);
         };
@@ -1088,8 +1242,10 @@
 
         // Check status
         if (gameState.status === 'LOBBY') {
+            showRoomLobbyStep();
             openModal('modal-lobby');
         } else {
+            stopOpenRoomsPolling();
             closeModal('modal-lobby');
         }
 
@@ -2100,14 +2256,17 @@
             console.log('GameClient.init called!');
             initPlayerIdentity();
 
-            // Connect WebSocket immediately
-            connectWebSocket();
-
             // Preload all 28 Property Deeds & 32 Chance/Chest Cards into memory cache
             preloadAllCardAssets();
 
-            // Open lobby modal immediately
-            openModal('modal-lobby');
+            // If URL has ?room=XYZ, connect directly; otherwise show Room Create/Join selector!
+            if (roomId) {
+                showRoomLobbyStep();
+                openModal('modal-lobby');
+                connectWebSocket();
+            } else {
+                showRoomSelector();
+            }
 
             // Setup Lobby Token selection
             const tokenGrid = document.getElementById('lobby-token-grid');
@@ -2128,14 +2287,31 @@
                 `).join('');
             }
 
-            // Bind lobby input
+            // Bind welcome name input & lobby name input
+            const welcomeNameInput = document.getElementById('input-welcome-name');
             const nameInput = document.getElementById('input-player-name');
+            if (welcomeNameInput) {
+                welcomeNameInput.value = playerName;
+                welcomeNameInput.oninput = (e) => {
+                    playerName = e.target.value.trim() || 'Spieler';
+                    if (nameInput) nameInput.value = playerName;
+                    try { localStorage.setItem('monopoly_player_name', playerName); } catch (e) {}
+                };
+            }
             if (nameInput) {
                 nameInput.value = playerName;
                 nameInput.oninput = (e) => {
                     playerName = e.target.value.trim() || 'Spieler';
+                    if (welcomeNameInput) welcomeNameInput.value = playerName;
                     try { localStorage.setItem('monopoly_player_name', playerName); } catch (e) {}
                     sendWsMessage({ action: 'JOIN', name: playerName, token: selectedToken, color: selectedColor });
+                };
+            }
+
+            const joinCodeInput = document.getElementById('input-join-room-code');
+            if (joinCodeInput) {
+                joinCodeInput.onkeydown = (e) => {
+                    if (e.key === 'Enter') joinRoomByInput();
                 };
             }
 
@@ -2143,6 +2319,10 @@
             const copyBtn = document.getElementById('btn-copy-link');
             if (copyBtn) {
                 copyBtn.onclick = () => {
+                    if (!roomId) {
+                        showRoomSelector();
+                        return;
+                    }
                     const url = window.location.href;
                     if (navigator.clipboard && navigator.clipboard.writeText) {
                         navigator.clipboard.writeText(url).then(() => {
@@ -2353,6 +2533,12 @@
             }
 
         },
+
+        showRoomSelector: showRoomSelector,
+        createNewRoom: createNewRoom,
+        joinRoomByInput: joinRoomByInput,
+        connectToRoom: connectToRoom,
+        refreshOpenRooms: refreshOpenRooms,
 
         selectToken: function(tokenId) {
             selectedToken = tokenId;

@@ -61,6 +61,26 @@ async def get_config():
         "squares": SQUARES
     }
 
+@app.get("/api/rooms")
+async def list_rooms():
+    room_list = []
+    for r_id, room in list(rooms.items()):
+        active_conns = len(connections.get(r_id, {}))
+        human_players = [p for p in room.players if not p.is_bot]
+        if active_conns == 0:
+            continue
+        host_player = next((p for p in room.players if p.id == room.host_id), None)
+        host_name = host_player.name if host_player else (human_players[0].name if human_players else "Host")
+        room_list.append({
+            "room_id": r_id,
+            "host_name": host_name,
+            "player_count": len(room.players),
+            "connected_count": active_conns,
+            "status": room.status,
+            "players": [p.name for p in room.players]
+        })
+    return {"rooms": room_list}
+
 @app.post("/api/create_room")
 async def create_room(data: dict):
     room_id = data.get("room_id") or uuid.uuid4().hex[:6].upper()
