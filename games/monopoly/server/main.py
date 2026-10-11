@@ -29,6 +29,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def cache_static_assets(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/assets/"):
+        response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+    return response
+
 # In-memory rooms and WebSocket connections
 rooms: Dict[str, GameRoom] = {}
 connections: Dict[str, Dict[str, WebSocket]] = {} # room_id -> {player_id: ws}

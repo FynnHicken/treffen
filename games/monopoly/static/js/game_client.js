@@ -341,6 +341,66 @@
         return 'static/assets/chance_chest/illustration_monopoly_mann.png';
     }
 
+    // In-memory Image Preload Cache for all 28 Property Deeds & 32 Chance/Community Chest Cards
+    const preloadedCardImages = {};
+
+    function preloadImageUrl(relPath) {
+        if (!relPath) return null;
+        const resolved = resolveUrl(relPath);
+        if (!preloadedCardImages[resolved]) {
+            const img = new Image();
+            img.decoding = 'async';
+            img.src = resolved;
+            preloadedCardImages[resolved] = img;
+        }
+        return preloadedCardImages[resolved];
+    }
+
+    function isImageReady(relPath) {
+        if (!relPath) return false;
+        const resolved = resolveUrl(relPath);
+        const img = preloadedCardImages[resolved];
+        return !!(img && img.complete && img.naturalWidth > 0);
+    }
+
+    function preloadAllCardAssets() {
+        const urls = [];
+        // 1. All 28 Property Deed Cards
+        Object.values(DEED_CARD_IMAGES).forEach(p => urls.push(p));
+        // 2. All 16 Ereigniskarten & 16 Gemeinschaftskarten
+        for (let i = 1; i <= 16; i++) {
+            const num = String(i).padStart(2, '0');
+            urls.push(`static/assets/chance_chest/cards/ereignis_${num}.png`);
+            urls.push(`static/assets/chance_chest/cards/gemeinschaft_${num}.png`);
+        }
+        // 3. Fallback Uncle Pennybags illustrations & token icons
+        [
+            'illustration_monopoly_mann.png',
+            'illustration_gefaengnis.png',
+            'illustration_gefaengnisausbruch.png',
+            'illustration_zahlen.png',
+            'illustration_geschenk.png',
+            'illustration_renovierung_bau.png',
+            'illustration_rennen.png',
+            'illustration_daumen_hoch.png',
+            'illustration_ueberraschung.png'
+        ].forEach(f => urls.push(`static/assets/chance_chest/${f}`));
+        TOKENS.forEach(t => { if (t.iconImg) urls.push(t.iconImg); });
+
+        // Stagger preloading slightly so initial WebSocket & 3D board load stays priority #1
+        let idx = 0;
+        function loadBatch() {
+            const end = Math.min(idx + 6, urls.length);
+            for (; idx < end; idx++) {
+                preloadImageUrl(urls[idx]);
+            }
+            if (idx < urls.length) {
+                setTimeout(loadBatch, 40);
+            }
+        }
+        setTimeout(loadBatch, 150);
+    }
+
     // Helper: URL Params
     function getQueryParam(key) {
         const params = new URLSearchParams(window.location.search);
@@ -1346,7 +1406,7 @@
         openModal('modal-gameover');
     }
 
-    // Show Card Modal (Ereignis- / Gemeinschaftskarte with Authentic ROM Graphic or Illustration)
+    // Show Card Modal (Ereignis- / Gemeinschaftskarte with Instant Text Fallback + Cached ROM Graphic)
     function showCardModal(deckType, text, cardImage, playSound = false, drawerName = null) {
         const titleEl = document.getElementById('card-modal-title');
         const subtitleEl = document.getElementById('card-modal-subtitle');
@@ -1377,25 +1437,47 @@
 
         const cleanText = (text || '').replace(/£\s*(\d+)/g, '$1 DM');
 
+        // Always populate the instant text card first so there is never a blank loading delay
+        if (containerEl) {
+            containerEl.className = 'chance-chest-card ' + (isChest ? 'chest' : 'chance');
+        }
+        if (textEl) textEl.textContent = cleanText;
+        if (imgEl) imgEl.src = resolveUrl(getCardIllustration(text));
+
         if (cardImage && fullCardImgEl) {
-            fullCardImgEl.src = resolveUrl('static/assets/chance_chest/cards/' + cardImage);
-            fullCardImgEl.style.display = 'block';
-            if (containerEl) containerEl.style.display = 'none';
+            const relCardPath = 'static/assets/chance_chest/cards/' + cardImage;
+            const resolvedCardUrl = resolveUrl(relCardPath);
+            preloadImageUrl(relCardPath);
+
             if (captionEl && cleanText) {
                 captionEl.textContent = cleanText;
                 captionEl.style.display = 'block';
             } else if (captionEl) {
                 captionEl.style.display = 'none';
             }
-        } else {
-            if (fullCardImgEl) fullCardImgEl.style.display = 'none';
-            if (captionEl) captionEl.style.display = 'none';
-            if (containerEl) {
-                containerEl.style.display = 'block';
-                containerEl.className = 'chance-chest-card ' + (isChest ? 'chest' : 'chance');
+
+            if (isImageReady(relCardPath)) {
+                fullCardImgEl.onload = null;
+                fullCardImgEl.src = resolvedCardUrl;
+                fullCardImgEl.style.display = 'block';
+                if (containerEl) containerEl.style.display = 'none';
+            } else {
+                // Show crisp text card immediately while the image loads in the background
+                fullCardImgEl.style.display = 'none';
+                if (containerEl) containerEl.style.display = 'block';
+                fullCardImgEl.onload = function() {
+                    fullCardImgEl.style.display = 'block';
+                    if (containerEl) containerEl.style.display = 'none';
+                };
+                fullCardImgEl.src = resolvedCardUrl;
             }
-            if (textEl) textEl.textContent = cleanText;
-            if (imgEl) imgEl.src = getCardIllustration(text);
+        } else {
+            if (fullCardImgEl) {
+                fullCardImgEl.onload = null;
+                fullCardImgEl.style.display = 'none';
+            }
+            if (captionEl) captionEl.style.display = 'none';
+            if (containerEl) containerEl.style.display = 'block';
         }
 
         const isMyTurn = (gameState && gameState.current_player && gameState.current_player.id === playerId);
@@ -1414,7 +1496,7 @@
         }
     }
 
-    // Show Besitzurkunde (Property Deed Modal with Authentic ROM Card Graphics)
+    // Show Besitzurkunde (Property Deed Modal with Instant Text Fallback + Cached ROM Card Graphics)
     function showDeedModal(sqIdx) {
         if (!squaresData || squaresData.length === 0) return;
         const sq = squaresData[sqIdx];
@@ -1513,51 +1595,65 @@
         }
 
         const deedImgSrc = DEED_CARD_IMAGES[sqIdx];
+        if (deedImgSrc) preloadImageUrl(deedImgSrc);
+        const isDeedCached = deedImgSrc && isImageReady(deedImgSrc);
         const bankHouses = (gameState && gameState.bank_houses !== undefined) ? gameState.bank_houses : 32;
         const bankHotels = (gameState && gameState.bank_hotels !== undefined) ? gameState.bank_hotels : 12;
-        let cardGraphicHtml = '';
 
-        if (deedImgSrc) {
-            cardGraphicHtml = `
-                <div class="deed-image-wrap">
-                    <img class="deed-card-img" src="${resolveUrl(deedImgSrc)}" alt="${sq.name}" />
-                    ${st && st.mortgaged ? '<div class="mortgage-stamp-overlay">HYPOTHEK</div>' : ''}
+        const textCardHtml = `
+            <div class="deed-card" id="deed-fallback-card" style="display:${isDeedCached ? 'none' : 'block'};">
+                <div class="deed-banner" style="background:${bannerColor};">
+                    <div class="deed-subtitle">BESITZURKUNDE</div>
+                    <div class="deed-street-name">${sq.name}</div>
                 </div>
-                <div style="background:rgba(255,255,255,0.06); padding:10px 14px; border-radius:8px; margin-top:10px; font-size:12px; display:flex; flex-direction:column; gap:4px;">
-                    <div><strong>Kaufpreis:</strong> ${sq.price} DM | <strong>Hypothekenwert:</strong> ${sq.mortgage || sq.price / 2} DM</div>
-                    ${sq.house_cost ? `<div><strong>Hausbau:</strong> je ${sq.house_cost} DM ${st && st.houses ? `(Aktuell: ${st.houses === 5 ? 'Hotel' : st.houses + ' Häuser'})` : ''}</div>` : ''}
-                    ${sq.house_cost ? `<div style="font-size:11px; color:var(--text-muted);">Bank-Vorrat: ${bankHouses} Häuser, ${bankHotels} Hotels</div>` : ''}
-                    <div style="margin-top:2px; font-weight:700; color:${owner ? owner.color : '#888'};">
+                <div class="deed-content">${rentHtml}</div>
+                <div class="deed-footer">
+                    <div><strong>Kaufpreis:</strong> ${sq.price} DM</div>
+                    <div><strong>Hypothekenwert:</strong> ${sq.mortgage || sq.price / 2} DM</div>
+                    ${sq.house_cost ? `<div><strong>Hauskosten:</strong> je ${sq.house_cost} DM</div>` : ''}
+                    <div style="margin-top:4px; font-weight:700; color:${owner ? owner.color : '#666'};">
                         Besitzer: ${owner ? owner.name + (isMyProperty ? ' (Du)' : '') : 'Niemand (Frei)'}
-                        ${st && st.mortgaged ? ' - ⚠️ HYPOTHEK BELASTET' : ''}
+                        ${st && st.mortgaged ? ' - ⚠️ MIT HYPOTHEK BELASTET' : ''}
                     </div>
                 </div>
-            `;
-        } else {
-            cardGraphicHtml = `
-                <div class="deed-card">
-                    <div class="deed-banner" style="background:${bannerColor};">
-                        <div class="deed-subtitle">BESITZURKUNDE</div>
-                        <div class="deed-street-name">${sq.name}</div>
-                    </div>
-                    <div class="deed-content">${rentHtml}</div>
-                    <div class="deed-footer">
-                        <div><strong>Kaufpreis:</strong> ${sq.price} DM</div>
-                        <div><strong>Hypothekenwert:</strong> ${sq.mortgage || sq.price / 2} DM</div>
-                        ${sq.house_cost ? `<div><strong>Hauskosten:</strong> je ${sq.house_cost} DM</div>` : ''}
-                        <div style="margin-top:4px; font-weight:700; color:${owner ? owner.color : '#666'};">
-                            Besitzer: ${owner ? owner.name + (isMyProperty ? ' (Du)' : '') : 'Niemand (Frei)'}
-                            ${st && st.mortgaged ? ' - ⚠️ MIT HYPOTHEK BELASTET' : ''}
-                        </div>
-                    </div>
+            </div>
+        `;
+
+        const imageCardHtml = deedImgSrc ? `
+            <div class="deed-image-wrap" id="deed-img-wrap" style="display:${isDeedCached ? 'block' : 'none'};">
+                <img class="deed-card-img" id="deed-modal-img-el" src="${resolveUrl(deedImgSrc)}" alt="${sq.name}" />
+                ${st && st.mortgaged ? '<div class="mortgage-stamp-overlay">HYPOTHEK</div>' : ''}
+            </div>
+            <div id="deed-img-meta" style="display:${isDeedCached ? 'flex' : 'none'}; background:rgba(255,255,255,0.06); padding:10px 14px; border-radius:8px; margin-top:10px; font-size:12px; flex-direction:column; gap:4px;">
+                <div><strong>Kaufpreis:</strong> ${sq.price} DM | <strong>Hypothekenwert:</strong> ${sq.mortgage || sq.price / 2} DM</div>
+                ${sq.house_cost ? `<div><strong>Hausbau:</strong> je ${sq.house_cost} DM ${st && st.houses ? `(Aktuell: ${st.houses === 5 ? 'Hotel' : st.houses + ' Häuser'})` : ''}</div>` : ''}
+                ${sq.house_cost ? `<div style="font-size:11px; color:var(--text-muted);">Bank-Vorrat: ${bankHouses} Häuser, ${bankHotels} Hotels</div>` : ''}
+                <div style="margin-top:2px; font-weight:700; color:${owner ? owner.color : '#888'};">
+                    Besitzer: ${owner ? owner.name + (isMyProperty ? ' (Du)' : '') : 'Niemand (Frei)'}
+                    ${st && st.mortgaged ? ' - ⚠️ HYPOTHEK BELASTET' : ''}
                 </div>
-            `;
-        }
+            </div>
+        ` : '';
 
         modalBody.innerHTML = `
-            ${cardGraphicHtml}
+            ${textCardHtml}
+            ${imageCardHtml}
             ${actionsHtml ? `<div class="deed-actions-row" style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">${actionsHtml}</div>` : ''}
         `;
+
+        if (deedImgSrc && !isDeedCached) {
+            const imgNode = document.getElementById('deed-modal-img-el');
+            if (imgNode) {
+                imgNode.onload = function() {
+                    const wrap = document.getElementById('deed-img-wrap');
+                    const meta = document.getElementById('deed-img-meta');
+                    const fallback = document.getElementById('deed-fallback-card');
+                    if (wrap) wrap.style.display = 'block';
+                    if (meta) meta.style.display = 'flex';
+                    if (fallback) fallback.style.display = 'none';
+                };
+            }
+        }
 
         openModal('modal-deed');
     }
@@ -1750,6 +1846,9 @@
 
             // Connect WebSocket immediately
             connectWebSocket();
+
+            // Preload all 28 Property Deeds & 32 Chance/Chest Cards into memory cache
+            preloadAllCardAssets();
 
             // Open lobby modal immediately
             openModal('modal-lobby');

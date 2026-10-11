@@ -483,6 +483,8 @@
         ctx.fillText(line.trim(), x, curY);
     }
 
+    const drawnCardTextureCache = {};
+
     function showDrawnCard(deck, text, cardImage) {
         const isChest = (deck || '').toLowerCase().includes('gemein');
         const key = isChest ? 'Gemeinschaft' : 'Ereignis';
@@ -491,27 +493,43 @@
         const mesh = drawnCardMeshes[key];
         if (!mesh) return;
 
-        if (cardImage) {
-            const cardPath = (window.MonopolyAssets && window.MonopolyAssets.resolveUrl)
-                ? window.MonopolyAssets.resolveUrl('static/assets/chance_chest/cards/' + cardImage)
-                : 'static/assets/chance_chest/cards/' + cardImage;
-            const loader = new THREE.TextureLoader();
-            loader.load(cardPath, function(tex) {
-                tex.colorSpace = THREE.SRGBColorSpace || THREE.sRGBEncoding;
-                tex.generateMipmaps = true;
-                tex.minFilter = THREE.LinearMipmapLinearFilter;
-                mesh.material.map = tex;
-                mesh.material.needsUpdate = true;
+        function applyCardTexture(tex) {
+            mesh.material.map = tex;
+            mesh.material.needsUpdate = true;
+            if (tex.image && tex.image.width && tex.image.height) {
+                const isLandscape = tex.image.width >= tex.image.height;
+                const w = isLandscape ? 1.52 : 1.00;
+                const h = isLandscape ? 1.00 : 1.52;
+                if (mesh.geometry) mesh.geometry.dispose();
+                mesh.geometry = new THREE.PlaneGeometry(w, h);
+            }
+        }
 
-                // Dynamically fit geometry to texture aspect ratio
-                if (tex.image && tex.image.width && tex.image.height) {
-                    const isLandscape = tex.image.width >= tex.image.height;
-                    const w = isLandscape ? 1.52 : 1.00;
-                    const h = isLandscape ? 1.00 : 1.52;
-                    if (mesh.geometry) mesh.geometry.dispose();
-                    mesh.geometry = new THREE.PlaneGeometry(w, h);
-                }
-            });
+        if (cardImage) {
+            if (drawnCardTextureCache[cardImage]) {
+                applyCardTexture(drawnCardTextureCache[cardImage]);
+            } else {
+                // Immediately show canvas text texture while the card image loads
+                const fallbackTex = createDrawnCardCanvasTexture(key, text);
+                mesh.material.map = fallbackTex;
+                mesh.material.needsUpdate = true;
+                if (mesh.geometry) mesh.geometry.dispose();
+                mesh.geometry = new THREE.PlaneGeometry(1.52, 1.00);
+
+                const cardPath = (window.MonopolyAssets && window.MonopolyAssets.resolveUrl)
+                    ? window.MonopolyAssets.resolveUrl('static/assets/chance_chest/cards/' + cardImage)
+                    : 'static/assets/chance_chest/cards/' + cardImage;
+                const loader = new THREE.TextureLoader();
+                loader.load(cardPath, function(tex) {
+                    tex.colorSpace = THREE.SRGBColorSpace || THREE.sRGBEncoding;
+                    tex.generateMipmaps = true;
+                    tex.minFilter = THREE.LinearMipmapLinearFilter;
+                    drawnCardTextureCache[cardImage] = tex;
+                    if (mesh.userData && mesh.userData.cardImage === cardImage) {
+                        applyCardTexture(tex);
+                    }
+                });
+            }
         } else {
             const tex = createDrawnCardCanvasTexture(key, text);
             mesh.material.map = tex;
