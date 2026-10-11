@@ -147,6 +147,86 @@
     }
 
     let cardModalAutoCloseTimer = null;
+    let cardModalSecondsLeft = 0;
+    const CARD_MODAL_TIMEOUT_SEC = 5;
+
+    let buyOrAuctionTimerInterval = null;
+    let buyOrAuctionSecondsLeft = 0;
+    let buyOrAuctionSqIdx = null;
+    const BUY_OR_AUCTION_TIMEOUT_SEC = 10;
+
+    function clearCardModalTimer() {
+        if (cardModalAutoCloseTimer) {
+            clearInterval(cardModalAutoCloseTimer);
+            clearTimeout(cardModalAutoCloseTimer);
+            cardModalAutoCloseTimer = null;
+        }
+        cardModalSecondsLeft = 0;
+    }
+
+    function updateBuyOrAuctionButtonLabels() {
+        const deedAuctionBtn = document.getElementById('deed-btn-auction');
+        const dockAuctionBtn = document.getElementById('btn-auction');
+        const labelSuffix = (buyOrAuctionTimerInterval && buyOrAuctionSecondsLeft > 0) ? ` (${buyOrAuctionSecondsLeft}s)` : '';
+        if (deedAuctionBtn) {
+            deedAuctionBtn.textContent = `🔨 Versteigern${labelSuffix}`;
+        }
+        if (dockAuctionBtn) {
+            dockAuctionBtn.innerHTML = `<span>🔨</span><span>Versteigern${labelSuffix}</span>`;
+        }
+    }
+
+    function clearBuyOrAuctionTimer() {
+        if (buyOrAuctionTimerInterval) {
+            clearInterval(buyOrAuctionTimerInterval);
+            buyOrAuctionTimerInterval = null;
+        }
+        buyOrAuctionSecondsLeft = 0;
+        buyOrAuctionSqIdx = null;
+        updateBuyOrAuctionButtonLabels();
+    }
+
+    function isPendingBuyOrAuctionForMe() {
+        if (!gameState || gameState.status !== 'PLAYING' || isTokenInTransit || gameState.auction_state) return false;
+        const currPlayer = gameState.current_player;
+        if (!currPlayer || currPlayer.id !== playerId) return false;
+        return !!(gameState.pending_action && gameState.pending_action.type === 'BUY_OR_AUCTION' && gameState.pending_action.square);
+    }
+
+    function syncBuyOrAuctionTimer() {
+        if (!isPendingBuyOrAuctionForMe()) {
+            clearBuyOrAuctionTimer();
+            return;
+        }
+        const targetSqIdx = gameState.pending_action.square.index;
+        if (!buyOrAuctionTimerInterval || buyOrAuctionSqIdx !== targetSqIdx) {
+            if (buyOrAuctionTimerInterval) {
+                clearInterval(buyOrAuctionTimerInterval);
+                buyOrAuctionTimerInterval = null;
+            }
+            buyOrAuctionSqIdx = targetSqIdx;
+            buyOrAuctionSecondsLeft = BUY_OR_AUCTION_TIMEOUT_SEC;
+            updateBuyOrAuctionButtonLabels();
+            buyOrAuctionTimerInterval = setInterval(() => {
+                if (!isPendingBuyOrAuctionForMe()) {
+                    clearBuyOrAuctionTimer();
+                    return;
+                }
+                buyOrAuctionSecondsLeft -= 1;
+                if (buyOrAuctionSecondsLeft <= 0) {
+                    const sqToAuction = buyOrAuctionSqIdx;
+                    clearBuyOrAuctionTimer();
+                    closeModal('modal-deed');
+                    sendWsMessage({ action: 'START_AUCTION', sq_idx: sqToAuction });
+                } else {
+                    updateBuyOrAuctionButtonLabels();
+                }
+            }, 1000);
+        } else {
+            updateBuyOrAuctionButtonLabels();
+        }
+    }
+
     let lastUserActivityAt = 0;
     let lastPointerCoords = { x: 0, y: 0 };
 
@@ -685,15 +765,18 @@
 
             case 'TURN_ENDED':
                 clearEndTurnTimer();
+                clearBuyOrAuctionTimer();
                 break;
 
             case 'PROPERTY_BOUGHT':
                 if (Sound) Sound.playMoney();
+                clearBuyOrAuctionTimer();
                 closeModal('modal-deed');
                 resetEndTurnTimer();
                 break;
 
             case 'AUCTION_UPDATED':
+                clearBuyOrAuctionTimer();
                 closeModal('modal-deed');
                 if (gameState && gameState.auction_state) {
                     showAuctionModal();
@@ -808,10 +891,7 @@
     }
 
     function confirmCard() {
-        if (cardModalAutoCloseTimer) {
-            clearTimeout(cardModalAutoCloseTimer);
-            cardModalAutoCloseTimer = null;
-        }
+        clearCardModalTimer();
         closeModal('modal-card');
         const isMyTurn = (gameState && gameState.current_player && gameState.current_player.id === playerId);
         if (isMyTurn && gameState && gameState.pending_action && gameState.pending_action.type === 'CARD_DRAWN') {
@@ -825,10 +905,7 @@
             updateHUD();
             return;
         }
-        if (cardModalAutoCloseTimer) {
-            clearTimeout(cardModalAutoCloseTimer);
-            cardModalAutoCloseTimer = null;
-        }
+        clearCardModalTimer();
         closeModal('modal-card');
 
         const isMyTurn = (res.player && res.player.id === playerId);
@@ -1335,6 +1412,7 @@
             btnJailCard.style.display = canCard ? 'inline-flex' : 'none';
         }
 
+        syncBuyOrAuctionTimer();
         syncEndTurnTimer();
     }
 
@@ -1586,10 +1664,7 @@
         const fullCardImgEl = document.getElementById('card-modal-full-img');
         const confirmBtnEl = document.getElementById('btn-card-confirm');
 
-        if (cardModalAutoCloseTimer) {
-            clearTimeout(cardModalAutoCloseTimer);
-            cardModalAutoCloseTimer = null;
-        }
+        clearCardModalTimer();
 
         const isChest = (deckType || '').toLowerCase().includes('gemein');
         if (titleEl) titleEl.textContent = isChest ? 'GEMEINSCHAFTSKARTE' : 'EREIGNISKARTE';
@@ -1651,18 +1726,28 @@
 
         const isMyTurn = (gameState && gameState.current_player && gameState.current_player.id === playerId);
         const isPendingCardConfirm = (gameState && gameState.pending_action && gameState.pending_action.type === 'CARD_DRAWN');
+        const baseBtnLabel = (isMyTurn && isPendingCardConfirm) ? 'OK — Ausführen' : 'OK';
+
+        cardModalSecondsLeft = CARD_MODAL_TIMEOUT_SEC;
         if (confirmBtnEl) {
-            confirmBtnEl.textContent = (isMyTurn && isPendingCardConfirm) ? 'OK — Ausführen' : 'OK';
+            confirmBtnEl.textContent = `${baseBtnLabel} (${cardModalSecondsLeft}s)`;
         }
 
         openModal('modal-card');
         if (playSound && Sound) Sound.playCard();
 
-        if (!isMyTurn && !isPendingCardConfirm) {
-            cardModalAutoCloseTimer = setTimeout(() => {
-                closeModal('modal-card');
-            }, 6500);
-        }
+        cardModalAutoCloseTimer = setInterval(() => {
+            cardModalSecondsLeft -= 1;
+            if (cardModalSecondsLeft <= 0) {
+                clearCardModalTimer();
+                confirmCard();
+            } else if (confirmBtnEl) {
+                const stillMyTurn = (gameState && gameState.current_player && gameState.current_player.id === playerId);
+                const stillPending = (gameState && gameState.pending_action && gameState.pending_action.type === 'CARD_DRAWN');
+                const curBase = (stillMyTurn && stillPending) ? 'OK — Ausführen' : 'OK';
+                confirmBtnEl.textContent = `${curBase} (${cardModalSecondsLeft}s)`;
+            }
+        }, 1000);
     }
 
     // Show Besitzurkunde (Property Deed Modal with Instant Text Fallback + Cached ROM Card Graphics)
@@ -1715,12 +1800,13 @@
         // Direct Buy or Auction buttons when landing on unowned property
         if (!owner && isMyTurn && gameState && gameState.pending_action && gameState.pending_action.type === 'BUY_OR_AUCTION' && gameState.pending_action.square && gameState.pending_action.square.index === sqIdx) {
             const canBuy = myPlayer && myPlayer.money >= sq.price;
+            const secLabel = (buyOrAuctionTimerInterval && buyOrAuctionSecondsLeft > 0) ? buyOrAuctionSecondsLeft : BUY_OR_AUCTION_TIMEOUT_SEC;
             actionsHtml += `
                 <button class="btn-action btn-buy" style="font-size:13px; padding:8px 12px; flex:1;" ${canBuy ? '' : 'disabled'} onclick="window.MonopolyGame.buyProperty(${sqIdx})">
                     🏠 Kaufen (${sq.price} DM)
                 </button>
-                <button class="btn-action" style="font-size:13px; padding:8px 12px; flex:1; background:#e67e22; color:#fff;" onclick="window.MonopolyGame.startAuction(${sqIdx})">
-                    🔨 Versteigern
+                <button id="deed-btn-auction" class="btn-action" style="font-size:13px; padding:8px 12px; flex:1; background:#e67e22; color:#fff;" onclick="window.MonopolyGame.startAuction(${sqIdx})">
+                    🔨 Versteigern (${secLabel}s)
                 </button>
             `;
         } else if (isMyProperty) {
@@ -1825,6 +1911,7 @@
         }
 
         openModal('modal-deed');
+        syncBuyOrAuctionTimer();
     }
 
     // Show Player Portfolio (All owned streets)
