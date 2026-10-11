@@ -26,7 +26,7 @@ services:
     container_name: partyhub
     restart: unless-stopped
     ports:
-      - "3000:80"
+      - "8000:80"
       - "3443:443"
     volumes:
       - ./party-hub:/usr/share/nginx/html:ro
@@ -67,7 +67,7 @@ services:
     volumes:
       - ./games/uno/client:/app/client:ro
     ports:
-      - "8085:8085"
+      - "8086:8085"
     networks:
       - party-net
 
