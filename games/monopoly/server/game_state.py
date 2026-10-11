@@ -909,12 +909,13 @@ class GameRoom:
             "high_bidder_id": None,
             "high_bidder_name": None,
             "active_bidders": active_bidders,
-            "passed_bidders": []
+            "passed_bidders": [],
+            "bid_seq": 1,
+            "timeout_sec": 5
         }
         self.pending_action = {"type": "AUCTION", "square": square}
         self.log(f"🔨 {curr.name} lehnt den Direktkauf ab! {square['name']} (Wert: {square['price']} DM) wird versteigert!")
-        self._process_bot_auction_bids()
-        return {"success": True, "auction": self.auction_state}
+        return {"success": True, "auction_ended": False, "auction": self.auction_state}
 
     def place_auction_bid(self, player_id: str, bid_amount: int) -> dict:
         if not self.auction_state:
@@ -935,9 +936,10 @@ class GameRoom:
         self.auction_state["high_bid"] = bid_amount
         self.auction_state["high_bidder_id"] = player.id
         self.auction_state["high_bidder_name"] = player.name
-        self.log(f"🔨 {player.name} bietet {bid_amount} DM für {self.auction_state['square']['name']}!")
+        self.auction_state["bid_seq"] = self.auction_state.get("bid_seq", 1) + 1
+        self.log(f"{'🤖' if player.is_bot else '🔨'} {player.name} bietet {bid_amount} DM für {self.auction_state['square']['name']}!")
 
-        # Wenn alle anderen außer dem Höchstbietenden kein höheres Budget mehr haben, automatisch aussteigen lassen
+        # Wenn andere Bieter kein höheres Budget mehr haben, automatisch aussteigen lassen
         for b_id in list(self.auction_state["active_bidders"]):
             if b_id != player.id:
                 bp = next((p for p in self.players if p.id == b_id), None)
@@ -946,8 +948,7 @@ class GameRoom:
                     if b_id not in self.auction_state["passed_bidders"]:
                         self.auction_state["passed_bidders"].append(b_id)
 
-        self._process_bot_auction_bids()
-        return self._check_auction_completion()
+        return {"success": True, "auction_ended": False, "auction": self.auction_state}
 
     def pass_auction(self, player_id: str) -> dict:
         if not self.auction_state:
@@ -960,71 +961,74 @@ class GameRoom:
             if player:
                 self.log(f"🏳️ {player.name} steigt aus der Versteigerung aus.")
 
-        self._process_bot_auction_bids()
-        return self._check_auction_completion()
+        # Wenn noch kein Gebot vorliegt und niemand mehr aktiv ist, sofort beenden
+        if not self.auction_state["high_bidder_id"] and len(self.auction_state["active_bidders"]) == 0:
+            return self.finalize_auction_timeout()
 
-    def _process_bot_auction_bids(self):
+        return {"success": True, "auction_ended": False, "auction": self.auction_state}
+
+    def step_bot_auction_bid(self) -> Optional[dict]:
+        """Führt maximal einen einzelnen Bot-Gebotsschritt aus, damit der 5s-Hammer-Timer echt abläuft."""
         if not self.auction_state:
-            return
+            return None
         sq = self.auction_state["square"]
         base_price = sq["price"]
 
-        changed = True
-        while changed and self.auction_state:
-            changed = False
-            for b_id in list(self.auction_state["active_bidders"]):
-                bot = next((p for p in self.players if p.id == b_id and p.is_bot), None)
-                if not bot:
-                    continue
-                # Wenn der Bot bereits Höchstbietender ist und allein übrig ist, fertig
-                if self.auction_state["high_bidder_id"] == bot.id and len(self.auction_state["active_bidders"]) <= 1:
-                    continue
-                if self.auction_state["high_bidder_id"] == bot.id:
-                    continue
+        for b_id in list(self.auction_state["active_bidders"]):
+            bot = next((p for p in self.players if p.id == b_id and p.is_bot), None)
+            if not bot:
+                continue
+            if self.auction_state["high_bidder_id"] == bot.id:
+                continue
 
-                max_willing = min(bot.money - 100, int(base_price * 0.85))
-                next_bid = self.auction_state["high_bid"] + 10
-                if next_bid <= max_willing and next_bid <= bot.money:
-                    self.auction_state["high_bid"] = next_bid
-                    self.auction_state["high_bidder_id"] = bot.id
-                    self.auction_state["high_bidder_name"] = bot.name
-                    self.log(f"🤖 {bot.name} bietet {next_bid} DM für {sq['name']}!")
-                    changed = True
-                else:
-                    self.auction_state["active_bidders"].remove(bot.id)
-                    if bot.id not in self.auction_state["passed_bidders"]:
-                        self.auction_state["passed_bidders"].append(bot.id)
-                    self.log(f"🤖 {bot.name} passt bei der Versteigerung.")
-                    changed = True
+            max_willing = min(bot.money - 100, int(base_price * 0.85))
+            next_bid = self.auction_state["high_bid"] + 10
+            if next_bid <= max_willing and next_bid <= bot.money:
+                return self.place_auction_bid(bot.id, next_bid)
+            else:
+                self.auction_state["active_bidders"].remove(bot.id)
+                if bot.id not in self.auction_state["passed_bidders"]:
+                    self.auction_state["passed_bidders"].append(bot.id)
+                self.log(f"🤖 {bot.name} passt bei der Versteigerung.")
 
-    def _check_auction_completion(self) -> dict:
+        return None
+
+    def finalize_auction_timeout(self) -> dict:
+        """Beendet die Auktion nach 5 Sekunden ohne neue Gebote ('Zum Ersten, zum Zweiten, Verkauft!')."""
         if not self.auction_state:
             return {"success": True, "auction_ended": True}
 
-        active = self.auction_state["active_bidders"]
         high_id = self.auction_state["high_bidder_id"]
         high_bid = self.auction_state["high_bid"]
         sq_idx = self.auction_state["sq_idx"]
         square = self.auction_state["square"]
+        winner_info = None
 
-        # Auktion endet, wenn:
-        # 1) Ein Höchstgebot existiert und nur noch der Höchstbietende (oder niemand sonst) aktiv ist
-        # 2) Alle gepasst haben ohne Gebot
-        if (high_id and (len(active) == 0 or (len(active) == 1 and active[0] == high_id))) or len(active) == 0:
-            if high_id and high_bid > 0:
-                winner = next((p for p in self.players if p.id == high_id), None)
-                if winner and winner.money >= high_bid:
-                    winner.money -= high_bid
-                    self.board_state[sq_idx]["owner"] = winner.id
-                    self.log(f"🎉 Zuschlag! {winner.name} ersteigert {square['name']} für {high_bid} DM!")
-            else:
-                self.log(f"🔨 Keine Gebote für {square['name']}. Das Grundstück bleibt unverkauft bei der Bank.")
+        if high_id and high_bid > 0:
+            winner = next((p for p in self.players if p.id == high_id), None)
+            if winner and winner.money >= high_bid:
+                winner.money -= high_bid
+                self.board_state[sq_idx]["owner"] = winner.id
+                self.log(f"🔨 Zum Ersten, zum Zweiten, zum Dritten – VERKAUFT! 🎉 {winner.name} ersteigert {square['name']} für {high_bid} DM!")
+                winner_info = {"id": winner.id, "name": winner.name, "color": winner.color}
+        else:
+            self.log(f"🔨 Zum Ersten, zum Zweiten, zum Dritten – Keine Gebote für {square['name']}. Das Grundstück bleibt bei der Bank.")
 
-            self.auction_state = None
-            self.pending_action = {"type": "END_TURN"}
-            self._check_doubles_reroll()
+        self.auction_state = None
+        self.pending_action = {"type": "END_TURN"}
+        self._check_doubles_reroll()
+        return {
+            "success": True,
+            "auction_ended": True,
+            "sold": bool(winner_info),
+            "winner": winner_info,
+            "amount": high_bid,
+            "square": square
+        }
+
+    def _check_auction_completion(self) -> dict:
+        if not self.auction_state:
             return {"success": True, "auction_ended": True}
-
         return {"success": True, "auction_ended": False, "auction": self.auction_state}
 
     # =========================================================================

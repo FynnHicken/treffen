@@ -39,6 +39,7 @@ async def cache_static_assets(request, call_next):
 # In-memory rooms and WebSocket connections
 rooms: Dict[str, GameRoom] = {}
 connections: Dict[str, Dict[str, WebSocket]] = {} # room_id -> {player_id: ws}
+auction_tasks: Dict[str, asyncio.Task] = {}
 
 async def broadcast_room(room_id: str, message: dict):
     if room_id in connections:
@@ -151,6 +152,10 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     "result": res,
                     "state": room.to_dict()
                 })
+                if res.get("auction_ended"):
+                    await finish_bot_turn_after_auction_if_needed(room_id)
+                elif room.auction_state:
+                    schedule_auction_flow(room_id)
 
             elif action == "AUCTION_BID":
                 amount = int(data.get("amount", 0))
@@ -162,6 +167,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 })
                 if res.get("auction_ended"):
                     await finish_bot_turn_after_auction_if_needed(room_id)
+                elif room.auction_state:
+                    schedule_auction_flow(room_id)
 
             elif action == "AUCTION_PASS":
                 res = room.pass_auction(player_id)
@@ -171,6 +178,20 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     "state": room.to_dict()
                 })
                 if res.get("auction_ended"):
+                    cancel_auction_flow(room_id)
+                    await finish_bot_turn_after_auction_if_needed(room_id)
+                elif room.auction_state:
+                    schedule_auction_flow(room_id)
+
+            elif action == "AUCTION_TIMEOUT":
+                if room.auction_state:
+                    cancel_auction_flow(room_id)
+                    res = room.finalize_auction_timeout()
+                    await broadcast_room(room_id, {
+                        "type": "AUCTION_UPDATED",
+                        "result": res,
+                        "state": room.to_dict()
+                    })
                     await finish_bot_turn_after_auction_if_needed(room_id)
 
             elif action == "CONFIRM_CARD":
@@ -306,6 +327,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 await handle_bot_turn_if_needed(room_id)
 
             elif action == "RESET_LOBBY":
+                cancel_auction_flow(room_id)
                 room.reset_to_lobby()
                 await broadcast_room(room_id, {
                     "type": "LOBBY_RESET",
@@ -333,6 +355,85 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 "player_id": player_id,
                 "state": room.to_dict()
             })
+
+
+def cancel_auction_flow(room_id: str):
+    task = auction_tasks.pop(room_id, None)
+    if task and task is not asyncio.current_task() and not task.done():
+        task.cancel()
+
+
+def schedule_auction_flow(room_id: str):
+    cancel_auction_flow(room_id)
+    auction_tasks[room_id] = asyncio.create_task(_auction_lifecycle_loop(room_id))
+
+
+async def _auction_lifecycle_loop(room_id: str):
+    try:
+        while True:
+            room = rooms.get(room_id)
+            if not room or room.status != "PLAYING" or not room.auction_state:
+                return
+            current_seq = room.auction_state.get("bid_seq", 1)
+
+            has_bot_candidate = any(
+                p.is_bot and p.id in room.auction_state["active_bidders"] and p.id != room.auction_state["high_bidder_id"]
+                for p in room.players
+            )
+            elapsed = 0.0
+            if has_bot_candidate:
+                await asyncio.sleep(1.1)
+                elapsed = 1.1
+                room = rooms.get(room_id)
+                if not room or room.status != "PLAYING" or not room.auction_state:
+                    return
+                if room.auction_state.get("bid_seq", 1) != current_seq:
+                    continue
+
+                prev_active_len = len(room.auction_state["active_bidders"])
+                bot_res = room.step_bot_auction_bid()
+                if bot_res:
+                    await broadcast_room(room_id, {
+                        "type": "AUCTION_UPDATED",
+                        "result": bot_res,
+                        "state": room.to_dict()
+                    })
+                    continue
+                elif len(room.auction_state["active_bidders"]) != prev_active_len:
+                    if not room.auction_state["high_bidder_id"] and len(room.auction_state["active_bidders"]) == 0:
+                        fin_res = room.finalize_auction_timeout()
+                        await broadcast_room(room_id, {
+                            "type": "AUCTION_UPDATED",
+                            "result": fin_res,
+                            "state": room.to_dict()
+                        })
+                        await finish_bot_turn_after_auction_if_needed(room_id)
+                        return
+                    else:
+                        await broadcast_room(room_id, {
+                            "type": "STATE_UPDATE",
+                            "state": room.to_dict()
+                        })
+
+            remaining = max(0.1, 5.0 - elapsed)
+            await asyncio.sleep(remaining)
+
+            room = rooms.get(room_id)
+            if not room or room.status != "PLAYING" or not room.auction_state:
+                return
+            if room.auction_state.get("bid_seq", 1) != current_seq:
+                continue
+
+            fin_res = room.finalize_auction_timeout()
+            await broadcast_room(room_id, {
+                "type": "AUCTION_UPDATED",
+                "result": fin_res,
+                "state": room.to_dict()
+            })
+            await finish_bot_turn_after_auction_if_needed(room_id)
+            return
+    except asyncio.CancelledError:
+        return
 
 
 async def finish_bot_turn_after_auction_if_needed(room_id: str):
@@ -424,8 +525,8 @@ async def handle_bot_turn_if_needed(room_id: str):
                     "result": auc_res,
                     "state": room.to_dict()
                 })
-                # If human players are still in the auction, wait for them to bid/pass
                 if room.auction_state:
+                    schedule_auction_flow(room_id)
                     return
 
         # Bot debt resolution or bankruptcy

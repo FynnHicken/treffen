@@ -1656,8 +1656,9 @@ html, body {
     100% { transform: rotate(8deg) scale(1.12); }
 }
 
-/* 10s End-Turn Timer Button Highlight */
-.btn-end.countdown-active {
+/* 10s Turn Inactivity Timer Button Highlight */
+.btn-end.countdown-active,
+.btn-roll.countdown-active {
     border: 1.5px solid #f39c12 !important;
     box-shadow: 0 0 14px rgba(243, 156, 18, 0.45);
     animation: endTurnPulse 1s ease-in-out infinite alternate;

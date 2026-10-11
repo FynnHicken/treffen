@@ -20,8 +20,16 @@
     let isTokenInTransit = false;
     let yourTurnPopupTimeout = null;
     let endTurnTimerInterval = null;
+    let endTurnTimerMode = null; // 'ROLL' or 'END_TURN'
     let endTurnSecondsLeft = 0;
     const END_TURN_TIMEOUT_SEC = 10;
+
+    // Auction 5s Hammer Countdown state
+    let auctionCountdownInterval = null;
+    let auctionDeadlineMs = 0;
+    let lastAuctionBidSeq = null;
+    let lastAuctionSqIdx = null;
+    let auctionTimeoutSentForSeq = null;
 
     // Sound and Board instances
     const Sound = window.MonopolySound;
@@ -139,7 +147,7 @@
     }
 
     let cardModalAutoCloseTimer = null;
-    let lastUserActivityAt = Date.now();
+    let lastUserActivityAt = 0;
     let lastPointerCoords = { x: 0, y: 0 };
 
     function recordUserActivity() {
@@ -169,6 +177,18 @@
         });
     }
 
+    function canPlayerRollNow() {
+        if (!gameState || gameState.status !== 'PLAYING' || isTokenInTransit) return false;
+        const currPlayer = gameState.current_player;
+        const isMyTurn = (currPlayer && currPlayer.id === playerId);
+        if (!isMyTurn || gameState.rolled) return false;
+        const myPlayer = gameState.players ? gameState.players.find(p => p.id === playerId) : null;
+        if (myPlayer && myPlayer.is_bankrupt) return false;
+        const pendingCard = (gameState.pending_action && gameState.pending_action.type === 'CARD_DRAWN');
+        if (pendingCard || gameState.auction_state) return false;
+        return true;
+    }
+
     function canPlayerEndTurnNow() {
         if (!gameState || gameState.status !== 'PLAYING' || isTokenInTransit) return false;
         const currPlayer = gameState.current_player;
@@ -181,18 +201,38 @@
         return !blockedByPending;
     }
 
+    function getActiveTurnTimerMode() {
+        if (canPlayerRollNow()) return 'ROLL';
+        if (canPlayerEndTurnNow()) return 'END_TURN';
+        return null;
+    }
+
     function updateEndTurnButtonLabel() {
+        const btnRoll = document.getElementById('btn-roll');
+        const rollLabelEl = document.getElementById('btn-roll-label');
         const btnEnd = document.getElementById('btn-end-turn');
-        const labelEl = document.getElementById('btn-end-turn-label');
-        if (!btnEnd || !labelEl) return;
+        const endLabelEl = document.getElementById('btn-end-turn-label');
 
         const isActivelyInteracting = isManagementModalOpen() || ((Date.now() - lastUserActivityAt) < 1200);
-        if (endTurnTimerInterval && endTurnSecondsLeft > 0 && !isActivelyInteracting) {
-            labelEl.textContent = `Zug beenden (${endTurnSecondsLeft}s)`;
-            btnEnd.classList.add('countdown-active');
-        } else {
-            labelEl.textContent = 'Zug beenden';
-            btnEnd.classList.remove('countdown-active');
+
+        if (btnRoll && rollLabelEl) {
+            if (endTurnTimerInterval && endTurnTimerMode === 'ROLL' && endTurnSecondsLeft > 0 && !isActivelyInteracting) {
+                rollLabelEl.textContent = `Würfeln (${endTurnSecondsLeft}s)`;
+                btnRoll.classList.add('countdown-active');
+            } else {
+                rollLabelEl.textContent = 'Würfeln';
+                btnRoll.classList.remove('countdown-active');
+            }
+        }
+
+        if (btnEnd && endLabelEl) {
+            if (endTurnTimerInterval && endTurnTimerMode === 'END_TURN' && endTurnSecondsLeft > 0 && !isActivelyInteracting) {
+                endLabelEl.textContent = `Zug beenden (${endTurnSecondsLeft}s)`;
+                btnEnd.classList.add('countdown-active');
+            } else {
+                endLabelEl.textContent = 'Zug beenden';
+                btnEnd.classList.remove('countdown-active');
+            }
         }
     }
 
@@ -201,12 +241,12 @@
             clearInterval(endTurnTimerInterval);
             endTurnTimerInterval = null;
         }
+        endTurnTimerMode = null;
         endTurnSecondsLeft = 0;
         updateEndTurnButtonLabel();
     }
 
     function resetEndTurnTimer() {
-        lastUserActivityAt = Date.now();
         if (endTurnTimerInterval) {
             endTurnSecondsLeft = END_TURN_TIMEOUT_SEC;
             updateEndTurnButtonLabel();
@@ -214,18 +254,24 @@
     }
 
     function syncEndTurnTimer() {
-        if (!canPlayerEndTurnNow()) {
+        const targetMode = getActiveTurnTimerMode();
+        if (!targetMode) {
             clearEndTurnTimer();
             return;
         }
 
-        if (!endTurnTimerInterval) {
-            lastUserActivityAt = Date.now();
+        if (!endTurnTimerInterval || endTurnTimerMode !== targetMode) {
+            if (endTurnTimerInterval) {
+                clearInterval(endTurnTimerInterval);
+                endTurnTimerInterval = null;
+            }
+            endTurnTimerMode = targetMode;
             endTurnSecondsLeft = END_TURN_TIMEOUT_SEC;
             updateEndTurnButtonLabel();
             endTurnTimerInterval = setInterval(() => {
-                if (!canPlayerEndTurnNow()) {
-                    clearEndTurnTimer();
+                const currentMode = getActiveTurnTimerMode();
+                if (!currentMode || currentMode !== endTurnTimerMode) {
+                    syncEndTurnTimer();
                     return;
                 }
                 // Only count down when the player is idle (no open modals and no mouse/keyboard/touch activity)
@@ -236,9 +282,15 @@
                 }
                 endTurnSecondsLeft -= 1;
                 if (endTurnSecondsLeft <= 0) {
+                    const firedMode = endTurnTimerMode;
                     clearEndTurnTimer();
-                    closeModal('modal-card');
-                    sendWsMessage({ action: 'END_TURN' });
+                    if (firedMode === 'ROLL') {
+                        hideYourTurnPopup();
+                        sendWsMessage({ action: 'ROLL_DICE' });
+                    } else {
+                        closeModal('modal-card');
+                        sendWsMessage({ action: 'END_TURN' });
+                    }
                 } else {
                     updateEndTurnButtonLabel();
                 }
@@ -646,8 +698,23 @@
                 if (gameState && gameState.auction_state) {
                     showAuctionModal();
                 } else {
+                    clearAuctionCountdownTicker();
                     closeModal('modal-auction');
-                    if (Sound) Sound.playMoney();
+                    if (msg.result && msg.result.sold && msg.result.winner) {
+                        if (Sound) Sound.playMoney();
+                        const sqTitle = (msg.result.square && msg.result.square.name) ? msg.result.square.name : 'das Grundstück';
+                        showYourTurnPopup(
+                            '🔨 ZUM DRITTEN – VERKAUFT!',
+                            `${msg.result.winner.name} ersteigert ${sqTitle} für ${msg.result.amount} DM!`
+                        );
+                    } else if (msg.result && msg.result.auction_ended && msg.result.square) {
+                        showYourTurnPopup(
+                            '🔨 KEINE GEBOTE',
+                            `${msg.result.square.name} bleibt unverkauft bei der Bank.`
+                        );
+                    } else if (Sound) {
+                        Sound.playMoney();
+                    }
                 }
                 syncEndTurnTimer();
                 break;
@@ -716,6 +783,7 @@
         if (gameState && gameState.auction_state) {
             showAuctionModal();
         } else {
+            clearAuctionCountdownTicker();
             closeModal('modal-auction');
         }
 
@@ -1255,7 +1323,6 @@
             const inDebt = (myPlayer && myPlayer.money < 0);
             const canEnd = isMyTurn && gameState.rolled && !isTokenInTransit && !blockedByPending && !inDebt;
             btnEnd.disabled = !canEnd;
-            syncEndTurnTimer();
         }
 
         // Jail actions (only BEFORE rolling dice, per Parker rules page 2)
@@ -1267,11 +1334,82 @@
             const canCard = isMyTurn && !gameState.rolled && myPlayer.in_jail && myPlayer.jail_cards > 0;
             btnJailCard.style.display = canCard ? 'inline-flex' : 'none';
         }
+
+        syncEndTurnTimer();
     }
 
-    // Show Auction Modal (Versteigerung)
+    function clearAuctionCountdownTicker() {
+        if (auctionCountdownInterval) {
+            clearInterval(auctionCountdownInterval);
+            auctionCountdownInterval = null;
+        }
+        lastAuctionBidSeq = null;
+        lastAuctionSqIdx = null;
+        auctionTimeoutSentForSeq = null;
+    }
+
+    function updateAuctionCountdownUI() {
+        if (!gameState || !gameState.auction_state) return;
+        const auc = gameState.auction_state;
+        const boxEl = document.getElementById('auction-hammer-box');
+        const textEl = document.getElementById('auction-hammer-text');
+        const barEl = document.getElementById('auction-hammer-bar');
+        if (!boxEl || !textEl || !barEl) return;
+
+        const msLeft = Math.max(0, auctionDeadlineMs - Date.now());
+        const secLeft = Math.ceil(msLeft / 1000);
+        const pct = Math.max(0, Math.min(100, (msLeft / 5000) * 100));
+
+        let label = '';
+        let color = '#2ecc71';
+        let border = 'rgba(46, 204, 113, 0.45)';
+
+        if (msLeft <= 0) {
+            label = (auc.high_bid > 0) ? '🎉 ZUM DRITTEN – VERKAUFT!' : '🔨 Keine Gebote – Zurück an die Bank!';
+            color = '#e74c3c';
+            border = 'rgba(231, 76, 60, 0.9)';
+        } else if (secLeft === 1) {
+            label = '🔨🔨🔨 Zum Dritten... (1s)';
+            color = '#e74c3c';
+            border = 'rgba(231, 76, 60, 0.9)';
+        } else if (secLeft === 2) {
+            label = '🔨🔨 Zum Zweiten... (2s)';
+            color = '#e67e22';
+            border = 'rgba(230, 126, 34, 0.8)';
+        } else if (secLeft === 3) {
+            label = '🔨 Zum Ersten... (3s)';
+            color = '#f1c40f';
+            border = 'rgba(241, 196, 15, 0.7)';
+        } else {
+            label = `⏱️ Gebotszeit läuft... (${secLeft}s)`;
+            color = '#2ecc71';
+            border = 'rgba(46, 204, 113, 0.45)';
+        }
+
+        textEl.textContent = label;
+        textEl.style.color = (secLeft <= 3) ? color : '#e2e8f0';
+        barEl.style.width = `${pct}%`;
+        barEl.style.background = color;
+        boxEl.style.borderColor = border;
+
+        const curSeq = auc.bid_seq || 1;
+        if (msLeft <= 0 && (Date.now() - auctionDeadlineMs) > 350 && auctionTimeoutSentForSeq !== curSeq) {
+            auctionTimeoutSentForSeq = curSeq;
+            sendWsMessage({ action: 'AUCTION_TIMEOUT' });
+        }
+    }
+
+    function startAuctionCountdownTicker() {
+        if (!auctionCountdownInterval) {
+            auctionCountdownInterval = setInterval(updateAuctionCountdownUI, 100);
+        }
+        updateAuctionCountdownUI();
+    }
+
+    // Show Auction Modal (Versteigerung mit 5s "Zum Ersten, zum Zweiten, Verkauft!" Hammer-Countdown)
     function showAuctionModal() {
         if (!gameState || !gameState.auction_state) {
+            clearAuctionCountdownTicker();
             closeModal('modal-auction');
             return;
         }
@@ -1279,6 +1417,17 @@
         const sq = auc.square;
         const modalBody = document.getElementById('auction-modal-body');
         if (!modalBody) return;
+
+        const bidSeq = auc.bid_seq || 1;
+        if (lastAuctionBidSeq !== bidSeq || lastAuctionSqIdx !== auc.sq_idx || !auctionCountdownInterval) {
+            if (lastAuctionBidSeq !== null && lastAuctionBidSeq !== bidSeq && Sound) {
+                Sound.playCard();
+            }
+            lastAuctionBidSeq = bidSeq;
+            lastAuctionSqIdx = auc.sq_idx;
+            auctionTimeoutSentForSeq = null;
+            auctionDeadlineMs = Date.now() + ((auc.timeout_sec || 5) * 1000);
+        }
 
         const myPlayer = gameState.players.find(p => p.id === playerId);
         const amIActive = auc.active_bidders && auc.active_bidders.includes(playerId);
@@ -1288,16 +1437,31 @@
         const canAfford10 = myPlayer && myPlayer.money >= highBid + 10;
         const canAfford50 = myPlayer && myPlayer.money >= highBid + 50;
 
+        // Preserve user's custom input if they were typing
+        const existingInput = document.getElementById('auction-custom-bid');
+        const wasFocused = (existingInput && document.activeElement === existingInput);
+        const prevCustomVal = existingInput ? parseInt(existingInput.value) : null;
+        const defaultCustomVal = Math.min(myPlayer ? myPlayer.money : minNextBid, minNextBid);
+        const customValToUse = (wasFocused && prevCustomVal && prevCustomVal > highBid) ? prevCustomVal : defaultCustomVal;
+
         const deedImgSrc = DEED_CARD_IMAGES[sq.index];
         const imgHtml = deedImgSrc
-            ? `<img src="${resolveUrl(deedImgSrc)}" alt="${sq.name}" style="max-height:170px; border-radius:8px; margin:0 auto 10px auto; display:block;" />`
+            ? `<img src="${resolveUrl(deedImgSrc)}" alt="${sq.name}" style="max-height:155px; border-radius:8px; margin:0 auto 8px auto; display:block;" />`
             : '';
 
         modalBody.innerHTML = `
             ${imgHtml}
-            <div style="text-align:center; margin-bottom:10px;">
+            <div style="text-align:center; margin-bottom:8px;">
                 <div style="font-size:16px; font-weight:800;">${sq.name}</div>
                 <div style="font-size:12px; color:var(--text-muted);">Regulärer Kaufpreis: ${sq.price} DM</div>
+            </div>
+            <div id="auction-hammer-box" style="background:rgba(15,23,42,0.75); border:1px solid rgba(46,204,113,0.45); border-radius:10px; padding:8px 12px; margin-bottom:10px; text-align:center; transition:border-color 0.2s;">
+                <div id="auction-hammer-text" style="font-size:14px; font-weight:800; letter-spacing:0.3px; margin-bottom:6px; color:#e2e8f0;">
+                    ⏱️ Gebotszeit läuft... (5s)
+                </div>
+                <div style="width:100%; height:6px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden;">
+                    <div id="auction-hammer-bar" style="width:100%; height:100%; background:#2ecc71; transition:width 0.1s linear, background 0.2s;"></div>
+                </div>
             </div>
             <div style="background:rgba(255,255,255,0.06); padding:10px 14px; border-radius:8px; margin-bottom:12px; font-size:13px; display:flex; justify-content:space-between; align-items:center;">
                 <span>Höchstgebot: <strong style="color:var(--accent-gold); font-size:15px;">${highBid} DM</strong></span>
@@ -1313,7 +1477,7 @@
                     </button>
                 </div>
                 <div style="display:flex; gap:8px; margin-bottom:10px;">
-                    <input type="number" id="auction-custom-bid" class="chat-input" min="${highBid + 1}" max="${myPlayer ? myPlayer.money : 1500}" value="${Math.min(myPlayer ? myPlayer.money : minNextBid, minNextBid)}" style="flex:1; padding:6px 10px;">
+                    <input type="number" id="auction-custom-bid" class="chat-input" min="${highBid + 1}" max="${myPlayer ? myPlayer.money : 1500}" value="${customValToUse}" style="flex:1; padding:6px 10px;">
                     <button class="btn-action btn-trade" style="font-size:12px;" onclick="window.MonopolyGame.submitCustomBid()">Bieten</button>
                 </div>
                 <button class="btn-action" style="width:100%; background:#c0392b; color:#fff;" onclick="window.MonopolyGame.passAuction()">
@@ -1321,11 +1485,16 @@
                 </button>
             ` : `
                 <div style="text-align:center; color:var(--text-muted); font-size:13px; padding:8px;">
-                    Du bist aus dieser Versteigerung ausgestiegen. Warte auf die anderen Bieter...
+                    Du bist aus dieser Versteigerung ausgestiegen. Warte auf den Hammer-Zuschlag...
                 </div>
             `}
         `;
+        if (wasFocused) {
+            const newInput = document.getElementById('auction-custom-bid');
+            if (newInput) newInput.focus();
+        }
         openModal('modal-auction');
+        startAuctionCountdownTicker();
     }
 
     // Show Income Tax Choice Modal (Einkommensteuer: 200 DM oder 10%)
