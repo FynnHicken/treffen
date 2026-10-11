@@ -290,6 +290,22 @@
 
             case 'PROPERTY_BOUGHT':
                 if (Sound) Sound.playMoney();
+                closeModal('modal-deed');
+                break;
+
+            case 'AUCTION_UPDATED':
+                closeModal('modal-deed');
+                if (gameState && gameState.auction_state) {
+                    showAuctionModal();
+                } else {
+                    closeModal('modal-auction');
+                    if (Sound) Sound.playMoney();
+                }
+                break;
+
+            case 'TAX_PAID':
+                if (Sound) Sound.playMoney();
+                closeModal('modal-tax');
                 break;
 
             case 'HOUSE_BUILT':
@@ -343,6 +359,22 @@
                 break;
         }
 
+        // Sync active Auction or Tax modal state
+        if (gameState && gameState.auction_state) {
+            showAuctionModal();
+        } else {
+            closeModal('modal-auction');
+        }
+
+        if (!isTokenInTransit && gameState && gameState.pending_action && gameState.pending_action.type === 'TAX_CHOICE') {
+            const isMyTurn = (gameState.current_player && gameState.current_player.id === playerId);
+            if (isMyTurn) {
+                showTaxChoiceModal(gameState.pending_action);
+            }
+        } else {
+            closeModal('modal-tax');
+        }
+
         // Check if pending action is a drawn card
         if (!isTokenInTransit && gameState && gameState.pending_action && gameState.pending_action.type === 'CARD') {
             const cAct = gameState.pending_action;
@@ -384,6 +416,10 @@
                             } else if (res.action.type === 'BUY_OR_AUCTION') {
                                 if (isMyTurn && res.action.square) {
                                     showDeedModal(res.action.square.index);
+                                }
+                            } else if (res.action.type === 'TAX_CHOICE') {
+                                if (isMyTurn) {
+                                    showTaxChoiceModal(res.action);
                                 }
                             }
                         } else if (!gameState || !gameState.last_card) {
@@ -654,20 +690,24 @@
         // Action Buttons Enable/Disable
         const btnRoll = document.getElementById('btn-roll');
         const btnBuy = document.getElementById('btn-buy');
+        const btnAuction = document.getElementById('btn-auction');
+        const btnBankrupt = document.getElementById('btn-bankrupt');
         const btnEnd = document.getElementById('btn-end-turn');
         const btnBail = document.getElementById('btn-bail');
         const btnJailCard = document.getElementById('btn-jail-card');
 
         if (btnRoll) {
-            const canRoll = isMyTurn && !gameState.rolled && (!myPlayer || !myPlayer.is_bankrupt);
+            const canRoll = isMyTurn && !gameState.rolled && !gameState.auction_state && (!myPlayer || !myPlayer.is_bankrupt);
             btnRoll.disabled = !canRoll;
             btnRoll.classList.toggle('can-roll', canRoll);
         }
 
+        const isBuyOrAuction = isMyTurn && gameState.pending_action && gameState.pending_action.type === 'BUY_OR_AUCTION';
+
         if (btnBuy) {
-            const canBuy = isMyTurn && gameState.pending_action && gameState.pending_action.type === 'BUY_OR_AUCTION' && myPlayer && myPlayer.money >= gameState.pending_action.price;
+            const canBuy = isBuyOrAuction && myPlayer && myPlayer.money >= gameState.pending_action.price;
             btnBuy.disabled = !canBuy;
-            if (canBuy) {
+            if (isBuyOrAuction) {
                 btnBuy.textContent = `🏠 Kaufen (${gameState.pending_action.price} DM)`;
                 btnBuy.style.display = 'inline-flex';
             } else {
@@ -675,20 +715,121 @@
             }
         }
 
+        if (btnAuction) {
+            if (isBuyOrAuction) {
+                btnAuction.style.display = 'inline-flex';
+                btnAuction.disabled = false;
+            } else {
+                btnAuction.style.display = 'none';
+            }
+        }
+
+        if (btnBankrupt && myPlayer) {
+            const inDebt = isMyTurn && myPlayer.money < 0 && !myPlayer.is_bankrupt;
+            btnBankrupt.style.display = inDebt ? 'inline-flex' : 'none';
+        }
+
         if (btnEnd) {
-            const canEnd = isMyTurn && gameState.rolled && (!gameState.pending_action || gameState.pending_action.type !== 'BUY_OR_AUCTION');
+            const pendingType = (gameState.pending_action && gameState.pending_action.type) || null;
+            const blockedByPending = (pendingType === 'BUY_OR_AUCTION' || pendingType === 'TAX_CHOICE' || !!gameState.auction_state);
+            const inDebt = (myPlayer && myPlayer.money < 0);
+            const canEnd = isMyTurn && gameState.rolled && !blockedByPending && !inDebt;
             btnEnd.disabled = !canEnd;
         }
 
-        // Jail actions
+        // Jail actions (only BEFORE rolling dice, per Parker rules page 2)
         if (btnBail && myPlayer) {
-            const canBail = isMyTurn && myPlayer.in_jail && myPlayer.money >= 50;
+            const canBail = isMyTurn && !gameState.rolled && myPlayer.in_jail && myPlayer.money >= 50;
             btnBail.style.display = canBail ? 'inline-flex' : 'none';
         }
         if (btnJailCard && myPlayer) {
-            const canCard = isMyTurn && myPlayer.in_jail && myPlayer.jail_cards > 0;
+            const canCard = isMyTurn && !gameState.rolled && myPlayer.in_jail && myPlayer.jail_cards > 0;
             btnJailCard.style.display = canCard ? 'inline-flex' : 'none';
         }
+    }
+
+    // Show Auction Modal (Versteigerung)
+    function showAuctionModal() {
+        if (!gameState || !gameState.auction_state) {
+            closeModal('modal-auction');
+            return;
+        }
+        const auc = gameState.auction_state;
+        const sq = auc.square;
+        const modalBody = document.getElementById('auction-modal-body');
+        if (!modalBody) return;
+
+        const myPlayer = gameState.players.find(p => p.id === playerId);
+        const amIActive = auc.active_bidders && auc.active_bidders.includes(playerId);
+        const highBid = auc.high_bid || 0;
+        const highBidder = auc.high_bidder_name || 'Noch kein Gebot';
+        const minNextBid = highBid + 10;
+        const canAfford10 = myPlayer && myPlayer.money >= highBid + 10;
+        const canAfford50 = myPlayer && myPlayer.money >= highBid + 50;
+
+        const deedImgSrc = DEED_CARD_IMAGES[sq.index];
+        const imgHtml = deedImgSrc
+            ? `<img src="${resolveUrl(deedImgSrc)}" alt="${sq.name}" style="max-height:170px; border-radius:8px; margin:0 auto 10px auto; display:block;" />`
+            : '';
+
+        modalBody.innerHTML = `
+            ${imgHtml}
+            <div style="text-align:center; margin-bottom:10px;">
+                <div style="font-size:16px; font-weight:800;">${sq.name}</div>
+                <div style="font-size:12px; color:var(--text-muted);">Regulärer Kaufpreis: ${sq.price} DM</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.06); padding:10px 14px; border-radius:8px; margin-bottom:12px; font-size:13px; display:flex; justify-content:space-between; align-items:center;">
+                <span>Höchstgebot: <strong style="color:var(--accent-gold); font-size:15px;">${highBid} DM</strong></span>
+                <span>Bieter: <strong>${highBidder}</strong></span>
+            </div>
+            ${amIActive ? `
+                <div style="display:flex; gap:8px; margin-bottom:8px;">
+                    <button class="btn-action btn-buy" style="flex:1; font-size:12px;" ${canAfford10 ? '' : 'disabled'} onclick="window.MonopolyGame.placeAuctionBid(${highBid + 10})">
+                        +10 DM (${highBid + 10} DM)
+                    </button>
+                    <button class="btn-action btn-buy" style="flex:1; font-size:12px;" ${canAfford50 ? '' : 'disabled'} onclick="window.MonopolyGame.placeAuctionBid(${highBid + 50})">
+                        +50 DM (${highBid + 50} DM)
+                    </button>
+                </div>
+                <div style="display:flex; gap:8px; margin-bottom:10px;">
+                    <input type="number" id="auction-custom-bid" class="chat-input" min="${highBid + 1}" max="${myPlayer ? myPlayer.money : 1500}" value="${Math.min(myPlayer ? myPlayer.money : minNextBid, minNextBid)}" style="flex:1; padding:6px 10px;">
+                    <button class="btn-action btn-trade" style="font-size:12px;" onclick="window.MonopolyGame.submitCustomBid()">Bieten</button>
+                </div>
+                <button class="btn-action" style="width:100%; background:#c0392b; color:#fff;" onclick="window.MonopolyGame.passAuction()">
+                    🏳️ Aussteigen (Passen)
+                </button>
+            ` : `
+                <div style="text-align:center; color:var(--text-muted); font-size:13px; padding:8px;">
+                    Du bist aus dieser Versteigerung ausgestiegen. Warte auf die anderen Bieter...
+                </div>
+            `}
+        `;
+        openModal('modal-auction');
+    }
+
+    // Show Income Tax Choice Modal (Einkommensteuer: 200 DM oder 10%)
+    function showTaxChoiceModal(actionData) {
+        const modalBody = document.getElementById('tax-modal-body');
+        if (!modalBody || !actionData) return;
+
+        const flatTax = actionData.flat_tax || 200;
+        const pctTax = actionData.percent_tax || 200;
+        const wealth = actionData.wealth || 0;
+
+        modalBody.innerHTML = `
+            <p style="font-size:13px; line-height:1.45; margin-bottom:12px;">
+                Laut Parker-Regelwerk kannst du bei der <strong>Einkommensteuer</strong> wählen, ob du den Festbetrag oder <strong>10 % deines gesamten Vermögens</strong> (Bargeld + Grundstückswerte + Gebäude = ${wealth} DM) an die Bank zahlst:
+            </p>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                <button class="btn-action btn-buy" style="width:100%; justify-content:center;" onclick="window.MonopolyGame.payIncomeTax('flat')">
+                    💵 Pauschalbetrag zahlen (${flatTax} DM)
+                </button>
+                <button class="btn-action btn-trade" style="width:100%; justify-content:center;" onclick="window.MonopolyGame.payIncomeTax('percent')">
+                    📊 10 % des Vermögens zahlen (${pctTax} DM)
+                </button>
+            </div>
+        `;
+        openModal('modal-tax');
     }
 
     // Show Card Modal (Ereignis- / Gemeinschaftskarte with Authentic ROM Graphic or Illustration)
@@ -739,6 +880,7 @@
 
         const bannerColor = GROUP_COLORS[sq.group] || '#333';
         const modalBody = document.getElementById('deed-modal-body');
+        if (!modalBody) return;
 
         let rentHtml = '';
         if (sq.type === 'property') {
@@ -765,17 +907,29 @@
         }
 
         let actionsHtml = '';
-        if (isMyProperty) {
+
+        // Direct Buy or Auction buttons when landing on unowned property
+        if (!owner && isMyTurn && gameState && gameState.pending_action && gameState.pending_action.type === 'BUY_OR_AUCTION' && gameState.pending_action.square && gameState.pending_action.square.index === sqIdx) {
+            const canBuy = myPlayer && myPlayer.money >= sq.price;
+            actionsHtml += `
+                <button class="btn-action btn-buy" style="font-size:13px; padding:8px 12px; flex:1;" ${canBuy ? '' : 'disabled'} onclick="window.MonopolyGame.buyProperty(${sqIdx})">
+                    🏠 Kaufen (${sq.price} DM)
+                </button>
+                <button class="btn-action" style="font-size:13px; padding:8px 12px; flex:1; background:#e67e22; color:#fff;" onclick="window.MonopolyGame.startAuction(${sqIdx})">
+                    🔨 Versteigern
+                </button>
+            `;
+        } else if (isMyProperty) {
             const houses = st.houses || 0;
             const isMortgaged = st.mortgaged;
 
-            // Build / Sell buttons
+            // Build / Sell buttons (allowed anytime per Parker rules page 3)
             if (sq.type === 'property' && !isMortgaged) {
-                const canBuild = isMyTurn && houses < 5 && myPlayer.money >= sq.house_cost;
-                const canSell = isMyTurn && houses > 0;
+                const canBuild = houses < 5 && myPlayer && myPlayer.money >= sq.house_cost;
+                const canSell = houses > 0;
                 actionsHtml += `
                     <button class="btn-action btn-buy" style="font-size:12px; padding:6px 12px; flex:1;" ${canBuild ? '' : 'disabled'} onclick="window.MonopolyGame.buildHouse(${sqIdx})">
-                        🔨 Haus bauen (${sq.house_cost} DM)
+                        🔨 ${houses === 4 ? 'Hotel' : 'Haus'} bauen (${sq.house_cost} DM)
                     </button>
                     ${canSell ? `
                     <button class="btn-action" style="font-size:12px; padding:6px 12px; background:#e67e22; color:#fff;" onclick="window.MonopolyGame.sellHouse(${sqIdx})">
@@ -795,7 +949,7 @@
                         </button>
                     `;
                 } else {
-                    const canUnmortgage = (myPlayer.money >= unmortgageCost);
+                    const canUnmortgage = (myPlayer && myPlayer.money >= unmortgageCost);
                     actionsHtml += `
                         <button class="btn-action" style="font-size:12px; padding:6px 12px; background:#27ae60; color:#fff;" ${canUnmortgage ? '' : 'disabled'} onclick="window.MonopolyGame.toggleMortgage(${sqIdx})">
                             Hypothek ablösen (-${unmortgageCost} DM)
@@ -806,17 +960,20 @@
         }
 
         const deedImgSrc = DEED_CARD_IMAGES[sqIdx];
+        const bankHouses = (gameState && gameState.bank_houses !== undefined) ? gameState.bank_houses : 32;
+        const bankHotels = (gameState && gameState.bank_hotels !== undefined) ? gameState.bank_hotels : 12;
         let cardGraphicHtml = '';
 
         if (deedImgSrc) {
             cardGraphicHtml = `
                 <div class="deed-image-wrap">
-                    <img class="deed-card-img" src="${deedImgSrc}" alt="${sq.name}" />
+                    <img class="deed-card-img" src="${resolveUrl(deedImgSrc)}" alt="${sq.name}" />
                     ${st && st.mortgaged ? '<div class="mortgage-stamp-overlay">HYPOTHEK</div>' : ''}
                 </div>
                 <div style="background:rgba(255,255,255,0.06); padding:10px 14px; border-radius:8px; margin-top:10px; font-size:12px; display:flex; flex-direction:column; gap:4px;">
                     <div><strong>Kaufpreis:</strong> ${sq.price} DM | <strong>Hypothekenwert:</strong> ${sq.mortgage || sq.price / 2} DM</div>
                     ${sq.house_cost ? `<div><strong>Hausbau:</strong> je ${sq.house_cost} DM ${st && st.houses ? `(Aktuell: ${st.houses === 5 ? 'Hotel' : st.houses + ' Häuser'})` : ''}</div>` : ''}
+                    ${sq.house_cost ? `<div style="font-size:11px; color:var(--text-muted);">Bank-Vorrat: ${bankHouses} Häuser, ${bankHotels} Hotels</div>` : ''}
                     <div style="margin-top:2px; font-weight:700; color:${owner ? owner.color : '#888'};">
                         Besitzer: ${owner ? owner.name + (isMyProperty ? ' (Du)' : '') : 'Niemand (Frei)'}
                         ${st && st.mortgaged ? ' - ⚠️ HYPOTHEK BELASTET' : ''}
@@ -824,7 +981,6 @@
                 </div>
             `;
         } else {
-            // Fallback CSS Deed
             cardGraphicHtml = `
                 <div class="deed-card">
                     <div class="deed-banner" style="background:${bannerColor};">
@@ -847,7 +1003,7 @@
 
         modalBody.innerHTML = `
             ${cardGraphicHtml}
-            ${actionsHtml ? `<div class="deed-actions-row">${actionsHtml}</div>` : ''}
+            ${actionsHtml ? `<div class="deed-actions-row" style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">${actionsHtml}</div>` : ''}
         `;
 
         openModal('modal-deed');
@@ -923,6 +1079,19 @@
         const partnerSelect = document.getElementById('trade-partner-select');
         const targetId = partnerSelect.value;
 
+        const myPlayer = gameState.players.find(p => p.id === playerId);
+        const targetPlayer = gameState.players.find(p => p.id === targetId);
+        const offerJcInput = document.getElementById('trade-offer-jail-cards');
+        const reqJcInput = document.getElementById('trade-req-jail-cards');
+        if (offerJcInput) {
+            offerJcInput.max = myPlayer ? (myPlayer.jail_cards || 0) : 0;
+            offerJcInput.value = 0;
+        }
+        if (reqJcInput) {
+            reqJcInput.max = targetPlayer ? (targetPlayer.jail_cards || 0) : 0;
+            reqJcInput.value = 0;
+        }
+
         // My properties
         const myPropsWrap = document.getElementById('trade-my-props');
         const myProps = [];
@@ -961,6 +1130,10 @@
         const targetId = partnerSelect.value;
         const offerMoney = parseInt(document.getElementById('trade-offer-money').value) || 0;
         const reqMoney = parseInt(document.getElementById('trade-req-money').value) || 0;
+        const offerJcEl = document.getElementById('trade-offer-jail-cards');
+        const reqJcEl = document.getElementById('trade-req-jail-cards');
+        const offerJailCards = offerJcEl ? (parseInt(offerJcEl.value) || 0) : 0;
+        const reqJailCards = reqJcEl ? (parseInt(reqJcEl.value) || 0) : 0;
 
         const offerProps = Array.from(document.querySelectorAll('input[name="trade_my_prop"]:checked')).map(cb => parseInt(cb.value));
         const reqProps = Array.from(document.querySelectorAll('input[name="trade_target_prop"]:checked')).map(cb => parseInt(cb.value));
@@ -971,7 +1144,9 @@
             offer_money: offerMoney,
             offer_props: offerProps,
             req_money: reqMoney,
-            req_props: reqProps
+            req_props: reqProps,
+            offer_jail_cards: offerJailCards,
+            req_jail_cards: reqJailCards
         });
 
         closeModal('modal-trade');
@@ -983,12 +1158,14 @@
 
         const offerPropNames = trade.offer_props.map(idx => squaresData[idx].name).join(', ') || 'Keine';
         const reqPropNames = trade.req_props.map(idx => squaresData[idx].name).join(', ') || 'Keine';
+        const offerJcText = trade.offer_jail_cards ? `, ${trade.offer_jail_cards}x Gefängnisfrei` : '';
+        const reqJcText = trade.req_jail_cards ? `, ${trade.req_jail_cards}x Gefängnisfrei` : '';
 
         modalBody.innerHTML = `
             <p><strong>${sender ? sender.name : 'Mitspieler'}</strong> bietet dir folgenden Tausch an:</p>
             <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:8px; margin:10px 0; font-size:13px; display:flex; flex-direction:column; gap:8px;">
-                <div><strong style="color:var(--primary);">Du erhältst:</strong> ${trade.offer_money} DM, Grundstücke: ${offerPropNames}</div>
-                <div><strong style="color:var(--accent-red);">Du gibst:</strong> ${trade.req_money} DM, Grundstücke: ${reqPropNames}</div>
+                <div><strong style="color:var(--primary);">Du erhältst:</strong> ${trade.offer_money} DM${offerJcText}, Grundstücke: ${offerPropNames}</div>
+                <div><strong style="color:var(--accent-red);">Du gibst:</strong> ${trade.req_money} DM${reqJcText}, Grundstücke: ${reqPropNames}</div>
             </div>
             <div style="display:flex; gap:10px; margin-top:10px;">
                 <button class="btn-action btn-buy" style="flex:1;" onclick="window.MonopolyGame.acceptTrade()">Annehmen</button>
@@ -1078,6 +1255,23 @@
                 btnBuy.onclick = () => {
                     if (gameState && gameState.pending_action && gameState.pending_action.square) {
                         sendWsMessage({ action: 'BUY_PROPERTY', sq_idx: gameState.pending_action.square.index });
+                    }
+                };
+            }
+
+            const btnAuction = document.getElementById('btn-auction');
+            if (btnAuction) {
+                btnAuction.onclick = () => {
+                    const sqIdx = (gameState && gameState.pending_action && gameState.pending_action.square) ? gameState.pending_action.square.index : null;
+                    sendWsMessage({ action: 'START_AUCTION', sq_idx: sqIdx });
+                };
+            }
+
+            const btnBankrupt = document.getElementById('btn-bankrupt');
+            if (btnBankrupt) {
+                btnBankrupt.onclick = () => {
+                    if (confirm('Möchtest du wirklich den Bankrott erklären und aus dem Spiel ausscheiden?')) {
+                        sendWsMessage({ action: 'BANKRUPTCY' });
                     }
                 };
             }
@@ -1284,6 +1478,36 @@
         viewPlayerTableCards: function(targetId) {
             viewedPlayerId = targetId;
             updateHUD();
+        },
+
+        buyProperty: function(sqIdx) {
+            sendWsMessage({ action: 'BUY_PROPERTY', sq_idx: sqIdx });
+            closeModal('modal-deed');
+        },
+
+        startAuction: function(sqIdx) {
+            sendWsMessage({ action: 'START_AUCTION', sq_idx: sqIdx });
+            closeModal('modal-deed');
+        },
+
+        placeAuctionBid: function(amount) {
+            sendWsMessage({ action: 'AUCTION_BID', amount: parseInt(amount) || 0 });
+        },
+
+        submitCustomBid: function() {
+            const el = document.getElementById('auction-custom-bid');
+            if (el) {
+                sendWsMessage({ action: 'AUCTION_BID', amount: parseInt(el.value) || 0 });
+            }
+        },
+
+        passAuction: function() {
+            sendWsMessage({ action: 'AUCTION_PASS' });
+        },
+
+        payIncomeTax: function(mode) {
+            sendWsMessage({ action: 'PAY_INCOME_TAX', mode: mode });
+            closeModal('modal-tax');
         },
 
         buildHouse: function(sqIdx) {

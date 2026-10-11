@@ -100,6 +100,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                             "type": "GAME_STARTED",
                             "state": room.to_dict()
                         })
+                        await handle_bot_turn_if_needed(room_id)
                     except Exception as e:
                         await websocket.send_text(json.dumps({"type": "ERROR", "message": str(e)}))
 
@@ -135,6 +136,45 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     "state": room.to_dict()
                 })
 
+            elif action == "START_AUCTION":
+                sq_idx = data.get("sq_idx")
+                res = room.start_auction(player_id, sq_idx)
+                await broadcast_room(room_id, {
+                    "type": "AUCTION_UPDATED",
+                    "result": res,
+                    "state": room.to_dict()
+                })
+
+            elif action == "AUCTION_BID":
+                amount = int(data.get("amount", 0))
+                res = room.place_auction_bid(player_id, amount)
+                await broadcast_room(room_id, {
+                    "type": "AUCTION_UPDATED",
+                    "result": res,
+                    "state": room.to_dict()
+                })
+                if res.get("auction_ended"):
+                    await finish_bot_turn_after_auction_if_needed(room_id)
+
+            elif action == "AUCTION_PASS":
+                res = room.pass_auction(player_id)
+                await broadcast_room(room_id, {
+                    "type": "AUCTION_UPDATED",
+                    "result": res,
+                    "state": room.to_dict()
+                })
+                if res.get("auction_ended"):
+                    await finish_bot_turn_after_auction_if_needed(room_id)
+
+            elif action == "PAY_INCOME_TAX":
+                mode = data.get("mode", "flat")
+                res = room.pay_income_tax(player_id, mode)
+                await broadcast_room(room_id, {
+                    "type": "TAX_PAID",
+                    "result": res,
+                    "state": room.to_dict()
+                })
+
             elif action == "BUILD_HOUSE":
                 sq_idx = data.get("sq_idx")
                 res = room.build_house(player_id, sq_idx)
@@ -159,12 +199,37 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 offer_props = [int(x) for x in data.get("offer_props", [])]
                 req_money = int(data.get("req_money", 0))
                 req_props = [int(x) for x in data.get("req_props", [])]
-                res = room.propose_trade(player_id, target_id, offer_money, offer_props, req_money, req_props)
+                offer_jail_cards = int(data.get("offer_jail_cards", 0))
+                req_jail_cards = int(data.get("req_jail_cards", 0))
+                res = room.propose_trade(
+                    player_id, target_id, offer_money, offer_props,
+                    req_money, req_props, offer_jail_cards, req_jail_cards
+                )
                 await broadcast_room(room_id, {
                     "type": "TRADE_PROPOSED",
                     "result": res,
                     "state": room.to_dict()
                 })
+                # Auto-evaluate if target is a Bot
+                target_p = next((p for p in room.players if p.id == target_id), None)
+                if res.get("success") and target_p and target_p.is_bot:
+                    await asyncio.sleep(1.0)
+                    offer_val = offer_money + offer_jail_cards * 50 + sum(SQUARES[i]["price"] for i in offer_props)
+                    req_val = req_money + req_jail_cards * 50 + sum(SQUARES[i]["price"] for i in req_props)
+                    if offer_val >= req_val and target_p.money >= req_money:
+                        acc_res = room.accept_trade(target_p.id)
+                        await broadcast_room(room_id, {
+                            "type": "TRADE_ACCEPTED",
+                            "result": acc_res,
+                            "state": room.to_dict()
+                        })
+                    else:
+                        rej_res = room.reject_trade(target_p.id)
+                        await broadcast_room(room_id, {
+                            "type": "TRADE_REJECTED",
+                            "result": rej_res,
+                            "state": room.to_dict()
+                        })
 
             elif action == "ACCEPT_TRADE":
                 res = room.accept_trade(player_id)
@@ -214,7 +279,6 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     "result": res,
                     "state": room.to_dict()
                 })
-                # Check if next player is BOT
                 await handle_bot_turn_if_needed(room_id)
 
             elif action == "BANKRUPTCY":
@@ -242,21 +306,64 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
     except WebSocketDisconnect:
         if room_id in connections:
             connections[room_id].pop(player_id, None)
-            # Notify remaining players
             await broadcast_room(room_id, {
                 "type": "PLAYER_DISCONNECTED",
                 "player_id": player_id,
                 "state": room.to_dict()
             })
 
+
+async def finish_bot_turn_after_auction_if_needed(room_id: str):
+    room = rooms.get(room_id)
+    if not room or room.status != "PLAYING" or room.auction_state:
+        return
+    curr = room.current_player()
+    if curr and curr.is_bot and not curr.is_bankrupt and room.rolled:
+        await asyncio.sleep(0.8)
+        if curr.money < 0:
+            room.auto_resolve_bot_debt(curr)
+        if curr.money < 0:
+            bank_res = room.declare_bankruptcy(curr.id)
+            await broadcast_room(room_id, {
+                "type": "BANKRUPTCY",
+                "result": bank_res,
+                "state": room.to_dict()
+            })
+        else:
+            end_res = room.end_turn(curr.id)
+            await broadcast_room(room_id, {
+                "type": "TURN_ENDED",
+                "result": end_res,
+                "state": room.to_dict()
+            })
+        await handle_bot_turn_if_needed(room_id)
+
+
 async def handle_bot_turn_if_needed(room_id: str):
     room = rooms.get(room_id)
-    if not room or room.status != "PLAYING":
+    if not room or room.status != "PLAYING" or room.auction_state:
         return
 
     curr = room.current_player()
     if curr and curr.is_bot and not curr.is_bankrupt:
         await asyncio.sleep(1.2)
+        # Bot jail handling before rolling
+        if curr.in_jail and not room.rolled:
+            if curr.jail_cards > 0:
+                room.use_jail_card(curr.id)
+                await broadcast_room(room_id, {
+                    "type": "JAIL_CARD_USED",
+                    "state": room.to_dict()
+                })
+                await asyncio.sleep(0.6)
+            elif curr.money >= 250:
+                room.pay_bail(curr.id)
+                await broadcast_room(room_id, {
+                    "type": "BAIL_PAID",
+                    "state": room.to_dict()
+                })
+                await asyncio.sleep(0.6)
+
         # Bot rolls
         roll_res = room.roll_dice()
         await broadcast_room(room_id, {
@@ -270,7 +377,7 @@ async def handle_bot_turn_if_needed(room_id: str):
         if room.pending_action and room.pending_action.get("type") == "BUY_OR_AUCTION":
             sq = room.pending_action["square"]
             price = sq["price"]
-            if curr.money >= price + 150: # Bot keeps emergency buffer
+            if curr.money >= price + 120:
                 room.buy_property(curr.id, sq["index"])
                 await broadcast_room(room_id, {
                     "type": "PROPERTY_BOUGHT",
@@ -278,7 +385,29 @@ async def handle_bot_turn_if_needed(room_id: str):
                 })
                 await asyncio.sleep(1.0)
             else:
-                room.pending_action = None
+                # Start auction according to Parker rules!
+                auc_res = room.start_auction(curr.id, sq["index"])
+                await broadcast_room(room_id, {
+                    "type": "AUCTION_UPDATED",
+                    "result": auc_res,
+                    "state": room.to_dict()
+                })
+                # If human players are still in the auction, wait for them to bid/pass
+                if room.auction_state:
+                    return
+
+        # Bot debt resolution or bankruptcy
+        if curr.money < 0:
+            room.auto_resolve_bot_debt(curr)
+        if curr.money < 0:
+            bank_res = room.declare_bankruptcy(curr.id)
+            await broadcast_room(room_id, {
+                "type": "BANKRUPTCY",
+                "result": bank_res,
+                "state": room.to_dict()
+            })
+            await handle_bot_turn_if_needed(room_id)
+            return
 
         # Bot ends turn
         end_res = room.end_turn(curr.id)
@@ -287,7 +416,6 @@ async def handle_bot_turn_if_needed(room_id: str):
             "result": end_res,
             "state": room.to_dict()
         })
-        # Chain if next is bot
         await handle_bot_turn_if_needed(room_id)
 
 # Mount static files dynamically

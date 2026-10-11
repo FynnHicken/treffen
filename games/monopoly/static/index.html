@@ -97,6 +97,10 @@
                     <span>🏠</span>
                     <span>Kaufen</span>
                 </button>
+                <button class="btn-action" id="btn-auction" style="display:none; background:#e67e22; color:#fff;">
+                    <span>🔨</span>
+                    <span>Versteigern</span>
+                </button>
                 <button class="btn-action btn-bail" id="btn-bail" style="display:none; background:#e74c3c; color:#fff;">
                     <span>👮 Kaution (50 DM)</span>
                 </button>
@@ -110,6 +114,10 @@
                 <button class="btn-action btn-portfolio" id="btn-portfolio" title="Deinen Besitz verwalten">
                     <span>📋</span>
                     <span>Besitz</span>
+                </button>
+                <button class="btn-action" id="btn-bankrupt" style="display:none; background:#c0392b; color:#fff;">
+                    <span>💀</span>
+                    <span>Bankrott</span>
                 </button>
                 <button class="btn-action btn-end" id="btn-end-turn" disabled>
                     <span>⏹️</span>
@@ -176,31 +184,8 @@
                 <span class="modal-title" id="deed-modal-title">Besitzrecht-Urkunde</span>
                 <button class="modal-close" onclick="window.MonopolyGame.closeModal('modal-deed')">✕</button>
             </div>
-            <div class="modal-body">
-                <!-- Authentic Deed Card Image Display -->
-                <div class="deed-card-container">
-                    <img id="deed-card-img" class="deed-card-graphic" src="" alt="Urkunde" />
-                    <div id="deed-mortgage-stamp" class="mortgage-stamp" style="display:none;">HYPOTHEK</div>
-                </div>
-
-                <!-- Owner Information -->
-                <div class="deed-owner-strip" id="deed-owner-strip">
-                    <span id="deed-owner-text">Zu verkaufen</span>
-                    <span id="deed-houses-text"></span>
-                </div>
-
-                <!-- House & Mortgage Actions -->
-                <div class="deed-actions" id="deed-actions">
-                    <button class="btn-action btn-buy" id="btn-build-house" style="display:none;">
-                        🏠 Haus bauen (<span id="build-cost">0</span> DM)
-                    </button>
-                    <button class="btn-action" id="btn-sell-house" style="display:none; background:#d35400; color:#fff;">
-                        🏚️ Haus verkaufen
-                    </button>
-                    <button class="btn-action" id="btn-mortgage" style="background:#7f8c8d; color:#fff;">
-                        📜 Hypothek aufnehmen
-                    </button>
-                </div>
+            <div class="modal-body" id="deed-modal-body">
+                <!-- Populated dynamically by showDeedModal -->
             </div>
         </div>
     </div>
@@ -262,8 +247,12 @@
                             <label style="font-size:11px; color:#aaa;">Geld (DM):</label>
                             <input type="number" id="trade-offer-money" class="chat-input" min="0" step="10" value="0" style="width:100%; padding:4px 6px;">
                         </div>
+                        <div style="margin:6px 0;">
+                            <label style="font-size:11px; color:#aaa;">Gefängnisfrei-Karten:</label>
+                            <input type="number" id="trade-offer-jail-cards" class="chat-input" min="0" max="2" step="1" value="0" style="width:100%; padding:4px 6px;">
+                        </div>
                         <div style="font-size:11px; color:#aaa; margin-bottom:4px;">Grundstücke:</div>
-                        <div id="trade-my-props" style="max-height:160px; overflow-y:auto; background:rgba(0,0,0,0.2); padding:6px; border-radius:6px;"></div>
+                        <div id="trade-my-props" style="max-height:140px; overflow-y:auto; background:rgba(0,0,0,0.2); padding:6px; border-radius:6px;"></div>
                     </div>
                     <div>
                         <strong style="font-size:13px; color:var(--accent-red);">Deine Forderung:</strong>
@@ -271,8 +260,12 @@
                             <label style="font-size:11px; color:#aaa;">Geld (DM):</label>
                             <input type="number" id="trade-req-money" class="chat-input" min="0" step="10" value="0" style="width:100%; padding:4px 6px;">
                         </div>
+                        <div style="margin:6px 0;">
+                            <label style="font-size:11px; color:#aaa;">Gefängnisfrei-Karten:</label>
+                            <input type="number" id="trade-req-jail-cards" class="chat-input" min="0" max="2" step="1" value="0" style="width:100%; padding:4px 6px;">
+                        </div>
                         <div style="font-size:11px; color:#aaa; margin-bottom:4px;">Grundstücke:</div>
-                        <div id="trade-target-props" style="max-height:160px; overflow-y:auto; background:rgba(0,0,0,0.2); padding:6px; border-radius:6px;"></div>
+                        <div id="trade-target-props" style="max-height:140px; overflow-y:auto; background:rgba(0,0,0,0.2); padding:6px; border-radius:6px;"></div>
                     </div>
                 </div>
                 <button class="btn-action btn-trade" id="btn-submit-trade" style="width:100%; margin-top:12px;">
@@ -294,13 +287,37 @@
         </div>
     </div>
 
+    <!-- 7. Property Auction Modal (Versteigerung) -->
+    <div class="modal-overlay" id="modal-auction">
+        <div class="modal-box" style="max-width:420px;">
+            <div class="modal-header">
+                <span class="modal-title">🔨 Grundstücks-Versteigerung</span>
+            </div>
+            <div class="modal-body" id="auction-modal-body">
+                <!-- Dynamically injected -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 8. Income Tax Choice Modal (Einkommensteuer: 200 DM oder 10%) -->
+    <div class="modal-overlay" id="modal-tax">
+        <div class="modal-box" style="max-width:400px;">
+            <div class="modal-header">
+                <span class="modal-title">💸 Einkommensteuer</span>
+            </div>
+            <div class="modal-body" id="tax-modal-body">
+                <!-- Dynamically injected -->
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts with Cache Busting -->
     <script src="static/js/three.min.js"></script>
     <script src="static/js/OrbitControls.js"></script>
-    <script src="static/js/asset_config.js?v=3.0"></script>
-    <script src="static/js/audio.js?v=3.0"></script>
-    <script src="static/js/board3d.js?v=3.0"></script>
-    <script src="static/js/game_client.js?v=3.0"></script>
+    <script src="static/js/asset_config.js?v=3.1"></script>
+    <script src="static/js/audio.js?v=3.1"></script>
+    <script src="static/js/board3d.js?v=3.1"></script>
+    <script src="static/js/game_client.js?v=3.1"></script>
 
     <script>
         function launchMonopoly() {
