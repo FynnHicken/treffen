@@ -1,0 +1,92 @@
+# =========================================================================
+# Multi-Stage Build for Treffen All-In-One (Fly.io)
+# =========================================================================
+
+# Stage 1: Build Skribbl (Go)
+FROM golang:1.25-alpine AS skribbl-builder
+WORKDIR /app
+COPY games/skribbl/go.mod games/skribbl/go.sum ./
+RUN go mod download
+COPY games/skribbl ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-w -s" -tags timetzdata -o /scribblers ./cmd/scribblers
+
+# Stage 2: Build Guess The Price Client (Vite + React)
+FROM node:20-bookworm-slim AS gtp-client-builder
+WORKDIR /app
+COPY games/guess-the-price/apps/client/package*.json ./
+RUN npm install
+COPY games/guess-the-price/apps/client ./
+ENV VITE_BASE_PATH=/price-guess/
+RUN npm run build
+
+# Stage 3: Final Runtime Image (Debian/Ubuntu slim with Node.js, Python, Nginx)
+FROM node:20-bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Nginx, Python3, pip, curl, openssl and certificates
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nginx \
+    python3 \
+    python3-pip \
+    python3-venv \
+    ca-certificates \
+    curl \
+    openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 1. Party Server
+WORKDIR /app/party-server
+COPY party-server/package*.json ./
+RUN npm install --production
+COPY party-server ./
+
+# 2. UNO
+WORKDIR /app/uno
+COPY games/uno/package*.json ./
+COPY games/uno/build ./build
+COPY games/uno/client ./client
+
+# 3. Skribbl
+WORKDIR /app/skribbl
+COPY --from=skribbl-builder /scribblers ./scribblers
+
+# 4. Monopoly
+WORKDIR /app/monopoly
+COPY games/monopoly/requirements.txt ./
+RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
+COPY games/monopoly ./
+
+# 5. Codenames
+WORKDIR /app/codenames
+COPY games/codenames/requirements.txt ./
+RUN pip install --no-cache-dir --break-system-packages gunicorn eventlet -r requirements.txt
+COPY games/codenames ./
+RUN python3 tools/words_to_image.py
+
+# 6. Guess The Price Backend (Node.js + Prisma + SQLite)
+WORKDIR /app/gtp-server
+COPY games/guess-the-price/apps/server/package*.json ./
+RUN npm install
+COPY games/guess-the-price/apps/server ./
+RUN npx prisma generate
+RUN npm run build
+ENV DATABASE_URL="file:/app/gtp-server/prisma/dev.db"
+RUN npx prisma db push --skip-generate
+RUN npm run seed
+
+# 7. Static Assets & Nginx Config
+RUN rm -rf /usr/share/nginx/html/*
+COPY party-hub /usr/share/nginx/html
+COPY --from=gtp-client-builder /app/dist /usr/share/nginx/html/price-guess
+COPY fly_nginx.conf /etc/nginx/nginx.conf
+COPY fly_entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 8080
+ENV PORT=8080
+
+ENTRYPOINT ["/entrypoint.sh"]
+
