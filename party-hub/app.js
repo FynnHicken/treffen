@@ -222,6 +222,15 @@ const partyState = {
             maxPlayers: 4,
             desc: "Der beliebte Brettspiel-Klassiker! Würfle eine 6 zum Rauskommen, wirf gegnerische Spielfiguren und bringe alle 4 Hütchen sicher ins Haus.",
             embedUrl: "/mensch/"
+        },
+        amongus: {
+            id: "amongus",
+            title: "Among Us",
+            icon: "🚀",
+            minPlayers: 3,
+            maxPlayers: 10,
+            desc: "Finde die Verräter auf der Skeld! Repariere das Raumschiff, rufe Notfall-Besprechungen ein oder eliminiere als Impostor die Besatzung durch die Lüftungsschächte.",
+            embedUrl: "/amongus/"
         }
     },
     isVotingActive: false,
@@ -231,7 +240,8 @@ const partyState = {
         codenames: 0,
         price_guess: 0,
         monopoly: 0,
-        mensch: 0
+        mensch: 0,
+        amongus: 0
     },
     userVotedGame: null,
     activeModalGameId: null,
@@ -1994,6 +2004,8 @@ function getGameUrl(game, lobbyId) {
         return `/monopoly/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}`;
     } else if (game.id === "mensch") {
         return `/mensch/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}`;
+    } else if (game.id === "amongus") {
+        return `/amongus/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}`;
     } else if (game.id === "price_guess") {
         return `/price-guess/`;
     }
