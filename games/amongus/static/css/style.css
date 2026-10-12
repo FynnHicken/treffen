@@ -251,6 +251,77 @@ body, html {
     border-color: #10b981;
 }
 
+.vent-btn.in-vent {
+    background: #059669;
+    border-color: #34d399;
+    animation: pulse 1s infinite;
+}
+
+/* In-Vent Navigation Overlay */
+#vent-nav-overlay {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 50;
+    pointer-events: auto;
+}
+
+#vent-nav-overlay.hidden {
+    display: none;
+}
+
+.vent-nav-box {
+    background: rgba(15, 23, 42, 0.92);
+    border: 2px solid #10b981;
+    backdrop-filter: blur(12px);
+    border-radius: 16px;
+    padding: 16px 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 320px;
+    max-width: 90vw;
+}
+
+.vent-nav-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.95rem;
+    color: #e2e8f0;
+}
+
+.vent-nav-destinations {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+}
+
+.vent-travel-btn {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #38bdf8;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+}
+
+.vent-travel-btn:hover {
+    background: #0f766e;
+    color: #ffffff;
+    border-color: #2dd4bf;
+    transform: scale(1.05);
+}
+
 .kill-btn {
     border-color: #ef4444;
     background: rgba(185, 28, 28, 0.85);

@@ -57,7 +57,69 @@ let gameState = {
     rooms: {}
 };
 
-// Keyboard inputs
+// Walkable hull collision areas (Rooms & Corridors) on the 2000x1094 Skeld map
+const WALKABLE_AREAS = [
+    // Rooms: {x, y, r} (circular) or {x, y, w, h} (rectangular)
+    { type: "circle", x: 1100, y: 320, r: 190, name: "Cafeteria" },
+    { type: "circle", x: 1470, y: 240, r: 110, name: "Weapons" },
+    { type: "circle", x: 1260, y: 420, r: 90, name: "O2" },
+    { type: "circle", x: 1780, y: 500, r: 120, name: "Navigation" },
+    { type: "circle", x: 1500, y: 780, r: 120, name: "Shields" },
+    { type: "circle", x: 1250, y: 850, r: 100, name: "Communications" },
+    { type: "circle", x: 1050, y: 760, r: 150, name: "Storage" },
+    { type: "circle", x: 1300, y: 620, r: 110, name: "Admin" },
+    { type: "circle", x: 750, y: 620, r: 120, name: "Electrical" },
+    { type: "circle", x: 480, y: 750, r: 130, name: "Lower Engine" },
+    { type: "circle", x: 480, y: 320, r: 130, name: "Upper Engine" },
+    { type: "circle", x: 650, y: 480, r: 90, name: "Security" },
+    { type: "circle", x: 260, y: 520, r: 140, name: "Reactor" },
+    { type: "circle", x: 800, y: 360, r: 100, name: "MedBay" },
+
+    // Corridors / Hallways: {x1, y1, x2, y2, width}
+    { type: "corridor", x1: 1220, y1: 240, x2: 1470, y2: 240, w: 75 },
+    { type: "corridor", x1: 1160, y1: 360, x2: 1280, y2: 560, w: 75 },
+    { type: "corridor", x1: 950, y1: 340, x2: 830, y2: 360, w: 75 },
+    { type: "corridor", x1: 980, y1: 270, x2: 550, y2: 270, w: 75 },
+    { type: "corridor", x1: 480, y1: 360, x2: 320, y2: 480, w: 75 },
+    { type: "corridor", x1: 480, y1: 380, x2: 480, y2: 680, w: 85 },
+    { type: "corridor", x1: 480, y1: 680, x2: 320, y2: 560, w: 75 },
+    { type: "corridor", x1: 520, y1: 480, x2: 660, y2: 480, w: 75 },
+    { type: "corridor", x1: 800, y1: 400, x2: 750, y2: 560, w: 75 },
+    { type: "corridor", x1: 800, y1: 630, x2: 950, y2: 720, w: 75 },
+    { type: "corridor", x1: 540, y1: 750, x2: 950, y2: 750, w: 85 },
+    { type: "corridor", x1: 1050, y1: 660, x2: 1050, y2: 450, w: 90 },
+    { type: "corridor", x1: 1140, y1: 720, x2: 1260, y2: 650, w: 75 },
+    { type: "corridor", x1: 1130, y1: 790, x2: 1220, y2: 840, w: 75 },
+    { type: "corridor", x1: 1140, y1: 780, x2: 1440, y2: 800, w: 85 },
+    { type: "corridor", x1: 1290, y1: 550, x2: 1260, y2: 470, w: 75 },
+    { type: "corridor", x1: 1420, y1: 290, x2: 1300, y2: 390, w: 75 },
+    { type: "corridor", x1: 1530, y1: 270, x2: 1740, y2: 450, w: 75 },
+    { type: "corridor", x1: 1740, y1: 550, x2: 1550, y2: 740, w: 75 },
+    { type: "corridor", x1: 1440, y1: 810, x2: 1310, y2: 850, w: 75 }
+];
+
+function isPositionWalkable(x, y) {
+    for (const a of WALKABLE_AREAS) {
+        if (a.type === "circle") {
+            if (Math.hypot(x - a.x, y - a.y) <= a.r) {
+                return true;
+            }
+        } else if (a.type === "corridor") {
+            const dx = a.x2 - a.x1;
+            const dy = a.y2 - a.y1;
+            const lenSq = dx * dx + dy * dy;
+            if (lenSq === 0) continue;
+            let t = ((x - a.x1) * dx + (y - a.y1) * dy) / lenSq;
+            t = Math.max(0, Math.min(1, t));
+            const projX = a.x1 + t * dx;
+            const projY = a.y1 + t * dy;
+            if (Math.hypot(x - projX, y - projY) <= (a.w / 2)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 const keys = {
     w: false, a: false, s: false, d: false,
     ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false
@@ -319,20 +381,33 @@ function update(dt) {
     }
 
     if (mx !== 0 || my !== 0) {
-        localX += mx * MOVE_SPEED * dt;
-        localY += my * MOVE_SPEED * dt;
+        const stepX = mx * MOVE_SPEED * dt;
+        const stepY = my * MOVE_SPEED * dt;
 
-        // Map boundaries
-        localX = Math.max(120, Math.min(1900, localX));
-        localY = Math.max(120, Math.min(1000, localY));
-        me.x = localX;
-        me.y = localY;
+        // Wall sliding: Test X and Y independently
+        let newX = localX;
+        let newY = localY;
 
-        // Send to server throttled (15 times / sec)
-        const now = performance.now();
-        if (now - lastMoveSend > 65) {
-            lastMoveSend = now;
-            ws.send(JSON.stringify({ action: "MOVE", x: localX, y: localY }));
+        if (isPositionWalkable(localX + stepX, localY)) {
+            newX = localX + stepX;
+        }
+        if (isPositionWalkable(newX, localY + stepY)) {
+            newY = localY + stepY;
+        }
+
+        // Apply if position moved
+        if (newX !== localX || newY !== localY) {
+            localX = newX;
+            localY = newY;
+            me.x = localX;
+            me.y = localY;
+
+            // Send to server throttled (15 times / sec)
+            const now = performance.now();
+            if (now - lastMoveSend > 65) {
+                lastMoveSend = now;
+                ws.send(JSON.stringify({ action: "MOVE", x: localX, y: localY }));
+            }
         }
     }
 
@@ -624,10 +699,50 @@ function triggerActionVent() {
     ws.send(JSON.stringify({ action: "VENT_TOGGLE" }));
 }
 
+function triggerVentTravel(targetVentId) {
+    ws.send(JSON.stringify({ action: "VENT_MOVE", target_vent: targetVentId }));
+}
+
+// In-Vent exit button
+document.getElementById("btn-vent-exit").addEventListener("click", triggerActionVent);
+
 // =============================================================================
 // UI & Modals Management
 // =============================================================================
 function updateUI() {
+    const me = gameState.players.find(p => p.id === myId);
+
+    // Vent Overlay & Button state
+    const ventOverlay = document.getElementById("vent-nav-overlay");
+    const ventBtn = document.getElementById("btn-action-vent");
+    const ventBtnLabel = document.getElementById("vent-btn-label");
+
+    if (me && me.in_vent) {
+        ventBtn.classList.add("in-vent");
+        if (ventBtnLabel) ventBtnLabel.textContent = "AUSSTEIGEN";
+        ventOverlay.classList.remove("hidden");
+
+        const currVent = gameState.vents.find(v => v.id === me.current_vent);
+        document.getElementById("current-vent-name").textContent = currVent ? currVent.name : "Schacht";
+
+        const btnContainer = document.getElementById("vent-nav-buttons");
+        btnContainer.innerHTML = "";
+        if (currVent && currVent.connects) {
+            currVent.connects.forEach(cId => {
+                const targetV = gameState.vents.find(v => v.id === cId);
+                const btn = document.createElement("button");
+                btn.className = "vent-travel-btn";
+                btn.innerHTML = `➡️ Zu ${targetV ? targetV.name : cId}`;
+                btn.onclick = () => triggerVentTravel(cId);
+                btnContainer.appendChild(btn);
+            });
+        }
+    } else {
+        if (ventBtn) ventBtn.classList.remove("in-vent");
+        if (ventBtnLabel) ventBtnLabel.textContent = "LÜFTUNG";
+        if (ventOverlay) ventOverlay.classList.add("hidden");
+    }
+
     // 1. Lobby Modal
     const lobbyModal = document.getElementById("lobby-modal");
     if (gameState.status === "LOBBY") {
@@ -645,7 +760,6 @@ function updateUI() {
             grid.appendChild(card);
         });
 
-        const me = gameState.players.find(p => p.id === myId);
         document.getElementById("btn-start-game").style.display = (me && me.is_host) ? "inline-block" : "none";
         document.getElementById("btn-add-bot").style.display = (me && me.is_host) ? "inline-block" : "none";
     } else {

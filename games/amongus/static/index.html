@@ -52,12 +52,23 @@
                 </button>
                 <button id="btn-action-vent" class="action-btn vent-btn hidden" disabled>
                     <span class="action-icon">💨</span>
-                    <span class="action-label">LÜFTUNG</span>
+                    <span class="action-label" id="vent-btn-label">LÜFTUNG</span>
                 </button>
                 <button id="btn-action-kill" class="action-btn kill-btn hidden" disabled>
                     <span class="action-icon">🔪</span>
                     <span class="action-label">KILL (<span id="kill-timer">20</span>s)</span>
                 </button>
+            </div>
+
+            <!-- In-Vent Travel Navigation UI -->
+            <div id="vent-nav-overlay" class="hidden">
+                <div class="vent-nav-box">
+                    <div class="vent-nav-header">
+                        <span>💨 Lüftungsschacht: <strong id="current-vent-name">---</strong></span>
+                        <button id="btn-vent-exit" class="btn btn-secondary">Aussteigen (V)</button>
+                    </div>
+                    <div class="vent-nav-destinations" id="vent-nav-buttons"></div>
+                </div>
             </div>
 
             <!-- Task List Drawer / Overlay on Left -->

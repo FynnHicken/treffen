@@ -73,19 +73,24 @@ AVAILABLE_COLORS = [
 ]
 
 class Player:
-    def __init__(self, pid: str, name: str, is_host: bool = False, color_idx: int = 0):
+    def __init__(self, pid: str, name: str, is_host: bool = False, color_idx: int = 0, is_bot: bool = False):
         self.id = pid
         self.name = name
         self.is_host = is_host
+        self.is_bot = is_bot
         self.color = AVAILABLE_COLORS[color_idx % len(AVAILABLE_COLORS)]
         self.x = SPAWN_X + random.randint(-50, 50)
         self.y = SPAWN_Y + random.randint(-40, 40)
+        self.target_x = self.x
+        self.target_y = self.y
         self.role = "CREWMATE" # "CREWMATE" or "IMPOSTOR"
         self.alive = True
         self.in_vent = False
         self.current_vent: Optional[str] = None
         self.tasks: List[Dict[str, Any]] = []
         self.completed_tasks: List[str] = []
+        self.current_task_idx = 0
+        self.task_work_timer = 0.0
         self.voted_for: Optional[str] = None # None or target pid or "SKIP"
         self.has_voted = False
         self.last_kill_time = 0.0
@@ -101,6 +106,7 @@ class Player:
             "y": round(self.y, 1),
             "alive": self.alive,
             "in_vent": self.in_vent,
+            "current_vent": self.current_vent,
             "has_voted": self.has_voted,
             "tasks_count": len(self.tasks),
             "completed_count": len(self.completed_tasks)
@@ -147,7 +153,7 @@ class AmongUsRoom:
         self.last_activity = time.time()
         self.bots_count = 0
 
-    def add_player(self, pid: str, name: str, is_host: bool = False) -> Player:
+    def add_player(self, pid: str, name: str, is_host: bool = False, is_bot: bool = False) -> Player:
         self.last_activity = time.time()
         if pid in self.players:
             p = self.players[pid]
@@ -163,7 +169,7 @@ class AmongUsRoom:
                 color_idx = i
                 break
 
-        p = Player(pid, name, is_host or (len(self.players) == 0), color_idx)
+        p = Player(pid, name, is_host or (len(self.players) == 0), color_idx, is_bot=is_bot)
         self.players[pid] = p
         return p
 
@@ -184,7 +190,7 @@ class AmongUsRoom:
         bot_names = ["MiniCrew", "SpaceDoge", "RedSus", "CyanGhost", "Cosmo", "Astro", "Nebula", "Alien99"]
         existing = {p.name for p in self.players.values()}
         name = next((b for b in bot_names if b not in existing), f"Bot_{random.randint(1,99)}")
-        self.add_player(bot_id, name)
+        self.add_player(bot_id, name, is_bot=True)
         self.bots_count += 1
 
     def start_game(self, impostor_count: int = 1):
@@ -427,6 +433,79 @@ class AmongUsRoom:
             self.winner = "CREWMATES"
             self.winner_reason = "Alle Aufgaben wurden erfolgreich abgeschlossen!"
             return
+
+    def update_bots(self, dt: float) -> List[dict]:
+        events = []
+        if self.status != "PLAYING":
+            return events
+
+        for bot in list(self.players.values()):
+            if not bot.is_bot or not bot.alive:
+                continue
+
+            # Check if bot sees a dead body to report
+            for body in self.dead_bodies:
+                if math.hypot(bot.x - body.x, bot.y - body.y) < 140:
+                    if random.random() < 0.4:
+                        if self.trigger_emergency(bot.id, "BODY_REPORTED"):
+                            events.append({"type": "EMERGENCY", "caller": bot.id, "reason": "BODY_REPORTED"})
+                            return events
+
+            if bot.role == "CREWMATE":
+                # Find current unfinished task
+                unfinished = [t for t in bot.tasks if t["id"] not in bot.completed_tasks]
+                if unfinished:
+                    target_task = unfinished[0]
+                    target_x, target_y = target_task["x"], target_task["y"]
+                    dist = math.hypot(bot.x - target_x, bot.y - target_y)
+
+                    if dist > 35:
+                        # Move towards task station
+                        speed = 130 * dt
+                        bot.x += ((target_x - bot.x) / dist) * speed
+                        bot.y += ((target_y - bot.y) / dist) * speed
+                        events.append({"type": "MOVE", "pid": bot.id, "x": bot.x, "y": bot.y})
+                    else:
+                        # Work on task
+                        bot.task_work_timer += dt
+                        if bot.task_work_timer >= 4.0:
+                            bot.task_work_timer = 0.0
+                            self.complete_task(bot.id, target_task["id"])
+                            events.append({"type": "TASK", "pid": bot.id, "task_id": target_task["id"]})
+                else:
+                    # Wander around rooms if all tasks done
+                    speed = 100 * dt
+                    dist = math.hypot(bot.x - bot.target_x, bot.y - bot.target_y)
+                    if dist < 20 or random.random() < 0.02:
+                        rand_room = random.choice(list(ROOMS.values()))
+                        bot.target_x = rand_room["x"] + random.randint(-40, 40)
+                        bot.target_y = rand_room["y"] + random.randint(-40, 40)
+                    else:
+                        bot.x += ((bot.target_x - bot.x) / dist) * speed
+                        bot.y += ((bot.target_y - bot.y) / dist) * speed
+                        events.append({"type": "MOVE", "pid": bot.id, "x": bot.x, "y": bot.y})
+
+            elif bot.role == "IMPOSTOR":
+                # Target nearest living crewmate
+                now = time.time()
+                crewmates = [p for p in self.players.values() if p.alive and p.role == "CREWMATE" and not p.in_vent]
+                if crewmates:
+                    nearest_crew = min(crewmates, key=lambda c: math.hypot(bot.x - c.x, bot.y - c.y))
+                    dist = math.hypot(bot.x - nearest_crew.x, bot.y - nearest_crew.y)
+
+                    # Try to kill if in range and off cooldown
+                    if dist < 120 and (now - bot.last_kill_time >= self.kill_cooldown):
+                        kill_res = self.kill_target(bot.id, nearest_crew.id)
+                        if kill_res:
+                            events.append({"type": "KILL", "killer": bot.id, "victim": nearest_crew.id, "body": kill_res["body"]})
+                    else:
+                        # Stalk or patrol
+                        speed = 145 * dt
+                        bot.x += ((nearest_crew.x - bot.x) / dist) * speed
+                        bot.y += ((nearest_crew.y - bot.y) / dist) * speed
+                        events.append({"type": "MOVE", "pid": bot.id, "x": bot.x, "y": bot.y})
+
+        return events
 
     def get_task_progress(self) -> float:
         total = sum(len(p.tasks) for p in self.players.values() if p.role == "CREWMATE")

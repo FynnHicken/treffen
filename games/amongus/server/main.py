@@ -49,18 +49,73 @@ async def meeting_timer_loop():
         await asyncio.sleep(1.0)
         now = time.time()
         for r_code, room in list(rooms.items()):
-            if room.status == "MEETING" and now >= room.meeting_end_time:
-                # Resolve voting automatically on timeout
-                res = room.resolve_votes()
-                await broadcast_room(r_code, {
-                    "type": "MEETING_RESOLVED",
-                    "result": res,
-                    "state": room.to_state_dict()
-                })
+            if room.status == "MEETING":
+                # Bot voting in meetings
+                for p in room.players.values():
+                    if p.is_bot and p.alive and not p.has_voted and random.random() < 0.25:
+                        targets = [cand.id for cand in room.players.values() if cand.alive] + ["SKIP"]
+                        room.cast_vote(p.id, random.choice(targets))
+                        await broadcast_room(r_code, {
+                            "type": "VOTE_CAST",
+                            "voter_id": p.id,
+                            "has_voted": True
+                        })
+
+                if now >= room.meeting_end_time or all(p.has_voted for p in room.players.values() if p.alive):
+                    res = room.resolve_votes()
+                    await broadcast_room(r_code, {
+                        "type": "MEETING_RESOLVED",
+                        "result": res,
+                        "state": room.to_state_dict()
+                    })
+
+async def bot_game_loop():
+    last_t = time.time()
+    while True:
+        await asyncio.sleep(0.1) # 10 ticks/sec
+        now = time.time()
+        dt = min(0.2, now - last_t)
+        last_t = now
+
+        for r_code, room in list(rooms.items()):
+            if room.status == "PLAYING" and any(p.is_bot and p.alive for p in room.players.values()):
+                events = room.update_bots(dt)
+                for ev in events:
+                    if ev["type"] == "MOVE":
+                        await broadcast_room(r_code, {
+                            "type": "PLAYER_MOVED",
+                            "player_id": ev["pid"],
+                            "x": ev["x"],
+                            "y": ev["y"]
+                        })
+                    elif ev["type"] == "TASK":
+                        await broadcast_room(r_code, {
+                            "type": "TASK_UPDATED",
+                            "player_id": ev["pid"],
+                            "task_id": ev["task_id"],
+                            "task_progress": room.get_task_progress(),
+                            "state": room.to_state_dict()
+                        })
+                    elif ev["type"] == "KILL":
+                        await broadcast_room(r_code, {
+                            "type": "PLAYER_KILLED",
+                            "killer_id": ev["killer"],
+                            "victim_id": ev["victim"],
+                            "body": ev["body"],
+                            "state": room.to_state_dict()
+                        })
+                    elif ev["type"] == "EMERGENCY":
+                        await broadcast_room(r_code, {
+                            "type": "EMERGENCY_CALLED",
+                            "caller_id": ev["caller"],
+                            "reason": ev["reason"],
+                            "state": room.to_state_dict()
+                        })
 
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(meeting_timer_loop())
+    asyncio.create_task(bot_game_loop())
 
 @app.get("/api/config")
 async def get_config():
