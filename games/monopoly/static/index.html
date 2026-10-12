@@ -415,9 +415,79 @@
             </div>
 
             <!-- Step 2: Unlocked Debug Controls -->
-            <div class="modal-body" id="debug-settings-step" style="display:none; max-height:76vh; overflow-y:auto;">
+            <div class="modal-body" id="debug-settings-step" style="display:none; max-height:78vh; overflow-y:auto;">
+                <!-- Section A: Gameplay Cheats & Scenario Testing -->
+                <div style="display:flex; flex-direction:column; gap:8px; background:rgba(241,196,15,0.06); padding:12px; border-radius:10px; border:1px solid rgba(241,196,15,0.28); margin-bottom:4px;">
+                    <label style="font-size:11px; font-weight:800; color:#f1c40f; letter-spacing:0.6px; display:block;">🎮 SPIEL-SZENARIEN TESTEN (GEFÄNGNIS, KONKURS, GELD & KARTEN)</label>
+
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-size:12px; font-weight:700; color:#cbd5e1; white-space:nowrap;">Ziel-Spieler:</span>
+                        <select id="dbg-target-player" class="chat-input" style="flex:1; font-size:12px; padding:6px 8px;"></select>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:2px;">
+                        <button class="btn-action" style="justify-content:center; font-size:11px; padding:7px 8px; background:rgba(230,126,34,0.25); border:1px solid rgba(230,126,34,0.6); color:#fff;" onclick="window.MonopolyGame.runDebugAction('SEND_TO_JAIL')">
+                            🚔 Ins Gefängnis
+                        </button>
+                        <button class="btn-action" style="justify-content:center; font-size:11px; padding:7px 8px; background:rgba(46,204,113,0.22); border:1px solid rgba(46,204,113,0.55); color:#fff;" onclick="window.MonopolyGame.runDebugAction('FREE_FROM_JAIL')">
+                            🔓 Aus Gefängnis frei
+                        </button>
+                        <button class="btn-action" style="justify-content:center; font-size:11px; padding:7px 8px; background:rgba(241,196,15,0.22); border:1px solid rgba(241,196,15,0.55); color:#fff;" onclick="window.MonopolyGame.runDebugAction('GIVE_JAIL_CARD')">
+                            🗝️ +1 Gefängnisfrei-Karte
+                        </button>
+                        <button class="btn-action" style="justify-content:center; font-size:11px; padding:7px 8px; background:rgba(52,152,219,0.25); border:1px solid rgba(52,152,219,0.6); color:#fff;" onclick="window.MonopolyGame.runDebugAction('FORCE_DOUBLES_ROLL', 6)">
+                            🎲 Pasch würfeln (6+6)
+                        </button>
+                        <button class="btn-action" style="justify-content:center; font-size:11px; padding:7px 8px; background:rgba(46,204,113,0.22); border:1px solid rgba(46,204,113,0.5); color:#fff;" onclick="window.MonopolyGame.runDebugAction('ADD_MONEY', 1000)">
+                            💰 +1.000 DM geben
+                        </button>
+                        <button class="btn-action" style="justify-content:center; font-size:11px; padding:7px 8px; background:rgba(231,76,60,0.22); border:1px solid rgba(231,76,60,0.55); color:#fff;" onclick="window.MonopolyGame.runDebugAction('SET_DEBT')">
+                            💸 Schulden (-200 DM)
+                        </button>
+                    </div>
+
+                    <button class="btn-action" style="width:100%; justify-content:center; font-size:12px; padding:8px 10px; background:rgba(192,57,43,0.35); border:1px solid rgba(231,76,60,0.75); color:#fecaca; font-weight:800;" onclick="window.MonopolyGame.runDebugAction('FORCE_BANKRUPTCY')">
+                        💀 Sofort Konkurs / Bankrott auslösen
+                    </button>
+
+                    <div style="display:flex; gap:6px; align-items:center; margin-top:2px;">
+                        <select id="dbg-color-group" class="chat-input" style="flex:1; font-size:11px; padding:6px 8px;">
+                            <option value="brown">🟤 Braun (Bad- & Turmstraße)</option>
+                            <option value="lightblue">🩵 Hellblau (Chaussee-, Elisen-, Poststr.)</option>
+                            <option value="pink">🩷 Pink (See-, Hafen-, Neue Straße)</option>
+                            <option value="orange">🟧 Orange (Münchener, Wiener, Berliner)</option>
+                            <option value="red">🟥 Rot (Theater-, Museumstr., Opernplatz)</option>
+                            <option value="yellow">🟨 Gelb (Lessing-, Schiller-, Goethestr.)</option>
+                            <option value="green">🟩 Grün (Rathausplatz, Haupt-, Bahnhofstr.)</option>
+                            <option value="darkblue">🟦 Dunkelblau (Parkstr. & Schlossallee)</option>
+                            <option value="station">🚂 Alle 4 Bahnhöfe</option>
+                            <option value="utility">💡 Beide Werke</option>
+                        </select>
+                        <button class="btn-action btn-buy" style="font-size:11px; padding:6px 10px; white-space:nowrap;" onclick="window.MonopolyGame.runDebugColorGroup()">
+                            🏘️ Gruppe geben
+                        </button>
+                    </div>
+
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <select id="dbg-teleport-sq" class="chat-input" style="flex:1; font-size:11px; padding:6px 8px;">
+                            <option value="30">🚔 Feld 30: Gehe ins Gefängnis</option>
+                            <option value="7">❓ Feld 7: Ereignisfeld</option>
+                            <option value="2">📦 Feld 2: Gemeinschaftsfeld</option>
+                            <option value="4">💸 Feld 4: Einkommensteuer</option>
+                            <option value="38">💎 Feld 38: Zusatzsteuer</option>
+                            <option value="39">🏰 Feld 39: Schlossallee</option>
+                            <option value="0">🏁 Feld 0: LOS</option>
+                        </select>
+                        <button class="btn-action btn-trade" style="font-size:11px; padding:6px 10px; white-space:nowrap;" onclick="window.MonopolyGame.runDebugTeleport()">
+                            📍 Teleport
+                        </button>
+                    </div>
+
+                    <div id="debug-cheat-feedback" style="display:none; color:#f1c40f; font-size:11px; font-weight:700; text-align:center; padding-top:2px;"></div>
+                </div>
+
                 <div>
-                    <label style="font-size:11px; font-weight:800; color:var(--text-muted); letter-spacing:0.6px; display:block; margin-bottom:6px;">⚡ SCHNELL-PRESETS</label>
+                    <label style="font-size:11px; font-weight:800; color:var(--text-muted); letter-spacing:0.6px; display:block; margin-bottom:6px;">⚡ BEWEGUNGS-PRESETS</label>
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
                         <button class="btn-action" style="justify-content:center; font-size:12px; padding:7px 10px; background:rgba(46,204,113,0.18); border:1px solid rgba(46,204,113,0.5); color:#fff;" onclick="window.MonopolyGame.applyDebugPreset('default')">🐢 Gemütlich (Standard)</button>
                         <button class="btn-action" style="justify-content:center; font-size:12px; padding:7px 10px; background:rgba(52,152,219,0.18); border:1px solid rgba(52,152,219,0.5); color:#fff;" onclick="window.MonopolyGame.applyDebugPreset('cinema')">🎬 Kino (Sehr langsam)</button>
@@ -527,10 +597,10 @@
     <!-- Scripts with Cache Busting -->
     <script src="static/js/three.min.js"></script>
     <script src="static/js/OrbitControls.js"></script>
-    <script src="static/js/asset_config.js?v=4.1"></script>
-    <script src="static/js/audio.js?v=4.1"></script>
-    <script src="static/js/board3d.js?v=4.1"></script>
-    <script src="static/js/game_client.js?v=4.1"></script>
+    <script src="static/js/asset_config.js?v=4.2"></script>
+    <script src="static/js/audio.js?v=4.2"></script>
+    <script src="static/js/board3d.js?v=4.2"></script>
+    <script src="static/js/game_client.js?v=4.2"></script>
 
     <script>
         function launchMonopoly() {

@@ -1126,6 +1126,22 @@
                     syncDebugModalSliders();
                 }
                 break;
+
+            case 'DEBUG_ACTION_APPLIED':
+                if (msg.result && msg.result.message) {
+                    const fbEl = document.getElementById('debug-cheat-feedback');
+                    if (fbEl) {
+                        fbEl.textContent = `✅ ${msg.result.message}`;
+                        fbEl.style.display = 'block';
+                        setTimeout(() => { fbEl.style.display = 'none'; }, 2800);
+                    }
+                    if (!msg.actor_id || msg.actor_id === playerId) {
+                        showYourTurnPopup('🛠️ DEBUG-AKTION', msg.result.message);
+                    }
+                }
+                syncDebugModalSliders();
+                updateHUD();
+                break;
         }
 
         // Sync active Auction or Tax modal state
@@ -3024,7 +3040,10 @@
         onDebugSliderInput: onDebugSliderInput,
         applyDebugPreset: applyDebugPreset,
         previewDebugMovement: previewDebugMovement,
-        saveAndSyncDebugConfig: saveAndSyncDebugConfig
+        saveAndSyncDebugConfig: saveAndSyncDebugConfig,
+        runDebugAction: runDebugAction,
+        runDebugColorGroup: runDebugColorGroup,
+        runDebugTeleport: runDebugTeleport
     };
 
     let isDebugUnlocked = false;
@@ -3077,6 +3096,22 @@
     };
 
     function syncDebugModalSliders() {
+        const targetSel = document.getElementById('dbg-target-player');
+        if (targetSel && gameState && gameState.players) {
+            const prevVal = targetSel.value;
+            targetSel.innerHTML = gameState.players.map(p => {
+                const meTag = (p.id === playerId) ? ' (Du)' : '';
+                const jailTag = p.in_jail ? ' 🔒' : '';
+                const bankTag = p.is_bankrupt ? ' 💀' : '';
+                return `<option value="${p.id}">${p.name}${meTag} — ${p.money} DM${jailTag}${bankTag}</option>`;
+            }).join('');
+            if (prevVal && gameState.players.some(p => p.id === prevVal)) {
+                targetSel.value = prevVal;
+            } else if (playerId && gameState.players.some(p => p.id === playerId)) {
+                targetSel.value = playerId;
+            }
+        }
+
         const engine = window.MonopolyBoard3D || Board3D;
         if (!engine || !engine.getAnimConfig) return;
         const cfg = engine.getAnimConfig();
@@ -3099,6 +3134,34 @@
 
         const chk = document.getElementById('dbg-cinematic-follow');
         if (chk) chk.checked = (cfg.cinematicFollow !== false);
+    }
+
+    function runDebugAction(cmd, value = null) {
+        if (!isDebugUnlocked) return;
+        const targetSel = document.getElementById('dbg-target-player');
+        const targetId = (targetSel && targetSel.value) ? targetSel.value : playerId;
+        sendWsMessage({
+            action: 'DEBUG_ACTION',
+            password: 'admin123',
+            cmd: cmd,
+            target_id: targetId,
+            value: value
+        });
+        if (cmd === 'FORCE_DOUBLES_ROLL' || cmd === 'TELEPORT' || cmd === 'FORCE_BANKRUPTCY') {
+            closeModal('modal-debug');
+        }
+    }
+
+    function runDebugColorGroup() {
+        const grpSel = document.getElementById('dbg-color-group');
+        const grp = grpSel ? grpSel.value : 'brown';
+        runDebugAction('GIVE_COLOR_GROUP', grp);
+    }
+
+    function runDebugTeleport() {
+        const sqSel = document.getElementById('dbg-teleport-sq');
+        const sqIdx = sqSel ? parseInt(sqSel.value, 10) : 0;
+        runDebugAction('TELEPORT', sqIdx);
     }
 
     function readDebugSlidersToConfig() {

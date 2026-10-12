@@ -431,17 +431,21 @@ class GameRoom:
             return None
         return self.players[self.current_player_idx % len(self.players)]
 
-    def roll_dice(self) -> dict:
+    def roll_dice(self, forced_dice: Optional[List[int]] = None, ignore_already_rolled: bool = False) -> dict:
         player = self.current_player()
         if not player or self.status != "PLAYING":
             return {"error": "Nicht im Spiel."}
         if self.auction_state:
             return {"error": "Bitte zuerst die laufende Versteigerung abschließen."}
-        if self.rolled:
+        if self.rolled and not ignore_already_rolled:
             return {"error": "Bereits gewürfelt."}
 
-        d1 = random.randint(1, 6)
-        d2 = random.randint(1, 6)
+        if forced_dice and len(forced_dice) == 2:
+            d1 = max(1, min(6, int(forced_dice[0])))
+            d2 = max(1, min(6, int(forced_dice[1])))
+        else:
+            d1 = random.randint(1, 6)
+            d2 = random.randint(1, 6)
         self.dice = [d1, d2]
         self.rolled = True
         self.last_card = None
@@ -1519,6 +1523,103 @@ class GameRoom:
             self.rolled = True
             return self.end_turn(player_id)
         return {"success": True, "bankrupt_player": player.to_dict()}
+
+    def execute_debug_action(self, cmd: str, target_id: Optional[str] = None, value: Optional[str] = None) -> dict:
+        target = next((p for p in self.players if p.id == target_id), None) if target_id else None
+        if not target:
+            target = self.current_player() or (self.players[0] if self.players else None)
+        if not target:
+            return {"error": "Kein Spieler vorhanden."}
+
+        if cmd == "SEND_TO_JAIL":
+            self.send_to_jail(target)
+            if self.current_player() and self.current_player().id == target.id:
+                self.rolled = False
+                self.pending_action = None
+                target.jail_rolls_this_turn = 0
+            self.log(f"🛠️ [Debug] {target.name} wurde ins Gefängnis versetzt (3x Würfeln bereit).")
+            return {"success": True, "cmd": cmd, "message": f"{target.name} ins Gefängnis geschickt!"}
+
+        elif cmd == "FREE_FROM_JAIL":
+            target.in_jail = False
+            target.jail_turns = 0
+            target.jail_rolls_this_turn = 0
+            self.log(f"🛠️ [Debug] {target.name} wurde aus dem Gefängnis befreit.")
+            return {"success": True, "cmd": cmd, "message": f"{target.name} aus dem Gefängnis befreit!"}
+
+        elif cmd == "GIVE_JAIL_CARD":
+            target.jail_cards = min(2, target.jail_cards + 1)
+            self.log(f"🛠️ [Debug] {target.name} erhält eine 'Du kommst aus dem Gefängnis frei'-Karte ({target.jail_cards}x).")
+            return {"success": True, "cmd": cmd, "message": f"Gefängnisfrei-Karte an {target.name} vergeben!"}
+
+        elif cmd == "ADD_MONEY":
+            try:
+                amt = int(value or 0)
+            except ValueError:
+                amt = 0
+            target.money += amt
+            if target.money < 0:
+                target.creditor_id = "BANK"
+            else:
+                target.creditor_id = None
+            sign = "+" if amt >= 0 else ""
+            self.log(f"🛠️ [Debug] Kontostand von {target.name}: {sign}{amt} DM → {target.money} DM.")
+            return {"success": True, "cmd": cmd, "message": f"Kontostand von {target.name}: {target.money} DM"}
+
+        elif cmd == "SET_DEBT":
+            target.money = -200
+            target.creditor_id = "BANK"
+            self.log(f"🛠️ [Debug] {target.name} auf -200 DM Schulden gesetzt (Konkurs-/Hypothek-Test).")
+            return {"success": True, "cmd": cmd, "message": f"{target.name} hat jetzt -200 DM Schulden!"}
+
+        elif cmd == "FORCE_BANKRUPTCY":
+            res = self.declare_bankruptcy(target.id)
+            return {"success": True, "cmd": cmd, "bankruptcy": res, "message": f"Konkurs für {target.name} ausgelöst!"}
+
+        elif cmd == "GIVE_COLOR_GROUP":
+            grp = str(value or "brown")
+            if grp not in COLOR_GROUPS:
+                return {"error": f"Unbekannte Gruppe: {grp}"}
+            for sq_idx in COLOR_GROUPS[grp]:
+                self.board_state[sq_idx]["owner"] = target.id
+                self.board_state[sq_idx]["mortgaged"] = False
+            self.log(f"🛠️ [Debug] Komplette Gruppe '{grp}' an {target.name} übertragen!")
+            return {"success": True, "cmd": cmd, "message": f"Farbgruppe '{grp}' gehört jetzt {target.name}!"}
+
+        elif cmd == "TELEPORT":
+            try:
+                sq_idx = int(value or 0) % 40
+            except ValueError:
+                sq_idx = 0
+            old_pos = target.position
+            target.in_jail = False
+            target.jail_turns = 0
+            target.jail_rolls_this_turn = 0
+            target.position = sq_idx
+            sq = SQUARES[sq_idx]
+            self.log(f"🛠️ [Debug] {target.name} teleportiert auf {sq['name']} (Feld {sq_idx}).")
+            if self.current_player() and self.current_player().id == target.id and self.status == "PLAYING":
+                self.rolled = True
+                act = self.evaluate_square(target, sq, sum(self.dice))
+                self.pending_action = act
+                return {
+                    "success": True,
+                    "cmd": cmd,
+                    "teleport_roll": {
+                        "dice": self.dice,
+                        "double": False,
+                        "old_pos": old_pos,
+                        "new_pos": sq_idx,
+                        "final_pos": target.position,
+                        "passed_go": False,
+                        "player": target.to_dict(),
+                        "action": act
+                    },
+                    "message": f"Teleportiert auf {sq['name']}!"
+                }
+            return {"success": True, "cmd": cmd, "message": f"Teleportiert auf {sq['name']}!"}
+
+        return {"error": f"Unbekannter Debug-Befehl: {cmd}"}
 
     def to_dict(self) -> dict:
         return {

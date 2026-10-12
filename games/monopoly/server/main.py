@@ -3,6 +3,7 @@ import sys
 import json
 import uuid
 import time
+import random
 import asyncio
 from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -443,6 +444,48 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                         "anim_config": room.anim_config,
                         "state": room.to_dict()
                     })
+
+            elif action == "DEBUG_ACTION":
+                pwd = str(data.get("password", "")).strip()
+                if pwd == "admin123":
+                    cmd = str(data.get("cmd", "")).strip()
+                    target_id = data.get("target_id") or player_id
+                    val = data.get("value")
+                    if cmd == "FORCE_DOUBLES_ROLL":
+                        d_val = random.randint(1, 6)
+                        if val is not None:
+                            try:
+                                d_val = max(1, min(6, int(val)))
+                            except ValueError:
+                                pass
+                        res = room.roll_dice(forced_dice=[d_val, d_val], ignore_already_rolled=True)
+                        await broadcast_room(room_id, {
+                            "type": "DICE_ROLLED",
+                            "result": res,
+                            "state": room.to_dict()
+                        })
+                    else:
+                        res = room.execute_debug_action(cmd, target_id, val)
+                        if res.get("teleport_roll"):
+                            await broadcast_room(room_id, {
+                                "type": "DICE_ROLLED",
+                                "result": res["teleport_roll"],
+                                "state": room.to_dict()
+                            })
+                        elif cmd == "FORCE_BANKRUPTCY":
+                            await broadcast_room(room_id, {
+                                "type": "BANKRUPTCY",
+                                "result": res.get("bankruptcy", res),
+                                "state": room.to_dict()
+                            })
+                            await handle_bot_turn_if_needed(room_id)
+                        else:
+                            await broadcast_room(room_id, {
+                                "type": "DEBUG_ACTION_APPLIED",
+                                "actor_id": player_id,
+                                "result": res,
+                                "state": room.to_dict()
+                            })
 
     except WebSocketDisconnect:
         if room_id in connections:
