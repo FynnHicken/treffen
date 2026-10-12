@@ -1,4 +1,4 @@
-app = "treffen-partyhub"
+app = "treffen"
 primary_region = "fra"
 
 [build]
