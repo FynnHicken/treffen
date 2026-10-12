@@ -18,6 +18,12 @@
         min="0"
         max="1"
         step="0.05"
+        :value="$store.state.soundController.effectsVolume"
+        @input="
+          $store.state.soundController.setEffectsVolume(
+            Number($event.target.value)
+          )
+        "
       />
     </div>
 

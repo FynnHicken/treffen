@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Treffen – Dein Spieleabend</title>
-    <link rel="stylesheet" href="styles.css?v=2.3">
-    <link rel="stylesheet" href="themes.css?v=2.3">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="themes.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Comic+Neue:wght@400;700&family=Orbitron:wght@600;800&family=Outfit:wght@400;600;700&family=Patrick+Hand&family=Plus+Jakarta+Sans:wght@600;800&display=swap" rel="stylesheet">
@@ -31,8 +31,8 @@
                     <button class="icon-btn" id="qrCodeBtn" title="QR-Code für Smartphones anzeigen">
                         📱
                     </button>
-                    <button class="icon-btn" id="changeRoomBtn" title="Raum wechseln, beitreten oder neu erstellen" style="padding: 3px 8px; font-weight: 700; font-size: 0.82rem;">
-                        🚪 Raum wechseln
+                    <button class="icon-btn" id="changeRoomBtn" title="Code eingeben oder wechseln">
+                        ✏️
                     </button>
                 </div>
             </div>
@@ -94,20 +94,6 @@
             <div class="section-header">
                 <h2>🎉 Party <span class="badge" id="playerCountBadge">1 Freund</span></h2>
                 <span class="couch-hint">Party ist synchronisiert</span>
-            </div>
-            <div id="soloRoomExpiryBanner" style="display: none; flex-direction: column; gap: 6px; background: var(--bg-surface-elevated); border: var(--ink-border); border-radius: 12px; padding: 10px 14px; margin-bottom: 10px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
-                    <div style="display: flex; align-items: center; gap: 8px; font-size: 0.88rem; font-weight: 700; color: var(--ink);">
-                        <span class="expiry-hourglass" style="display: inline-block; animation: pulse 1s infinite;">⏳</span>
-                        <span>Warte auf Mitspieler – ungenutzter Raum wird gelöscht in <strong id="soloRoomExpirySec" style="font-family: monospace; font-size: 1rem; color: #f59e0b;">60s</strong></span>
-                    </div>
-                    <button type="button" class="action-btn-sm" onclick="extendRoomTtl()" style="padding: 4px 10px; font-size: 0.8rem;">
-                        🔄 +60s verlängern
-                    </button>
-                </div>
-                <div style="width: 100%; height: 6px; background: rgba(148, 163, 184, 0.25); border-radius: 999px; overflow: hidden;">
-                    <div id="soloRoomExpiryBar" style="height: 100%; width: 100%; background: #22c55e; border-radius: 999px; transition: width 0.15s linear, background-color 0.3s ease;"></div>
-                </div>
             </div>
             <div class="player-roster" id="playerRoster">
                 <!-- Dynamically populated players -->
@@ -423,96 +409,88 @@
 
     <!-- Change Room / Enter Code Modal -->
     <div class="modal-backdrop" id="codeModal" style="display: none;">
-        <div class="modal-card" style="max-width: 460px; text-align: center;">
+        <div class="modal-card" style="max-width: 400px; text-align: center;">
             <button class="close-modal-btn" onclick="closeCodeModal()">✕</button>
-            <div style="font-size: 2.2rem; margin-bottom: 4px;">🚪</div>
-            <h2 style="margin-bottom: 4px;">Party-Raum wechseln</h2>
-            <p style="color: var(--ink-light); margin-bottom: 12px; font-size: 0.92rem;">
-                Erstelle einen neuen Raum oder tritt der Party deiner Freunde bei:
+            <div style="font-size: 2.4rem; margin-bottom: 8px;">🔑</div>
+            <h2 style="margin-bottom: 6px;">Party-Code eingeben</h2>
+            <p style="color: var(--ink-light); margin-bottom: 16px; font-size: 0.95rem;">
+                Gib den 5- oder 6-stelligen Code deiner Freunde ein:
             </p>
-
-            <button type="button" class="btn-primary-launch" onclick="generateNewRoomCode()" style="width: 100%; justify-content: center; margin-bottom: 10px; padding: 11px 16px; font-size: 1.05rem;">
-                ➕ Neuen Party-Raum erstellen
-            </button>
-
-            <form onsubmit="handleCodeSubmit(event)" style="display: flex; gap: 8px; width: 100%; margin-bottom: 10px;">
-                <input type="text" id="joinCodeInput" maxlength="12" placeholder="RAUM-CODE (z. B. 7K9PM2)" style="flex: 1; font-family: monospace; font-size: 1.1rem; font-weight: 800; text-transform: uppercase; text-align: center; letter-spacing: 0.14em; padding: 10px 12px; border-radius: 12px; border: var(--ink-border); box-shadow: 2px 2px 0px var(--ink); color: var(--ink); background: var(--bg-surface);" required>
-                <button type="submit" class="action-btn-sm" style="padding: 10px 16px; font-size: 0.98rem; white-space: nowrap;">🚀 Beitreten</button>
+            <form onsubmit="handleCodeSubmit(event)" style="display: flex; flex-direction: column; gap: 14px;" autocomplete="off" data-form-type="other">
+                <input type="text" id="joinCodeInput" name="party_switch_token" maxlength="12" placeholder="z. B. 7K9PM2" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" data-form-type="other" data-lpignore="true" data-1p-ignore="true" style="font-family: monospace; font-size: 1.3rem; font-weight: 800; text-transform: uppercase; text-align: center; letter-spacing: 0.18em; padding: 10px 14px; border-radius: 12px; border: var(--ink-border); box-shadow: 2px 2px 0px var(--ink); color: var(--ink); background: var(--bg-surface);" required autofocus>
+                <div style="display: flex; gap: 10px; justify-content: center;">
+                    <button type="submit" class="action-btn-sm" style="flex: 2; padding: 10px 16px; font-size: 1rem;">🚀 Beitreten</button>
+                    <button type="button" class="action-btn-sm" onclick="generateNewRoomCode()" style="flex: 1; background: var(--bg-surface); color: var(--ink); border: var(--ink-border); padding: 10px 12px; font-size: 0.9rem;" title="Neuen zufälligen Code erzeugen">🎲 Neu</button>
+                </div>
             </form>
-
-            <div style="text-align: left; width: 100%; background: var(--bg-surface-elevated); border: var(--ink-border); border-radius: 12px; padding: 10px 12px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-                    <span style="font-weight: 800; font-size: 0.85rem; color: var(--ink);">🌐 Offene Party-Räume</span>
-                    <button type="button" class="icon-btn" onclick="refreshPartyOpenRooms()" title="Aktualisieren" style="font-size: 0.78rem; padding: 2px 8px;">🔄</button>
-                </div>
-                <div id="codeModalOpenRoomsList" style="display: flex; flex-direction: column; gap: 6px; max-height: 150px; overflow-y: auto;">
-                    <div style="font-size: 0.82rem; color: var(--ink-light); text-align: center; padding: 8px;">Suche nach aktiven Räumen...</div>
-                </div>
-            </div>
         </div>
     </div>
 
-    <!-- Join / Welcome Modal (Mandatory on First Entry per Tab - Mobile Optimized) -->
-    <div class="modal-backdrop" id="joinModal" style="display: none; z-index: 10000;">
-        <div class="modal-card join-card" style="max-width: 480px;">
-            <div class="join-icon">🎉🎮</div>
-            <h2 class="join-title">Willkommen bei Treffen!</h2>
-            <p class="join-subtitle">
-                Wähle deinen Namen & Avatar und entscheide, ob du einen neuen Raum erstellst oder einem bestehenden Raum beitrittst:
-            </p>
+    <!-- Welcome & Entry View: Profile setup + Party erstellen vs. Party beitreten -->
+    <div class="modal-backdrop welcome-backdrop" id="welcomeOverlay" style="display: none; z-index: 10000;">
+        <div class="modal-card welcome-card">
+            <div class="welcome-header">
+                <div class="welcome-icon">🎉🎮</div>
+                <h2 class="welcome-title" id="welcomeTitle">Willkommen bei Treffen!</h2>
+                <p class="welcome-subtitle" id="welcomeSubtitle">
+                    Wähle deinen Namen & Avatar für den gemeinsamen Spieleabend:
+                </p>
+                <div class="welcome-direct-badge" id="welcomeDirectBadge" style="display: none;">
+                    <span class="direct-badge-label">Party-Code:</span>
+                    <strong class="direct-badge-code" id="welcomeDirectCodeDisplay">------</strong>
+                </div>
+            </div>
 
-            <form id="joinForm" onsubmit="handleJoinSubmit(event)" class="join-form">
-                <div class="join-field">
-                    <label for="joinNicknameInput">Dein Nickname:</label>
-                    <input type="text" id="joinNicknameInput" maxlength="16" placeholder="Nickname eingeben..." required autocomplete="nickname">
+            <div class="welcome-profile-section">
+                <div class="welcome-field">
+                    <label for="welcomeNicknameInput">Dein Nickname:</label>
+                    <input type="text" id="welcomeNicknameInput" name="player_game_alias" maxlength="16" placeholder="Dein Nickname..." autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-form-type="other" data-lpignore="true" data-1p-ignore="true" required>
                 </div>
 
-                <div class="join-field">
+                <div class="welcome-field">
                     <label>Wähle deinen Avatar:</label>
-                    <div id="joinAvatarPicker" class="avatar-picker-grid join-avatar-grid">
+                    <div id="welcomeAvatarPicker" class="avatar-picker-grid welcome-avatar-grid">
                         <!-- Populated dynamically -->
                     </div>
                 </div>
+            </div>
 
-                <!-- Room Selection Actions -->
-                <div style="border-top: 1.5px dashed rgba(148, 163, 184, 0.35); padding-top: 10px; margin-top: 2px; display: flex; flex-direction: column; gap: 10px;">
-                    <!-- Option 1: Create New Room -->
-                    <button type="button" class="btn-primary-launch join-submit-btn" onclick="handleCreateNewRoomFromJoin()" style="margin-top: 0;">
-                        ➕ Neuen Party-Raum erstellen
-                    </button>
-
-                    <!-- Option 2: Join Room by Code -->
-                    <div style="background: var(--bg-surface-elevated); border: var(--ink-border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;">
-                        <label for="welcomeRoomCodeInput" style="font-size: 0.82rem; font-family: var(--font-heading); font-weight: 700; color: var(--ink);">
-                            🔑 Bestehendem Raum mit Code beitreten:
-                        </label>
-                        <div style="display: flex; gap: 8px;">
-                            <input type="text" id="welcomeRoomCodeInput" maxlength="12" placeholder="CODE (z. B. 7K9PM2)" style="flex: 1; font-family: monospace; font-size: 1.05rem; font-weight: 800; text-transform: uppercase; text-align: center; letter-spacing: 0.14em; padding: 8px 10px; border-radius: 10px; border: var(--ink-border); background: var(--bg-surface); color: var(--ink);">
-                            <button type="button" class="action-btn-sm" onclick="handleJoinByCodeFromJoin()" style="padding: 8px 14px; font-size: 0.95rem; white-space: nowrap;">
-                                🚀 Beitreten
-                            </button>
-                        </div>
+            <!-- Choice Actions (default when visiting treffen.ddns.net without room) -->
+            <div class="welcome-actions-section" id="welcomeChoiceActions">
+                <!-- Action 1: Create Party -->
+                <button type="button" class="btn-welcome-create" id="btnWelcomeCreate" onclick="handleWelcomeCreateParty()">
+                    <span class="btn-welcome-icon">👑</span>
+                    <div class="btn-welcome-text">
+                        <span class="btn-welcome-title">Party erstellen</span>
+                        <span class="btn-welcome-desc">Neuen Raum eröffnen & Host werden</span>
                     </div>
+                </button>
 
-                    <!-- Option 3: Live Open Rooms List -->
-                    <div style="background: var(--bg-surface-elevated); border: var(--ink-border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;">
-                        <div style="display: flex; align-items: center; justify-content: space-between;">
-                            <span style="font-size: 0.82rem; font-family: var(--font-heading); font-weight: 700; color: var(--ink);">
-                                🌐 Offene Party-Räume auf dem Server:
-                            </span>
-                            <button type="button" class="icon-btn" onclick="refreshPartyOpenRooms()" title="Aktualisieren" style="font-size: 0.76rem; padding: 2px 7px;">🔄</button>
-                        </div>
-                        <div id="welcomeOpenRoomsList" style="display: flex; flex-direction: column; gap: 6px; max-height: 135px; overflow-y: auto;">
-                            <div style="font-size: 0.8rem; color: var(--ink-light); text-align: center; padding: 6px;">Suche nach aktiven Räumen...</div>
-                        </div>
-                    </div>
-
-                    <!-- Option 4: Quick View Game Cards -->
-                    <button type="button" class="btn-secondary" onclick="handleQuickViewCatalog()" style="width: 100%; justify-content: center; padding: 9px 14px; font-size: 0.92rem;">
-                        🃏 Zur Kartenansicht (Spiele ansehen)
-                    </button>
+                <div class="welcome-divider">
+                    <span>ODER PARTY BEITRETEN</span>
                 </div>
-            </form>
+
+                <!-- Action 2: Join with Code -->
+                <div class="welcome-join-box">
+                    <label for="welcomeCodeInput" class="welcome-join-label">Party-Code eingeben:</label>
+                    <form onsubmit="handleWelcomeJoinParty(event)" class="welcome-join-form" autocomplete="off" data-form-type="other">
+                        <input type="text" id="welcomeCodeInput" name="party_room_token" maxlength="12" placeholder="z. B. 7K9PM2" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" data-form-type="other" data-lpignore="true" data-1p-ignore="true">
+                        <button type="submit" class="btn-welcome-join" id="btnWelcomeJoin">
+                            🚀 Beitreten
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Direct Join Action (when opened with ?room=XYZ in URL) -->
+            <div class="welcome-direct-section" id="welcomeDirectActions" style="display: none;">
+                <button type="button" class="btn-primary-launch welcome-direct-btn" id="btnWelcomeDirectJoin" onclick="handleWelcomeDirectJoin()">
+                    🚀 Party beitreten
+                </button>
+                <button type="button" class="btn-welcome-switch-mode" onclick="switchToWelcomeChoiceMode()">
+                    Oder stattdessen eigene Party erstellen
+                </button>
+            </div>
         </div>
     </div>
 
@@ -530,7 +508,7 @@
             <div class="modal-content" style="display: flex; flex-direction: column; gap: 18px;">
                 <div>
                     <label style="font-weight: 700; display: block; margin-bottom: 6px;">Dein Name:</label>
-                    <input type="text" id="profileNameInput" maxlength="16" placeholder="Dein Name..." style="width: 100%; padding: 10px 14px; border: var(--ink-border); border-radius: 12px; font-family: var(--font-body); font-size: 1.1rem; background: var(--bg-surface); color: var(--ink);">
+                    <input type="text" id="profileNameInput" name="player_edit_alias" maxlength="16" placeholder="Dein Name..." autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-form-type="other" data-lpignore="true" data-1p-ignore="true" style="width: 100%; padding: 10px 14px; border: var(--ink-border); border-radius: 12px; font-family: var(--font-body); font-size: 1.1rem; background: var(--bg-surface); color: var(--ink);">
                 </div>
                 <div>
                     <label style="font-weight: 700; display: block; margin-bottom: 8px;">Wähle deinen Avatar:</label>
@@ -549,6 +527,6 @@
     <!-- Toast Notification -->
     <div class="toast" id="toast">Link kopiert!</div>
 
-    <script src="app.js?v=2.3"></script>
+    <script src="app.js"></script>
 </body>
 </html>

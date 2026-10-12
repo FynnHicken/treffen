@@ -2130,4 +2130,389 @@ body {
     }
 }
 
+/* ==========================================================================
+   WELCOME & PARTY SELECTION OVERLAY (Landing & Join Choice)
+   ========================================================================== */
+.welcome-backdrop {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.78);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 10000;
+    padding: 16px;
+    box-sizing: border-box;
+    animation: welcomeFadeIn 0.25s ease-out;
+}
+
+@keyframes welcomeFadeIn {
+    from { opacity: 0; transform: scale(0.97); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.welcome-card {
+    max-width: 480px;
+    width: 100%;
+    padding: 24px 22px;
+    text-align: center;
+    max-height: 94vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin: auto;
+    background: var(--bg-surface);
+    border: var(--ink-border);
+    border-radius: var(--radius-doodle);
+    box-shadow: var(--shadow-doodle);
+    position: relative;
+    box-sizing: border-box;
+}
+
+.welcome-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.welcome-icon {
+    font-size: 2.5rem;
+    line-height: 1;
+    margin-bottom: 2px;
+}
+
+.welcome-title {
+    font-size: 1.65rem;
+    font-family: var(--font-heading);
+    font-weight: 800;
+    margin: 0;
+    color: var(--ink);
+}
+
+.welcome-subtitle {
+    font-size: 0.92rem;
+    color: var(--ink-light);
+    margin: 0;
+    line-height: 1.35;
+}
+
+.welcome-direct-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    padding: 5px 14px;
+    background: var(--bg-surface-elevated);
+    border: var(--ink-border);
+    border-radius: var(--radius-pill);
+    box-shadow: 2px 2px 0px var(--ink);
+}
+
+.direct-badge-label {
+    font-size: 0.82rem;
+    color: var(--ink-light);
+    font-weight: 600;
+}
+
+.direct-badge-code {
+    font-family: monospace;
+    font-size: 1.1rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    color: var(--primary);
+}
+
+.welcome-profile-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    text-align: left;
+    background: var(--bg-surface-elevated);
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: var(--ink-border);
+    box-shadow: 2px 2px 0px var(--ink);
+}
+
+.welcome-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.welcome-field label {
+    font-size: 0.88rem;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    color: var(--ink);
+}
+
+#welcomeNicknameInput {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 9px 12px;
+    border: var(--ink-border);
+    border-radius: 12px;
+    font-family: var(--font-body);
+    font-size: 1.05rem;
+    background: var(--bg-surface);
+    color: var(--ink);
+    box-shadow: 2px 2px 0px var(--ink);
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+#welcomeNicknameInput:focus {
+    outline: none;
+    box-shadow: 3px 3px 0px var(--ink);
+    transform: translateY(-1px);
+}
+
+.welcome-avatar-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+    justify-items: center;
+}
+
+.welcome-avatar-grid .avatar-pick-item {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    font-size: 1.45rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-surface);
+    border: var(--ink-border);
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.welcome-avatar-grid .avatar-pick-item:hover {
+    transform: scale(1.12);
+}
+
+.welcome-avatar-grid .avatar-pick-item.selected {
+    background: var(--primary);
+    box-shadow: 2px 2px 0px var(--ink);
+    transform: scale(1.15);
+}
+
+.welcome-actions-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+}
+
+.btn-welcome-create {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    padding: 13px 18px;
+    background: var(--accent-green);
+    color: #ffffff;
+    border: var(--ink-border);
+    border-radius: 16px;
+    box-shadow: var(--shadow-doodle);
+    cursor: pointer;
+    text-align: left;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.btn-welcome-create:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: var(--shadow-doodle-hover);
+}
+
+.btn-welcome-create:active {
+    transform: translate(1px, 1px);
+    box-shadow: var(--shadow-doodle-active);
+}
+
+.btn-welcome-icon {
+    font-size: 2.1rem;
+    line-height: 1;
+}
+
+.btn-welcome-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.btn-welcome-title {
+    font-family: var(--font-heading);
+    font-size: 1.25rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.btn-welcome-desc {
+    font-size: 0.8rem;
+    opacity: 0.95;
+    font-weight: 600;
+}
+
+.welcome-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 4px 0;
+    color: var(--ink-light);
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+.welcome-divider::before,
+.welcome-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 2px dashed rgba(30, 41, 59, 0.25);
+}
+
+[data-theme="dark"] .welcome-divider::before,
+[data-theme="dark"] .welcome-divider::after {
+    border-bottom-color: rgba(255, 255, 255, 0.25);
+}
+
+.welcome-divider span {
+    padding: 0 12px;
+}
+
+.welcome-join-box {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: left;
+}
+
+.welcome-join-label {
+    font-size: 0.88rem;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.welcome-join-form {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+
+#welcomeCodeInput {
+    flex: 1;
+    box-sizing: border-box;
+    padding: 10px 14px;
+    border: var(--ink-border);
+    border-radius: 12px;
+    font-family: monospace;
+    font-size: 1.15rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    text-align: center;
+    letter-spacing: 0.15em;
+    background: var(--bg-surface);
+    color: var(--ink);
+    box-shadow: 2px 2px 0px var(--ink);
+}
+
+#welcomeCodeInput.input-error {
+    border-color: var(--accent-red);
+    animation: inputShake 0.4s ease;
+}
+
+@keyframes inputShake {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-6px); }
+    40%, 80% { transform: translateX(6px); }
+}
+
+.btn-welcome-join {
+    padding: 10px 20px;
+    background: var(--primary);
+    color: var(--primary-text);
+    border: var(--ink-border);
+    border-radius: 12px;
+    font-family: var(--font-heading);
+    font-size: 1.1rem;
+    font-weight: 800;
+    box-shadow: var(--shadow-doodle);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.btn-welcome-join:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: var(--shadow-doodle-hover);
+}
+
+.btn-welcome-join:active {
+    transform: translate(1px, 1px);
+    box-shadow: var(--shadow-doodle-active);
+}
+
+.welcome-direct-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+
+.welcome-direct-btn {
+    width: 100%;
+    padding: 13px 18px;
+    font-size: 1.15rem;
+    justify-content: center;
+}
+
+.btn-welcome-switch-mode {
+    background: none;
+    border: none;
+    color: var(--ink-light);
+    font-size: 0.85rem;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 6px;
+    font-family: var(--font-body);
+    transition: color 0.15s;
+}
+
+.btn-welcome-switch-mode:hover {
+    color: var(--ink);
+}
+
+@media (max-width: 480px), (max-height: 720px) {
+    .welcome-card {
+        padding: 16px 14px;
+        gap: 10px;
+        border-radius: 18px;
+        max-height: 96vh;
+    }
+
+    .welcome-icon { font-size: 2rem; }
+    .welcome-title { font-size: 1.35rem; }
+    .welcome-subtitle { font-size: 0.82rem; }
+    .welcome-profile-section { padding: 10px 12px; gap: 8px; }
+    .btn-welcome-create { padding: 10px 14px; gap: 10px; }
+    .btn-welcome-icon { font-size: 1.6rem; }
+    .btn-welcome-title { font-size: 1.1rem; }
+    .welcome-avatar-grid .avatar-pick-item {
+        width: 36px;
+        height: 36px;
+        font-size: 1.25rem;
+    }
+}
+
 
