@@ -98,12 +98,52 @@ const WALKABLE_AREAS = [
     { type: "corridor", x1: 1440, y1: 810, x2: 1310, y2: 850, w: 75 }
 ];
 
+// Offscreen collision canvas to read actual map pixels
+const collisionCanvas = document.createElement("canvas");
+collisionCanvas.width = 2000;
+collisionCanvas.height = 1094;
+const collisionCtx = collisionCanvas.getContext("2d", { willReadFrequently: true });
+let mapCollisionLoaded = false;
+let collisionPixelData = null;
+
+mapImage.onload = () => {
+    try {
+        collisionCtx.drawImage(mapImage, 0, 0, 2000, 1094);
+        collisionPixelData = collisionCtx.getImageData(0, 0, 2000, 1094).data;
+        mapCollisionLoaded = true;
+        console.log("[AmongUs] Map collision pixels extracted successfully!");
+    } catch (e) {
+        console.warn("[AmongUs] Could not read map image data (CORS):", e);
+    }
+};
+
 function isPositionWalkable(x, y) {
+    const ix = Math.floor(x);
+    const iy = Math.floor(y);
+
+    if (ix < 10 || ix >= 1990 || iy < 10 || iy >= 1084) {
+        return false;
+    }
+
+    // 1. Direct pixel test: If pixel is transparent or dark space background (r+g+b < 28)
+    if (mapCollisionLoaded && collisionPixelData) {
+        const idx = (iy * 2000 + ix) * 4;
+        const r = collisionPixelData[idx];
+        const g = collisionPixelData[idx + 1];
+        const b = collisionPixelData[idx + 2];
+        const a = collisionPixelData[idx + 3];
+
+        // The black void of space has alpha 0 or very low brightness
+        if (a < 50 || (r < 22 && g < 22 && b < 26)) {
+            return false;
+        }
+        return true;
+    }
+
+    // 2. Geometric fallback if image is not yet loaded
     for (const a of WALKABLE_AREAS) {
         if (a.type === "circle") {
-            if (Math.hypot(x - a.x, y - a.y) <= a.r) {
-                return true;
-            }
+            if (Math.hypot(x - a.x, y - a.y) <= a.r) return true;
         } else if (a.type === "corridor") {
             const dx = a.x2 - a.x1;
             const dy = a.y2 - a.y1;
@@ -113,9 +153,7 @@ function isPositionWalkable(x, y) {
             t = Math.max(0, Math.min(1, t));
             const projX = a.x1 + t * dx;
             const projY = a.y1 + t * dy;
-            if (Math.hypot(x - projX, y - projY) <= (a.w / 2)) {
-                return true;
-            }
+            if (Math.hypot(x - projX, y - projY) <= (a.w / 2)) return true;
         }
     }
     return false;
