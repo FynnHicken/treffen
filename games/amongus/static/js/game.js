@@ -117,15 +117,14 @@ mapImage.onload = () => {
     }
 };
 
-function isPositionWalkable(x, y) {
-    const ix = Math.floor(x);
-    const iy = Math.floor(y);
+function checkSinglePixelWalkable(px, py) {
+    const ix = Math.floor(px);
+    const iy = Math.floor(py);
 
-    if (ix < 10 || ix >= 1990 || iy < 10 || iy >= 1084) {
+    if (ix < 15 || ix >= 1985 || iy < 15 || iy >= 1080) {
         return false;
     }
 
-    // 1. Direct pixel test: If pixel is transparent or dark space background (r+g+b < 28)
     if (mapCollisionLoaded && collisionPixelData) {
         const idx = (iy * 2000 + ix) * 4;
         const r = collisionPixelData[idx];
@@ -133,30 +132,55 @@ function isPositionWalkable(x, y) {
         const b = collisionPixelData[idx + 2];
         const a = collisionPixelData[idx + 3];
 
-        // The black void of space has alpha 0 or very low brightness
-        if (a < 50 || (r < 22 && g < 22 && b < 26)) {
+        // Void of space: alpha < 50 or dark black background
+        if (a < 50 || (r < 25 && g < 25 && b < 30)) {
             return false;
         }
         return true;
     }
 
-    // 2. Geometric fallback if image is not yet loaded
+    // Geometric fallback
     for (const a of WALKABLE_AREAS) {
         if (a.type === "circle") {
-            if (Math.hypot(x - a.x, y - a.y) <= a.r) return true;
+            if (Math.hypot(px - a.x, py - a.y) <= a.r) return true;
         } else if (a.type === "corridor") {
             const dx = a.x2 - a.x1;
             const dy = a.y2 - a.y1;
             const lenSq = dx * dx + dy * dy;
             if (lenSq === 0) continue;
-            let t = ((x - a.x1) * dx + (y - a.y1) * dy) / lenSq;
+            let t = ((px - a.x1) * dx + (py - a.y1) * dy) / lenSq;
             t = Math.max(0, Math.min(1, t));
             const projX = a.x1 + t * dx;
             const projY = a.y1 + t * dy;
-            if (Math.hypot(x - projX, y - projY) <= (a.w / 2)) return true;
+            if (Math.hypot(px - projX, py - projY) <= (a.w / 2)) return true;
         }
     }
     return false;
+}
+
+// Full texture boundary collision check: Player capsule is 36px wide (-18 to +18) and 36px high (-10 to +26)
+function isPositionWalkable(x, y) {
+    // Check center
+    if (!checkSinglePixelWalkable(x, y)) return false;
+
+    // Check all outer edges of the character texture bounding box
+    const testOffsets = [
+        { dx: -18, dy: -8 }, // Left shoulder
+        { dx: 18, dy: -8 },  // Right shoulder / visor
+        { dx: -18, dy: 16 }, // Left leg
+        { dx: 18, dy: 16 },  // Right leg
+        { dx: 0, dy: -14 },  // Top head
+        { dx: 0, dy: 24 },   // Bottom feet
+        { dx: -20, dy: 6 },  // Left backpack
+        { dx: 20, dy: 6 }    // Right visor tip
+    ];
+
+    for (const off of testOffsets) {
+        if (!checkSinglePixelWalkable(x + off.dx, y + off.dy)) {
+            return false;
+        }
+    }
+    return true;
 }
 const keys = {
     w: false, a: false, s: false, d: false,
@@ -559,19 +583,21 @@ function render() {
     ctx.lineWidth = 3;
     ctx.stroke();
 
-    // 3. Draw Vents
-    for (const v of gameState.vents) {
-        ctx.fillStyle = "#334155";
-        ctx.fillRect(v.x - 20, v.y - 12, 40, 24);
-        ctx.strokeStyle = "#94a3b8";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(v.x - 20, v.y - 12, 40, 24);
-        // Vent slats
-        ctx.beginPath();
-        ctx.moveTo(v.x - 12, v.y - 6); ctx.lineTo(v.x + 12, v.y - 6);
-        ctx.moveTo(v.x - 12, v.y);     ctx.lineTo(v.x + 12, v.y);
-        ctx.moveTo(v.x - 12, v.y + 6); ctx.lineTo(v.x + 12, v.y + 6);
-        ctx.stroke();
+    // 3. Draw Vents (Only visible to Impostors)
+    if (myRole === "IMPOSTOR") {
+        for (const v of gameState.vents) {
+            ctx.fillStyle = "#334155";
+            ctx.fillRect(v.x - 20, v.y - 12, 40, 24);
+            ctx.strokeStyle = "#94a3b8";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(v.x - 20, v.y - 12, 40, 24);
+            // Vent slats
+            ctx.beginPath();
+            ctx.moveTo(v.x - 12, v.y - 6); ctx.lineTo(v.x + 12, v.y - 6);
+            ctx.moveTo(v.x - 12, v.y);     ctx.lineTo(v.x + 12, v.y);
+            ctx.moveTo(v.x - 12, v.y + 6); ctx.lineTo(v.x + 12, v.y + 6);
+            ctx.stroke();
+        }
     }
 
     // 4. Draw Task Stations
