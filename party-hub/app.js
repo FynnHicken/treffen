@@ -310,12 +310,161 @@ function showWelcomeOverlay(opts = {}) {
     }
 
     overlay.style.display = "flex";
+    refreshOpenRooms();
+    startOpenRoomsPolling();
 }
 
 function hideWelcomeOverlay() {
     const overlay = document.getElementById("welcomeOverlay");
     if (overlay) overlay.style.display = "none";
+    stopOpenRoomsPolling();
 }
+
+let openRoomsPollTimer = null;
+let expiryAnimTimer = null;
+let currentRoomExpiresAt = null;
+let currentRoomTtlMs = 60000;
+
+function startOpenRoomsPolling() {
+    stopOpenRoomsPolling();
+    openRoomsPollTimer = setInterval(refreshOpenRooms, 3000);
+    ensureExpiryAnimTimer();
+}
+
+function stopOpenRoomsPolling() {
+    if (openRoomsPollTimer) {
+        clearInterval(openRoomsPollTimer);
+        openRoomsPollTimer = null;
+    }
+}
+
+function ensureExpiryAnimTimer() {
+    if (!expiryAnimTimer) {
+        expiryAnimTimer = setInterval(updateExpiryAnimations, 150);
+    }
+}
+
+function updateExpiryAnimations() {
+    const now = Date.now();
+    // 1. Update open room cards in modals
+    document.querySelectorAll(".room-expiry-bar").forEach(bar => {
+        const expAt = parseInt(bar.getAttribute("data-expires-at") || "0", 10);
+        const ttl = parseInt(bar.getAttribute("data-ttl") || "60000", 10);
+        if (!expAt) return;
+        const remMs = Math.max(0, expAt - now);
+        const pct = Math.max(0, Math.min(100, (remMs / ttl) * 100));
+        bar.style.width = `${pct}%`;
+        bar.style.background = remMs <= 15000 ? "#ef4444" : (remMs <= 30000 ? "#f59e0b" : "#22c55e");
+        const secEl = bar.closest(".open-room-card")?.querySelector(".room-expiry-sec");
+        if (secEl) {
+            secEl.innerText = `⏳ ${Math.ceil(remMs / 1000)}s`;
+            secEl.style.color = remMs <= 15000 ? "#ef4444" : "#f59e0b";
+        }
+    });
+
+    // 2. Update active room solo banner
+    const banner = document.getElementById("soloRoomExpiryBanner");
+    if (banner) {
+        if (currentRoomExpiresAt && partyState.players.length <= 1) {
+            const remMs = Math.max(0, currentRoomExpiresAt - now);
+            const pct = Math.max(0, Math.min(100, (remMs / currentRoomTtlMs) * 100));
+            banner.style.display = "flex";
+            const secSpan = document.getElementById("soloRoomExpirySec");
+            if (secSpan) secSpan.innerText = `${Math.ceil(remMs / 1000)}s`;
+            const barEl = document.getElementById("soloRoomExpiryBar");
+            if (barEl) barEl.style.width = `${pct}%`;
+        } else {
+            banner.style.display = "none";
+        }
+    }
+}
+
+window.extendRoomTtl = function() {
+    currentRoomExpiresAt = Date.now() + 60000;
+    sendSocketMessage({ type: "EXTEND_ROOM_TTL", room: ROOM_CODE });
+    updateExpiryAnimations();
+    showToast("🔄 Raum-Timer auf 60 Sekunden zurückgesetzt!");
+};
+
+window.refreshOpenRooms = async function() {
+    const containers = [
+        document.getElementById("welcomeOpenRoomsList"),
+        document.getElementById("codeModalOpenRoomsList")
+    ].filter(Boolean);
+    if (containers.length === 0) return;
+
+    try {
+        const res = await fetch("/party-ws/rooms", { cache: "no-store" });
+        const data = await res.json();
+        const rooms = Array.isArray(data.rooms) ? data.rooms : [];
+        const now = Date.now();
+
+        const html = rooms.length === 0
+            ? `<div style="font-size: 0.84rem; color: var(--ink-light); text-align: center; padding: 10px; border: 1px dashed rgba(148,163,184,0.35); border-radius: 10px;">Aktuell keine offenen Räume – erstelle einfach eine neue Party!</div>`
+            : rooms.map(r => {
+                const hasExpiry = typeof r.remainingMs === "number" && r.remainingMs > 0;
+                const ttl = r.ttlMs || 60000;
+                const targetTs = hasExpiry ? (now + r.remainingMs) : 0;
+                const remSec = hasExpiry ? Math.ceil(r.remainingMs / 1000) : 0;
+                const pct = hasExpiry ? Math.max(0, Math.min(100, (r.remainingMs / ttl) * 100)) : 100;
+                const playersText = (r.players || []).map(p => `${p.avatar || '🎮'} ${p.name}`).join(", ");
+                const expiryBadge = hasExpiry
+                    ? `<span class="room-expiry-sec" style="font-size: 0.74rem; font-weight: 800; color: #f59e0b; background: rgba(245,158,11,0.14); padding: 2px 6px; border-radius: 6px;">⏳ ${remSec}s</span>`
+                    : "";
+                const expiryBar = hasExpiry
+                    ? `<div style="width: 100%; height: 4px; background: rgba(0,0,0,0.12); border-radius: 2px; overflow: hidden; margin-top: 4px;">
+                           <div class="room-expiry-bar" data-expires-at="${targetTs}" data-ttl="${ttl}" style="width: ${pct}%; height: 100%; background: #22c55e; transition: width 0.15s linear;"></div>
+                       </div>`
+                    : "";
+                return `
+                    <div class="open-room-card" style="display: flex; flex-direction: column; padding: 8px 10px; border-radius: 10px; border: var(--ink-border); background: var(--bg-surface);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                            <div style="display: flex; flex-direction: column; gap: 2px;">
+                                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                    <strong style="font-family: monospace; font-size: 0.95rem; letter-spacing: 0.08em;">#${r.code}</strong>
+                                    <span style="font-size: 0.78rem; color: var(--ink-light);">👑 ${r.hostAvatar || '🐶'} ${r.hostName || 'Host'}</span>
+                                    ${expiryBadge}
+                                </div>
+                                <span style="font-size: 0.75rem; color: var(--ink-light);">👥 ${r.playerCount} Spieler (${playersText})</span>
+                            </div>
+                            <button type="button" class="action-btn-sm" onclick="quickJoinOpenRoom('${r.code}')" style="padding: 6px 12px; font-size: 0.82rem;">Beitreten →</button>
+                        </div>
+                        ${expiryBar}
+                    </div>
+                `;
+            }).join("");
+
+        containers.forEach(c => { c.innerHTML = html; });
+        ensureExpiryAnimTimer();
+    } catch (e) {
+        // Ignore transient network errors
+    }
+};
+
+window.quickJoinOpenRoom = function(code) {
+    if (!code) return;
+    const codeInput = document.getElementById("welcomeCodeInput");
+    if (codeInput) codeInput.value = code;
+    const joinInput = document.getElementById("joinCodeInput");
+    if (joinInput) joinInput.value = code;
+
+    const welcomeOverlay = document.getElementById("welcomeOverlay");
+    if (welcomeOverlay && welcomeOverlay.style.display !== "none") {
+        handleWelcomeJoinParty();
+    } else {
+        handleCodeSubmit();
+    }
+};
+
+window.handleQuickViewCatalog = function() {
+    if (ROOM_CODE) {
+        hideWelcomeOverlay();
+        const grid = document.getElementById("gamesGrid");
+        if (grid) grid.scrollIntoView({ behavior: "smooth" });
+        return;
+    }
+    handleWelcomeCreateParty();
+};
 
 window.switchToWelcomeChoiceMode = function() {
     showWelcomeOverlay({ mode: "choice" });
@@ -339,6 +488,7 @@ window.handleWelcomeCreateParty = function() {
         avatar: avatar,
         color: color,
         isHost: true,
+        isCreator: true,
         status: "Bereit",
         isReady: true,
         joinedAt: Date.now(),
@@ -384,6 +534,7 @@ window.handleWelcomeJoinParty = function(e) {
         avatar: avatar,
         color: color,
         isHost: false,
+        isCreator: false,
         status: "Bereit",
         isReady: true,
         joinedAt: Date.now(),
@@ -417,17 +568,15 @@ window.handleWelcomeDirectJoin = function() {
     const profile = { name: nickname, avatar, color };
     saveGlobalProfile(profile);
 
-    const hasServerHost = partyState.players && partyState.players.some(p => p.isHost);
-    let roster = getRosterFromStorage();
-    const hasActiveHost = hasServerHost || Object.values(roster).some(p => p.isHost);
-    const isHost = !hasActiveHost && Object.keys(roster).length === 0 && (!partyState.players || partyState.players.length === 0);
+    const asHost = sessionStorage.getItem("partyhub_as_host") === "true";
 
     const newUser = {
         id: "p_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 6),
         name: nickname,
         avatar: avatar,
         color: color,
-        isHost: isHost,
+        isHost: asHost,
+        isCreator: asHost,
         status: "Bereit",
         isReady: true,
         joinedAt: Date.now(),
@@ -522,18 +671,15 @@ function initUserSession() {
     if (!savedUser && (isJoined || autoJoin)) {
         const globalProfile = getGlobalProfile();
         if (globalProfile && globalProfile.name) {
-            let roster = getRosterFromStorage();
-            const hasServerHost = partyState.players && partyState.players.some(p => p.isHost);
-            const hasActiveHost = hasServerHost || Object.values(roster).some(p => p.isHost);
             const asHost = sessionStorage.getItem("partyhub_as_host") === "true";
-            const isHost = asHost || (!hasActiveHost && Object.keys(roster).length === 0 && (!partyState.players || partyState.players.length === 0));
 
             savedUser = {
                 id: "p_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 6),
                 name: globalProfile.name,
                 avatar: globalProfile.avatar || "🐶",
                 color: globalProfile.color || "#6366f1",
-                isHost: isHost,
+                isHost: asHost,
+                isCreator: asHost,
                 status: "Bereit",
                 isReady: true,
                 joinedAt: Date.now(),
@@ -602,20 +748,9 @@ function syncPresence() {
             localStorage.setItem(STORAGE_KEY_PLAYERS, JSON.stringify(roster));
         } catch (e) {}
 
-        // Fallback local host election when offline / not connected to server
-        if (!socketConnected) {
-            const otherPlayers = Object.values(roster).filter(p => p.id !== partyState.currentUser.id);
-            const otherHost = otherPlayers.find(p => p.isHost);
-            if (!otherHost && !partyState.currentUser.isHost) {
-                const all = [...otherPlayers, partyState.currentUser].sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
-                if (all.length > 0 && all[0].id === partyState.currentUser.id) {
-                    partyState.currentUser.isHost = true;
-                    try {
-                        sessionStorage.setItem(STORAGE_KEY_USER, JSON.stringify(partyState.currentUser));
-                    } catch (e) {}
-                }
-            }
-            partyState.isHost = partyState.currentUser.isHost;
+        // Never promote a guest to isHost locally before WebSocket connects;
+        // party-server is authoritative for host assignment via ROSTER_SYNC.
+        if (!socketConnected && (!partyState.players || partyState.players.length === 0)) {
             partyState.players = Object.values(roster).sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
         }
 
@@ -991,6 +1126,15 @@ function handleServerMessage(data) {
 
     switch (data.type) {
         case "ROSTER_SYNC":
+            if (typeof data.remainingMs === "number" && data.remainingMs > 0) {
+                currentRoomExpiresAt = Date.now() + data.remainingMs;
+                currentRoomTtlMs = data.ttlMs || 60000;
+                ensureExpiryAnimTimer();
+            } else {
+                currentRoomExpiresAt = null;
+            }
+            updateExpiryAnimations();
+
             if (Array.isArray(data.players)) {
                 // Update players from real-time server
                 partyState.players = data.players;
@@ -1001,6 +1145,9 @@ function handleServerMessage(data) {
                     if (serverMe) {
                         partyState.currentUser.isHost = !!serverMe.isHost;
                         partyState.isHost = partyState.currentUser.isHost;
+                        try {
+                            sessionStorage.setItem(STORAGE_KEY_USER, JSON.stringify(partyState.currentUser));
+                        } catch (e) {}
                     } else if (sessionStorage.getItem(STORAGE_KEY_JOINED) === "true") {
                         // Resend join if server restarted
                         sendSocketMessage({
@@ -1060,6 +1207,22 @@ function handleServerMessage(data) {
                     }
                 }
             }
+            break;
+
+        case "ROOM_EXPIRED":
+            currentRoomExpiresAt = null;
+            showToast(data.message || "⏳ Raum wurde nach 60s Inaktivität geschlossen.");
+            try {
+                sessionStorage.removeItem(STORAGE_KEY_JOINED);
+                sessionStorage.removeItem(STORAGE_KEY_USER);
+            } catch (e) {}
+            if (socket) {
+                try { socket.onclose = null; socket.close(); } catch (e) {}
+                socket = null;
+            }
+            setTimeout(() => {
+                window.location.href = window.location.origin + window.location.pathname;
+            }, 900);
             break;
 
         case "GAME_SETTINGS_SYNC":
@@ -1792,7 +1955,7 @@ function getGameUrl(game, lobbyId) {
     } else if (game.id === "codenames") {
         return `/codenames/g/${encodeURIComponent(ROOM_CODE)}?name=${encodeURIComponent(userName)}`;
     } else if (game.id === "monopoly") {
-        return `/monopoly/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}`;
+        return `/monopoly/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}`;
     } else if (game.id === "price_guess") {
         return `/price-guess/`;
     }
@@ -2032,6 +2195,8 @@ window.openCodeModal = function() {
     const modal = document.getElementById("codeModal");
     if (modal) {
         modal.style.display = "flex";
+        refreshOpenRooms();
+        startOpenRoomsPolling();
         const input = document.getElementById("joinCodeInput");
         if (input) {
             input.value = "";
@@ -2043,6 +2208,7 @@ window.openCodeModal = function() {
 window.closeCodeModal = function() {
     const modal = document.getElementById("codeModal");
     if (modal) modal.style.display = "none";
+    stopOpenRoomsPolling();
 };
 
 window.handleCodeSubmit = function(e) {
