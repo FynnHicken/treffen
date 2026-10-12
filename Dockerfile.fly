@@ -77,6 +77,24 @@ ENV DATABASE_URL="file:/app/gtp-server/prisma/dev.db"
 RUN npx prisma db push --skip-generate
 RUN npm run seed
 
+# 7. Mensch ärgere dich nicht
+WORKDIR /app/mensch
+COPY games/mensch/requirements.txt ./
+RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
+COPY games/mensch ./
+
+# 8. Among Us
+WORKDIR /app/amongus
+COPY games/amongus/requirements.txt ./
+RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
+COPY games/amongus ./
+
+# 9. Imposter
+WORKDIR /app/imposter
+COPY games/imposter/requirements.txt ./
+RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
+COPY games/imposter ./
+
 # 7. Static Assets & Nginx Config
 RUN rm -rf /usr/share/nginx/html/*
 COPY party-hub /usr/share/nginx/html

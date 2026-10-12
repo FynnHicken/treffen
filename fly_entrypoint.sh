@@ -37,6 +37,24 @@ if [ -d /app/gtp-server ]; then
     cd /app/gtp-server && PORT=3005 DATABASE_URL="file:/app/gtp-server/prisma/dev.db" node dist/app.js &
 fi
 
-# 7. Start Nginx in foreground on port 8080 (Fly.io target)
+# 7. Mensch ärgere dich nicht (Python on port 8092)
+if [ -f /app/mensch/server/main.py ]; then
+    echo "Starting mensch..."
+    cd /app/mensch && PORT=8092 HOST=0.0.0.0 python3 server/main.py &
+fi
+
+# 8. Among Us (Python on port 8093)
+if [ -f /app/amongus/server/main.py ]; then
+    echo "Starting amongus..."
+    cd /app/amongus && PORT=8093 HOST=0.0.0.0 python3 server/main.py &
+fi
+
+# 9. Imposter (Python on port 8094)
+if [ -f /app/imposter/server/main.py ]; then
+    echo "Starting imposter..."
+    cd /app/imposter && PORT=8094 HOST=0.0.0.0 python3 server/main.py &
+fi
+
+# 10. Start Nginx in foreground on port 8080 (Fly.io target)
 echo "Starting nginx reverse proxy on port 8080..."
 exec nginx -g "daemon off;"
