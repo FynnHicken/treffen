@@ -134,6 +134,12 @@ function checkSinglePixelWalkable(px, py) {
 
         // Void of space: alpha < 50 or dark black background
         if (a < 50 || (r < 25 && g < 25 && b < 30)) {
+            // Check if this pixel is inside a room: If inside a room, black pixels are just floor labels/text!
+            for (const a of WALKABLE_AREAS) {
+                if (a.type === "circle" && Math.hypot(px - a.x, py - a.y) <= (a.r - 20)) {
+                    return true; // Walkable room text / floor label!
+                }
+            }
             return false;
         }
         return true;
