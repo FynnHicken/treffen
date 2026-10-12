@@ -2318,6 +2318,7 @@ body {
 .btn-welcome-create {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 14px;
     width: 100%;
     padding: 13px 18px;
@@ -2327,7 +2328,7 @@ body {
     border-radius: 16px;
     box-shadow: var(--shadow-doodle);
     cursor: pointer;
-    text-align: left;
+    text-align: center;
     transition: transform 0.15s, box-shadow 0.15s;
 }
 
@@ -2349,6 +2350,7 @@ body {
 .btn-welcome-text {
     display: flex;
     flex-direction: column;
+    align-items: center;
     gap: 2px;
 }
 
