@@ -197,6 +197,165 @@
         return { x, z };
     }
 
+    // Non-overlapping slot position & scale when multiple tokens share a square
+    function computeSquareSlotTransform(sqIdx, inJail, slotIdx, count) {
+        const center = getSquareCenter(sqIdx, inJail);
+        if (!count || count <= 1) {
+            return { x: center.x, y: 0.09, z: center.z, scale: 1.0 };
+        }
+
+        // 1. Corner 10: "NUR ZU BESUCH" L-shaped outer walkway
+        if (sqIdx === 10 && !inJail) {
+            const cx = -HALF_BOARD + CORNER_SIZE / 2;
+            const cz = HALF_BOARD - CORNER_SIZE / 2;
+            const visitSlots = [
+                { x: cx - 0.39, z: cz + 0.39 },
+                { x: cx + 0.32, z: cz + 0.42 },
+                { x: cx - 0.42, z: cz - 0.32 },
+                { x: cx - 0.03, z: cz + 0.42 },
+                { x: cx - 0.42, z: cz + 0.03 },
+                { x: cx + 0.46, z: cz + 0.42 }
+            ];
+            const slot = visitSlots[slotIdx % visitSlots.length];
+            const scale = count === 2 ? 0.78 : (count <= 4 ? 0.68 : 0.56);
+            return { x: slot.x, y: 0.09, z: slot.z, scale };
+        }
+
+        // 2. Corner 10: Inside orange "IM GEFÄNGNIS" cell
+        if (sqIdx === 10 && inJail) {
+            let scale = 0.65;
+            let dx = 0, dz = 0;
+            if (count === 2) {
+                scale = 0.65;
+                const slots = [
+                    { dx: -0.16, dz: -0.12 },
+                    { dx:  0.16, dz:  0.12 }
+                ];
+                dx = slots[slotIdx % 2].dx;
+                dz = slots[slotIdx % 2].dz;
+            } else if (count === 3) {
+                scale = 0.58;
+                const angle = (slotIdx / 3) * Math.PI * 2 - Math.PI / 2;
+                dx = Math.cos(angle) * 0.18;
+                dz = Math.sin(angle) * 0.18;
+            } else if (count === 4) {
+                scale = 0.55;
+                const slots = [
+                    { dx: -0.15, dz: -0.15 },
+                    { dx:  0.15, dz: -0.15 },
+                    { dx: -0.15, dz:  0.15 },
+                    { dx:  0.15, dz:  0.15 }
+                ];
+                dx = slots[slotIdx % 4].dx;
+                dz = slots[slotIdx % 4].dz;
+            } else {
+                scale = 0.46;
+                const angle = (slotIdx / count) * Math.PI * 2;
+                dx = Math.cos(angle) * 0.21;
+                dz = Math.sin(angle) * 0.21;
+            }
+            return { x: center.x + dx, y: 0.09, z: center.z + dz, scale };
+        }
+
+        // 3. Other Corners (LOS = 0, Frei Parken = 20, Gehe ins Gefängnis = 30)
+        if (sqIdx === 0 || sqIdx === 20 || sqIdx === 30) {
+            let scale = 0.82;
+            let dx = 0, dz = 0;
+            if (count === 2) {
+                scale = 0.82;
+                const slots = [
+                    { dx: -0.24, dz: -0.16 },
+                    { dx:  0.24, dz:  0.16 }
+                ];
+                dx = slots[slotIdx % 2].dx;
+                dz = slots[slotIdx % 2].dz;
+            } else if (count === 3) {
+                scale = 0.75;
+                const angle = (slotIdx / 3) * Math.PI * 2 - Math.PI / 2;
+                dx = Math.cos(angle) * 0.26;
+                dz = Math.sin(angle) * 0.26;
+            } else if (count === 4) {
+                scale = 0.70;
+                const slots = [
+                    { dx: -0.22, dz: -0.22 },
+                    { dx:  0.22, dz: -0.22 },
+                    { dx: -0.22, dz:  0.22 },
+                    { dx:  0.22, dz:  0.22 }
+                ];
+                dx = slots[slotIdx % 4].dx;
+                dz = slots[slotIdx % 4].dz;
+            } else {
+                scale = 0.58;
+                const angle = (slotIdx / count) * Math.PI * 2;
+                dx = Math.cos(angle) * 0.30;
+                dz = Math.sin(angle) * 0.30;
+            }
+            return { x: center.x + dx, y: 0.09, z: center.z + dz, scale };
+        }
+
+        // 4. Regular Side Squares (Streets, Railroads, Utilities, Action Tiles)
+        // Local coordinates: dT = tangential (along board edge, width 0.811), dR = radial (outward toward board rim, depth ~1.03)
+        let scale = 0.72;
+        let dT = 0, dR = 0;
+        if (count === 2) {
+            scale = 0.72; // diameter ~0.317, center distance ~0.467
+            const slots = [
+                { dT: -0.16, dR: -0.17 },
+                { dT:  0.16, dR:  0.17 }
+            ];
+            dT = slots[slotIdx % 2].dT;
+            dR = slots[slotIdx % 2].dR;
+        } else if (count === 3) {
+            scale = 0.64; // diameter ~0.282, min center distance ~0.34
+            const slots = [
+                { dT: -0.17, dR:  0.18 },
+                { dT:  0.17, dR:  0.18 },
+                { dT:  0.00, dR: -0.18 }
+            ];
+            dT = slots[slotIdx % 3].dT;
+            dR = slots[slotIdx % 3].dR;
+        } else if (count === 4) {
+            scale = 0.60; // diameter ~0.264, min center distance 0.34
+            const slots = [
+                { dT: -0.17, dR: -0.18 },
+                { dT:  0.17, dR: -0.18 },
+                { dT: -0.17, dR:  0.18 },
+                { dT:  0.17, dR:  0.18 }
+            ];
+            dT = slots[slotIdx % 4].dT;
+            dR = slots[slotIdx % 4].dR;
+        } else {
+            scale = 0.50; // diameter ~0.22, 2x3 grid
+            const slots = [
+                { dT: -0.17, dR: -0.24 },
+                { dT:  0.17, dR: -0.24 },
+                { dT: -0.17, dR:  0.00 },
+                { dT:  0.17, dR:  0.00 },
+                { dT: -0.17, dR:  0.24 },
+                { dT:  0.17, dR:  0.24 }
+            ];
+            dT = slots[slotIdx % slots.length].dT;
+            dR = slots[slotIdx % slots.length].dR;
+        }
+
+        let dx = 0, dz = 0;
+        if (sqIdx > 0 && sqIdx < 10) {
+            dx = dT;
+            dz = dR;
+        } else if (sqIdx > 10 && sqIdx < 20) {
+            dx = -dR;
+            dz = dT;
+        } else if (sqIdx > 20 && sqIdx < 30) {
+            dx = -dT;
+            dz = -dR;
+        } else {
+            dx = dR;
+            dz = -dT;
+        }
+
+        return { x: center.x + dx, y: 0.09, z: center.z + dz, scale };
+    }
+
     // Texture Caches
     const cardTextureCache = {};
     function getDeedTexture(sqIdx) {
@@ -1251,32 +1410,7 @@
                 const siblings = byPos[key] || [p];
                 const sIdx = Math.max(0, siblings.findIndex(s => s.id === p.id));
                 const count = siblings.length;
-
-                if (p.position === 10 && !p.in_jail) {
-                    // L-shaped "NUR ZU BESUCH" outer walkway slots along bottom & left rim of Corner 10
-                    const cx = -HALF_BOARD + CORNER_SIZE / 2;
-                    const cz = HALF_BOARD - CORNER_SIZE / 2;
-                    const visitSlots = [
-                        { x: cx - 0.39, z: cz + 0.39 },
-                        { x: cx + 0.02, z: cz + 0.43 },
-                        { x: cx - 0.43, z: cz - 0.02 },
-                        { x: cx + 0.38, z: cz + 0.43 },
-                        { x: cx - 0.43, z: cz - 0.38 },
-                        { x: cx - 0.20, z: cz + 0.43 }
-                    ];
-                    const slot = visitSlots[sIdx % visitSlots.length];
-                    return { x: slot.x, y: 0.09, z: slot.z };
-                }
-
-                const center = getSquareCenter(p.position, !!p.in_jail);
-                let offX = 0, offZ = 0;
-                if (count > 1) {
-                    const radius = (p.position === 10 && p.in_jail) ? 0.14 : 0.22;
-                    const angle = (sIdx / count) * Math.PI * 2;
-                    offX = Math.cos(angle) * radius;
-                    offZ = Math.sin(angle) * radius;
-                }
-                return { x: center.x + offX, y: 0.09, z: center.z + offZ };
+                return computeSquareSlotTransform(p.position, !!p.in_jail, sIdx, count);
             };
 
             players.forEach(p => {
@@ -1333,17 +1467,28 @@
                         base.castShadow = true;
                         group.add(base);
 
-                        group.userData = { token: targetToken, color: targetColor, playerId: p.id };
+                        const activeP = latestReq.player;
+                        group.userData = {
+                            token: targetToken,
+                            color: targetColor,
+                            playerId: p.id,
+                            position: activeP.position,
+                            in_jail: !!activeP.in_jail
+                        };
                         tokenMeshes[p.id] = group;
                         worldGroup.add(group);
 
-                        const pos = computeTokenPosition(latestReq.player);
+                        const pos = computeTokenPosition(activeP);
                         group.position.set(pos.x, pos.y, pos.z);
+                        group.scale.setScalar(pos.scale || 1.0);
                     });
                 } else {
                     const group = tokenMeshes[p.id];
+                    group.userData.position = p.position;
+                    group.userData.in_jail = !!p.in_jail;
                     const pos = computeTokenPosition(p);
                     group.position.set(pos.x, pos.y, pos.z);
+                    group.scale.setScalar(pos.scale || 1.0);
                 }
             });
         },
@@ -1402,6 +1547,16 @@
                 return;
             }
 
+            // Re-layout any remaining stationary tokens on the departure square
+            const departureOthers = Object.keys(tokenMeshes)
+                .filter(pid => pid !== String(playerId) && tokenMeshes[pid] && tokenMeshes[pid].userData.position === fromIdx && !tokenMeshes[pid].userData.in_jail)
+                .map(pid => tokenMeshes[pid]);
+            departureOthers.forEach((grp, idx) => {
+                const slot = computeSquareSlotTransform(fromIdx, false, idx, departureOthers.length);
+                grp.position.set(slot.x, slot.y, slot.z);
+                grp.scale.setScalar(slot.scale || 1.0);
+            });
+
             let stepCount = 0;
             let fromPos = tokenGroup.position.clone();
             const useCinematic = isCinematic && (animConfig.cinematicFollow !== false);
@@ -1423,8 +1578,34 @@
 
                 stepCount++;
                 current = (current + stepDir + 40) % 40;
-                const nextCenter = getSquareCenter(current);
-                const toPos = new THREE.Vector3(nextCenter.x, 0.09, nextCenter.z);
+                const isFinalStep = (stepCount === steps);
+
+                // Find other stationary tokens on `current` (non-jail) so we never clip into them
+                const othersOnSquare = Object.keys(tokenMeshes)
+                    .filter(pid => pid !== String(playerId) && tokenMeshes[pid] && tokenMeshes[pid].userData.position === current && !tokenMeshes[pid].userData.in_jail)
+                    .map(pid => tokenMeshes[pid]);
+
+                let targetSlot;
+                if (isFinalStep) {
+                    const totalOnTarget = othersOnSquare.length + 1;
+                    othersOnSquare.forEach((grp, idx) => {
+                        const s = computeSquareSlotTransform(current, false, idx, totalOnTarget);
+                        grp.position.set(s.x, s.y, s.z);
+                        grp.scale.setScalar(s.scale || 1.0);
+                    });
+                    targetSlot = computeSquareSlotTransform(current, false, othersOnSquare.length, totalOnTarget);
+                    tokenGroup.userData.position = current;
+                    tokenGroup.userData.in_jail = false;
+                } else if (othersOnSquare.length > 0) {
+                    // Step onto an unoccupied slot when hopping across an occupied tile
+                    targetSlot = computeSquareSlotTransform(current, false, othersOnSquare.length, othersOnSquare.length + 1);
+                } else {
+                    targetSlot = computeSquareSlotTransform(current, false, 0, 1);
+                }
+
+                const toPos = new THREE.Vector3(targetSlot.x, 0.09, targetSlot.z);
+                const startScale = tokenGroup.scale.x || 1.0;
+                const endScale = isFinalStep ? (targetSlot.scale || 1.0) : 1.0;
 
                 if (window.MonopolySound && window.MonopolySound.playHop) {
                     window.MonopolySound.playHop();
@@ -1456,6 +1637,7 @@
 
                     tokenGroup.position.lerpVectors(fromPos, toPos, t);
                     tokenGroup.position.y = 0.09 + hopHeight;
+                    tokenGroup.scale.setScalar(startScale + (endScale - startScale) * t);
 
                     // Cinematic camera following behind the token!
                     if (useCinematic && camera && controls) {
@@ -1472,6 +1654,7 @@
                         requestAnimationFrame(stepAnim);
                     } else {
                         tokenGroup.position.y = 0.09;
+                        tokenGroup.scale.setScalar(endScale);
                         fromPos = toPos;
                         setTimeout(hopNext, stepPause);
                     }
