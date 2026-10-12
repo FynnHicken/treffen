@@ -1705,9 +1705,23 @@ async function createSkribblLobby(lobbyId, hostName, settings = {}) {
 
 window.openGameModal = function(gameId) {
     ensureCurrentUser();
+    // If user is alone or no other host exists in roster, promote user to host
     if (!partyState.isHost) {
-        showToast("⚠️ Nur der Party-Leader kann ein Spiel auswählen!");
-        return;
+        const hasOtherHost = partyState.players && partyState.players.some(p => p.isHost && p.id !== (partyState.currentUser ? partyState.currentUser.id : null));
+        if (!hasOtherHost || (partyState.players && partyState.players.length <= 1)) {
+            if (partyState.currentUser) {
+                partyState.currentUser.isHost = true;
+                try {
+                    sessionStorage.setItem(STORAGE_KEY_USER, JSON.stringify(partyState.currentUser));
+                } catch(e) {}
+            }
+            partyState.isHost = true;
+            updateHeaderUserBadge();
+            updateHostPermissionsUI();
+        } else {
+            showToast("⚠️ Nur der Party-Leader kann ein Spiel auswählen!");
+            return;
+        }
     }
     if (gameId === "skribbol" && !partyState.currentLobbyId) {
         partyState.currentLobbyId = generateUUID();

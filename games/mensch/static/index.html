@@ -116,13 +116,18 @@
         </div>
     </div>
 
-    <script src="static/js/game_client.js?v=1.0"></script>
+    <script src="static/js/game_client.js?v=1.1"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            if (window.MenschGame) {
+        function launchMensch() {
+            if (window.MenschGame && window.MenschGame.init) {
                 window.MenschGame.init();
             }
-        });
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', launchMensch);
+        } else {
+            launchMensch();
+        }
     </script>
 </body>
 </html>

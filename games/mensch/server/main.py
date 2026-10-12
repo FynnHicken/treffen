@@ -294,7 +294,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
     return FileResponse(
         str(INDEX_HTML),
