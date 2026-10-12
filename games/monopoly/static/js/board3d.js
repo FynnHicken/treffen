@@ -204,20 +204,22 @@
             return { x: center.x, y: 0.09, z: center.z, scale: 1.0 };
         }
 
-        // 1. Corner 10: "NUR ZU BESUCH" L-shaped outer walkway
+        // 1. Corner 10: "NUR ZU BESUCH" L-shaped outer walkway (up to 8 slots)
         if (sqIdx === 10 && !inJail) {
             const cx = -HALF_BOARD + CORNER_SIZE / 2;
             const cz = HALF_BOARD - CORNER_SIZE / 2;
             const visitSlots = [
-                { x: cx - 0.39, z: cz + 0.39 },
-                { x: cx + 0.32, z: cz + 0.42 },
-                { x: cx - 0.42, z: cz - 0.32 },
-                { x: cx - 0.03, z: cz + 0.42 },
-                { x: cx - 0.42, z: cz + 0.03 },
-                { x: cx + 0.46, z: cz + 0.42 }
+                { x: cx - 0.42, z: cz + 0.42 },
+                { x: cx + 0.22, z: cz + 0.43 },
+                { x: cx - 0.43, z: cz - 0.22 },
+                { x: cx - 0.10, z: cz + 0.43 },
+                { x: cx - 0.43, z: cz + 0.10 },
+                { x: cx + 0.50, z: cz + 0.43 },
+                { x: cx - 0.43, z: cz - 0.50 },
+                { x: cx - 0.26, z: cz + 0.26 }
             ];
             const slot = visitSlots[slotIdx % visitSlots.length];
-            const scale = count === 2 ? 0.78 : (count <= 4 ? 0.68 : 0.56);
+            const scale = count === 2 ? 0.78 : (count <= 4 ? 0.68 : (count <= 6 ? 0.55 : 0.46));
             return { x: slot.x, y: 0.09, z: slot.z, scale };
         }
 
@@ -249,10 +251,10 @@
                 dx = slots[slotIdx % 4].dx;
                 dz = slots[slotIdx % 4].dz;
             } else {
-                scale = 0.46;
+                scale = count <= 6 ? 0.46 : 0.40;
                 const angle = (slotIdx / count) * Math.PI * 2;
-                dx = Math.cos(angle) * 0.21;
-                dz = Math.sin(angle) * 0.21;
+                dx = Math.cos(angle) * 0.22;
+                dz = Math.sin(angle) * 0.22;
             }
             return { x: center.x + dx, y: 0.09, z: center.z + dz, scale };
         }
@@ -285,10 +287,10 @@
                 dx = slots[slotIdx % 4].dx;
                 dz = slots[slotIdx % 4].dz;
             } else {
-                scale = 0.58;
+                scale = count <= 6 ? 0.56 : 0.48;
                 const angle = (slotIdx / count) * Math.PI * 2;
-                dx = Math.cos(angle) * 0.30;
-                dz = Math.sin(angle) * 0.30;
+                dx = Math.cos(angle) * 0.34;
+                dz = Math.sin(angle) * 0.34;
             }
             return { x: center.x + dx, y: 0.09, z: center.z + dz, scale };
         }
@@ -324,7 +326,7 @@
             ];
             dT = slots[slotIdx % 4].dT;
             dR = slots[slotIdx % 4].dR;
-        } else {
+        } else if (count <= 6) {
             scale = 0.50; // diameter ~0.22, 2x3 grid
             const slots = [
                 { dT: -0.17, dR: -0.24 },
@@ -333,6 +335,20 @@
                 { dT:  0.17, dR:  0.00 },
                 { dT: -0.17, dR:  0.24 },
                 { dT:  0.17, dR:  0.24 }
+            ];
+            dT = slots[slotIdx % slots.length].dT;
+            dR = slots[slotIdx % slots.length].dR;
+        } else {
+            scale = 0.42; // diameter ~0.185, 2x4 grid for 7-8 players
+            const slots = [
+                { dT: -0.18, dR: -0.30 },
+                { dT:  0.18, dR: -0.30 },
+                { dT: -0.18, dR: -0.10 },
+                { dT:  0.18, dR: -0.10 },
+                { dT: -0.18, dR:  0.10 },
+                { dT:  0.18, dR:  0.10 },
+                { dT: -0.18, dR:  0.30 },
+                { dT:  0.18, dR:  0.30 }
             ];
             dT = slots[slotIdx % slots.length].dT;
             dR = slots[slotIdx % slots.length].dR;
@@ -1898,15 +1914,20 @@
                 { pos: new THREE.Vector3(0, 0, 6.2), rotY: 0 },              // Bottom (Player 0)
                 { pos: new THREE.Vector3(-6.2, 0, 0), rotY: -Math.PI / 2 },   // Left (Player 1)
                 { pos: new THREE.Vector3(0, 0, -6.2), rotY: Math.PI },        // Top (Player 2)
-                { pos: new THREE.Vector3(6.2, 0, 0), rotY: Math.PI / 2 }      // Right (Player 3)
+                { pos: new THREE.Vector3(6.2, 0, 0), rotY: Math.PI / 2 },     // Right (Player 3)
+                { pos: new THREE.Vector3(0, 0, 7.55), rotY: 0 },             // Bottom Outer (Player 4)
+                { pos: new THREE.Vector3(-7.55, 0, 0), rotY: -Math.PI / 2 },  // Left Outer (Player 5)
+                { pos: new THREE.Vector3(0, 0, -7.55), rotY: Math.PI },       // Top Outer (Player 6)
+                { pos: new THREE.Vector3(7.55, 0, 0), rotY: Math.PI / 2 }     // Right Outer (Player 7)
             ];
 
             players.forEach((p, pIdx) => {
                 if (p.is_bankrupt) return;
 
-                // Relative seat index
-                const seatIdx = (pIdx - baseOffset + 4) % 4;
-                const seatCfg = SEAT_CONFIG[seatIdx];
+                // Relative seat index (0..7)
+                const relIdx = (pIdx - baseOffset + players.length) % players.length;
+                const seatIdx = relIdx % 4;
+                const seatCfg = SEAT_CONFIG[relIdx % SEAT_CONFIG.length];
 
                 const seatGroup = new THREE.Group();
                 seatGroup.position.copy(seatCfg.pos);

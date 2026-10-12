@@ -19,7 +19,7 @@ if str(SERVER_DIR) not in sys.path:
 STATIC_DIR = BASE_DIR / "static"
 INDEX_HTML = STATIC_DIR / "index.html"
 
-from game_state import GameRoom, TOKEN_OPTIONS, PLAYER_COLORS, SQUARES
+from game_state import GameRoom, TOKEN_OPTIONS, PLAYER_COLORS, SQUARES, MAX_PLAYERS
 
 app = FastAPI(title="Monopoly 3D Web Edition")
 
@@ -125,6 +125,7 @@ async def list_rooms():
             "room_id": r_id,
             "host_name": host_name,
             "player_count": len(room.players),
+            "max_players": MAX_PLAYERS,
             "connected_count": active_conns,
             "status": room.status,
             "players": [p.name for p in room.players],
@@ -165,6 +166,14 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
             action = data.get("action")
 
             if action == "JOIN":
+                already_in_room = any(p.id == player_id for p in room.players)
+                if not already_in_room and len(room.players) >= MAX_PLAYERS:
+                    await websocket.send_text(json.dumps({
+                        "type": "ERROR",
+                        "code": "ROOM_FULL",
+                        "message": f"Dieser Raum ist bereits voll (maximal {MAX_PLAYERS} Spieler & Bots)!"
+                    }))
+                    continue
                 name = data.get("name", f"Spieler {len(room.players)+1}")
                 token = data.get("token", "dog")
                 color = data.get("color", "#e74c3c")
@@ -192,6 +201,13 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
 
             elif action == "ADD_BOT":
                 if room.status == "LOBBY":
+                    if len(room.players) >= MAX_PLAYERS:
+                        await websocket.send_text(json.dumps({
+                            "type": "ERROR",
+                            "code": "MAX_PLAYERS",
+                            "message": f"Maximale Anzahl von {MAX_PLAYERS} Spielern & Bots erreicht!"
+                        }))
+                        continue
                     bot_num = sum(1 for p in room.players if p.is_bot) + 1
                     bot_id = f"bot_{uuid.uuid4().hex[:6]}"
                     bot_name = f"Computer {bot_num}"

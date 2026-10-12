@@ -670,6 +670,8 @@
                            <div class="mono-room-expiry-bar" data-expires-at="${targetTs}" data-ttl="${ttl}" style="width:${pct}%; height:100%; background:#2ecc71; transition:width 0.2s linear, background-color 0.3s ease;"></div>
                        </div>`
                     : '';
+                const maxP = r.max_players || 8;
+                const isFull = (r.player_count >= maxP);
                 return `
                     <div class="lobby-player-row" style="padding:8px 10px; flex-direction:column; align-items:stretch; gap:4px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
@@ -681,11 +683,11 @@
                                     ${expiryBadge}
                                 </div>
                                 <div style="font-size:11px; color:var(--text-muted);">
-                                    👥 ${r.player_count} Spieler (${(r.players || []).join(', ')})
+                                    👥 ${r.player_count}/${maxP} Spieler (${(r.players || []).join(', ')})
                                 </div>
                             </div>
-                            <button class="btn-action btn-buy" style="font-size:12px; padding:6px 12px;" onclick="window.MonopolyGame.connectToRoom('${r.room_id}')">
-                                Beitreten →
+                            <button class="btn-action btn-buy" style="font-size:12px; padding:6px 12px;" ${isFull ? 'disabled' : ''} onclick="window.MonopolyGame.connectToRoom('${r.room_id}')">
+                                ${isFull ? `Voll (${maxP}/${maxP})` : 'Beitreten →'}
                             </button>
                         </div>
                         ${expiryBar}
@@ -861,8 +863,16 @@
         console.log('Server message:', msg.type, msg);
 
         if (msg.type === 'ROOM_EXPIRED') {
-            showToast(msg.message || 'Raum wurde nach 60s Inaktivität automatisch geschlossen.', 'warning');
+            showYourTurnPopup('⚠️ RAUM ABGELAUFEN', msg.message || 'Raum wurde nach 60s Inaktivität automatisch geschlossen.');
             showRoomSelector();
+            return;
+        }
+
+        if (msg.type === 'ERROR') {
+            showYourTurnPopup('⚠️ HINWEIS', msg.message || 'Aktion nicht möglich.');
+            if (msg.code === 'ROOM_FULL') {
+                showRoomSelector();
+            }
             return;
         }
 
@@ -1403,9 +1413,21 @@
             startBtn.disabled = (gameState.players.length < 2);
         }
 
+        const maxPlayers = gameState.max_players || 8;
+        const isRoomFull = (gameState.players.length >= maxPlayers);
+
+        const playersLabelEl = document.getElementById('lobby-players-label');
+        if (playersLabelEl) {
+            playersLabelEl.textContent = `MITSPIELER IM RAUM (${gameState.players.length} / ${maxPlayers})`;
+        }
+
         const addBotBtn = document.getElementById('btn-add-bot');
         if (addBotBtn) {
             addBotBtn.style.display = isHost ? 'inline-block' : 'none';
+            addBotBtn.disabled = isRoomFull;
+            addBotBtn.textContent = isRoomFull
+                ? `🤖 Max. ${maxPlayers} Spieler/Bots erreicht (${gameState.players.length}/${maxPlayers})`
+                : `🤖 Bot-Spieler hinzufügen (${gameState.players.length}/${maxPlayers})`;
         }
 
         const myPlayer = gameState.players.find(p => p.id === playerId);

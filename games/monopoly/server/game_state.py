@@ -155,6 +155,7 @@ PLAYER_COLORS = [
 
 MAX_BANK_HOUSES = 32
 MAX_BANK_HOTELS = 12
+MAX_PLAYERS = 8
 
 
 class Player:
@@ -314,6 +315,9 @@ class GameRoom:
                                     other.color = c["hex"]
                                     break
                 return p
+
+        if len(self.players) >= MAX_PLAYERS:
+            return None
 
         if is_bot:
             used_tokens = {p.token for p in self.players}
@@ -1628,6 +1632,7 @@ class GameRoom:
             "party_id": self.party_id,
             "status": self.status,
             "winner": self.winner,
+            "max_players": MAX_PLAYERS,
             "players": [p.to_dict() for p in self.players],
             "current_player_idx": self.current_player_idx,
             "current_player": self.current_player().to_dict() if self.players else None,
