@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Mensch ärgere dich nicht – Treffen Edition</title>
+    <link rel="stylesheet" href="static/css/style.css?v=1.0">
+</head>
+<body>
+    <header class="game-header">
+        <div class="header-left">
+            <span class="brand-badge">Mensch ärgere dich nicht</span>
+            <div class="room-chip" id="room-chip" onclick="navigator.clipboard && navigator.clipboard.writeText(window.location.href); alert('Raum-Link kopiert!');">
+                <span>Raum: <strong id="header-room-code">------</strong></span>
+                <span>📋</span>
+            </div>
+        </div>
+        <div class="header-tools">
+            <button class="tool-btn" onclick="location.reload()">🔄 Neu laden</button>
+        </div>
+    </header>
+
+    <main class="main-layout">
+        <!-- Authentic Board on 1024x1024 Canvas / Overlay -->
+        <div class="board-wrapper">
+            <img src="static/assets/board.png" alt="Mensch ärgere dich nicht Spielbrett" class="board-img" id="board-img">
+            <div class="board-overlay" id="board-overlay">
+                <!-- Interactive player pieces injected here -->
+            </div>
+        </div>
+
+        <!-- Controls & Player Panel -->
+        <aside class="controls-sidebar">
+            <!-- Turn Banner -->
+            <div class="card turn-banner" id="turn-banner">
+                <div class="turn-avatar" id="turn-avatar">♟️</div>
+                <div class="turn-info">
+                    <h3 id="turn-player-name">Laden...</h3>
+                    <p id="turn-subtitle">Verbindung wird aufgebaut...</p>
+                </div>
+            </div>
+
+            <!-- Dice Box -->
+            <div class="card dice-card">
+                <div class="dice-container" id="dice-box" onclick="document.getElementById('roll-btn').click()">
+                    <span class="dice-face" id="dice-face">🎲</span>
+                </div>
+                <button class="roll-btn" id="roll-btn" disabled>🎲 Würfeln</button>
+            </div>
+
+            <!-- Player Status -->
+            <div class="card">
+                <h4 style="font-size: 0.9rem; color: var(--gold); margin-bottom: 10px; font-weight: 800;">👥 SPIELER (MAX. 4)</h4>
+                <div class="players-list" id="players-list">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Game Logs -->
+            <div class="card">
+                <h4 style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">📜 PROTOKOLL</h4>
+                <div class="logs-box" id="logs-box">
+                    <div class="log-entry">Willkommen am Spieltisch!</div>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- Modal 1: Raumauswahl -->
+    <div class="modal-overlay" id="modal-select-room">
+        <div class="modal-box">
+            <h2 class="modal-title">Mensch ärgere dich nicht</h2>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+                Erstelle einen neuen Spielraum oder tritt einem bestehenden Raum bei.
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
+                <button class="roll-btn" onclick="window.MenschGame.createRoom()">➕ Neuen Raum erstellen</button>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="join-room-input" placeholder="CODE (z.B. AB12)" style="flex:1; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.3); color:#fff; text-transform:uppercase;">
+                    <button class="tool-btn" onclick="window.MenschGame.joinRoom(document.getElementById('join-room-input').value)">Beitreten</button>
+                </div>
+            </div>
+            <h4 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px;">OFFENE RÄUME</h4>
+            <div id="open-rooms-list" style="max-height: 140px; overflow-y: auto;">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 2: Lobby -->
+    <div class="modal-overlay" id="modal-lobby">
+        <div class="modal-box">
+            <h2 class="modal-title">Spiellobby</h2>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
+                Warte auf Mitspieler oder füge Computer-Gegner hinzu (2–4 Spieler).
+            </p>
+            <div id="lobby-player-list" style="margin-bottom: 16px;">
+                <!-- Populated by JS -->
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="roll-btn" id="lobby-start-btn" style="flex: 2;">🎮 Spiel starten</button>
+                <button class="tool-btn" id="lobby-add-bot-btn" style="flex: 1;">🤖 + Bot</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 3: Game Over -->
+    <div class="modal-overlay" id="modal-gameover">
+        <div class="modal-box" style="text-align: center;">
+            <div style="font-size: 3.5rem; margin-bottom: 10px;">🏆</div>
+            <h2 class="modal-title" id="gameover-winner-title">Sieger ermittelt!</h2>
+            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 20px;">
+                Alle 4 Figuren wurden erfolgreich ins Ziel gebracht!
+            </p>
+            <button class="roll-btn" id="gameover-restart-btn">🔄 Zurück zur Lobby</button>
+        </div>
+    </div>
+
+    <script src="static/js/game_client.js?v=1.0"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.MenschGame) {
+                window.MenschGame.init();
+            }
+        });
+    </script>
+</body>
+</html>

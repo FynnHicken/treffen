@@ -154,6 +154,20 @@ services:
     networks:
       - party-net
 
+  # =========================================================================
+  # Spiel: Mensch ärgere dich nicht (Experimentell) - Nur TrueNAS
+  # =========================================================================
+  mensch:
+    build:
+      context: ./games/mensch
+      dockerfile: Dockerfile
+    container_name: mensch
+    restart: unless-stopped
+    ports:
+      - "8092:8092"
+    networks:
+      - party-net
+
 networks:
   party-net:
     driver: bridge

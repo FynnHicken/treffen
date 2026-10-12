@@ -213,6 +213,15 @@ const partyState = {
             maxPlayers: 8,
             desc: "Der legendäre Brettspiel-Klassiker in 3D mit deutscher 2012 ROM-Ausstattung, Straßenhandel, Häuserbau und Computergegnern!",
             embedUrl: "/monopoly/"
+        },
+        mensch: {
+            id: "mensch",
+            title: "Mensch ärgere dich nicht",
+            icon: "🎲",
+            minPlayers: 2,
+            maxPlayers: 4,
+            desc: "Der beliebte Brettspiel-Klassiker! Würfle eine 6 zum Rauskommen, wirf gegnerische Spielfiguren und bringe alle 4 Hütchen sicher ins Haus.",
+            embedUrl: "/mensch/"
         }
     },
     isVotingActive: false,
@@ -221,7 +230,8 @@ const partyState = {
         uno: 0,
         codenames: 0,
         price_guess: 0,
-        monopoly: 0
+        monopoly: 0,
+        mensch: 0
     },
     userVotedGame: null,
     activeModalGameId: null,
@@ -1968,6 +1978,8 @@ function getGameUrl(game, lobbyId) {
         return `/codenames/g/${encodeURIComponent(ROOM_CODE)}?name=${encodeURIComponent(userName)}`;
     } else if (game.id === "monopoly") {
         return `/monopoly/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}`;
+    } else if (game.id === "mensch") {
+        return `/mensch/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}`;
     } else if (game.id === "price_guess") {
         return `/price-guess/`;
     }
@@ -1983,7 +1995,7 @@ function startGameView(game, lobbyId) {
     hudIcon.innerText = game.icon;
     hudTitle.innerText = `${game.title} • Party-Raum`;
 
-    if (game.id === "skribbol" || game.id === "uno" || game.id === "codenames" || game.id === "monopoly" || game.id === "price_guess") {
+    if (game.id === "skribbol" || game.id === "uno" || game.id === "codenames" || game.id === "monopoly" || game.id === "mensch" || game.id === "price_guess") {
         iframe.src = getGameUrl(game, lobbyId);
     } else {
         iframe.srcdoc = `
