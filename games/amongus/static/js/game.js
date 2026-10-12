@@ -11,18 +11,18 @@ const canvas = document.getElementById("game-canvas");
 const ctx = canvas.getContext("2d");
 
 let mapImage = new Image();
-mapImage.src = "/static/assets/images/skeld_map.png";
+mapImage.src = "static/assets/images/skeld_map.png";
 
 // Audio elements
 const sounds = {
-    start: new Audio("/static/assets/sounds/roundstart.wav"),
-    emergency: new Audio("/static/assets/sounds/alarm_emergency.wav"),
-    report: new Audio("/static/assets/sounds/report.wav"),
-    task_done: new Audio("/static/assets/sounds/task_complete.wav"),
-    vent: new Audio("/static/assets/sounds/vent.wav"),
-    kill: new Audio("/static/assets/sounds/kill.wav"),
-    win_crew: new Audio("/static/assets/sounds/victory_crew.wav"),
-    win_imp: new Audio("/static/assets/sounds/victory_impostor.wav")
+    start: new Audio("static/assets/sounds/roundstart.wav"),
+    emergency: new Audio("static/assets/sounds/alarm_emergency.wav"),
+    report: new Audio("static/assets/sounds/report.wav"),
+    task_done: new Audio("static/assets/sounds/task_complete.wav"),
+    vent: new Audio("static/assets/sounds/vent.wav"),
+    kill: new Audio("static/assets/sounds/kill.wav"),
+    win_crew: new Audio("static/assets/sounds/victory_crew.wav"),
+    win_imp: new Audio("static/assets/sounds/victory_impostor.wav")
 };
 let soundEnabled = true;
 

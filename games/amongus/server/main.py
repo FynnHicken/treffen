@@ -264,17 +264,17 @@ async def websocket_endpoint(websocket: WebSocket):
                 "state": room.to_state_dict()
             })
 
-if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-@app.get("/")
-async def serve_index():
-    if INDEX_HTML.exists():
-        return FileResponse(INDEX_HTML)
-    return JSONResponse({"status": "Among Us Game Engine Running"})
+@app.api_route("/", methods=["GET", "HEAD"])
+async def root():
+    return FileResponse(
+        str(INDEX_HTML),
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"}
+    )
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8093))
     host = os.environ.get("HOST", "0.0.0.0")
-    uvicorn.run("main:app", host=host, port=port, reload=False)
+    uvicorn.run(app, host=host, port=port)
