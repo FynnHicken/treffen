@@ -217,8 +217,41 @@ class GameRoom:
         self.pending_trade: Optional[dict] = None
         self.auction_state: Optional[dict] = None
         self.winner: Optional[dict] = None
+        self.anim_config: dict = {
+            "stepDuration": 280,
+            "stepPause": 75,
+            "hopHeight": 0.38,
+            "landingHold": 900,
+            "diceDuration": 1350,
+            "dicePostPause": 550,
+            "camFollowLerp": 0.10,
+            "camTransitionMs": 650,
+            "cinematicFollow": True
+        }
         self.created_at = time.time()
         self.log(f"Raum {room_id} erstellt.")
+
+    def update_anim_config(self, cfg: dict):
+        if not isinstance(cfg, dict):
+            return
+        if "stepDuration" in cfg:
+            self.anim_config["stepDuration"] = max(40, min(1200, int(cfg["stepDuration"])))
+        if "stepPause" in cfg:
+            self.anim_config["stepPause"] = max(0, min(800, int(cfg["stepPause"])))
+        if "hopHeight" in cfg:
+            self.anim_config["hopHeight"] = max(0.05, min(1.5, float(cfg["hopHeight"])))
+        if "landingHold" in cfg:
+            self.anim_config["landingHold"] = max(0, min(3500, int(cfg["landingHold"])))
+        if "diceDuration" in cfg:
+            self.anim_config["diceDuration"] = max(200, min(4000, int(cfg["diceDuration"])))
+        if "dicePostPause" in cfg:
+            self.anim_config["dicePostPause"] = max(0, min(3000, int(cfg["dicePostPause"])))
+        if "camFollowLerp" in cfg:
+            self.anim_config["camFollowLerp"] = max(0.02, min(0.60, float(cfg["camFollowLerp"])))
+        if "camTransitionMs" in cfg:
+            self.anim_config["camTransitionMs"] = max(100, min(2500, int(cfg["camTransitionMs"])))
+        if "cinematicFollow" in cfg:
+            self.anim_config["cinematicFollow"] = bool(cfg["cinematicFollow"])
 
     def log(self, message: str):
         self.logs.append(message)
@@ -1475,6 +1508,7 @@ class GameRoom:
             "pending_trade": self.pending_trade,
             "auction_state": self.auction_state,
             "last_card": self.last_card,
+            "anim_config": self.anim_config,
             "logs": self.logs[-25:],
             "squares": SQUARES
         }

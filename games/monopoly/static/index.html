@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Monopoly 3D - Wii Edition</title>
-    <link rel="stylesheet" href="static/css/style.css?v=3.8">
+    <link rel="stylesheet" href="static/css/style.css?v=3.9">
     <link rel="icon" href="static/assets/textures/board_wt_cl_go_cm.png">
     <script>
         (function() {
@@ -79,6 +79,7 @@
                 <button class="btn-icon" id="btn-toggle-logs" title="Spielprotokoll & Chat">📜</button>
                 <button class="btn-icon" id="btn-music-toggle" title="Hintergrundmusik (Lounge) ein/ausschalten">🎵</button>
                 <button class="btn-icon" id="btn-sound-toggle" title="Ton stummschalten">🔊</button>
+                <button class="btn-icon" id="btn-debug-menu" title="Debug & Animations-Menü (Passwortgeschützt)" onclick="window.MonopolyGame && window.MonopolyGame.openDebugModal && window.MonopolyGame.openDebugModal()">🛠️</button>
             </div>
         </header>
 
@@ -163,6 +164,9 @@
                     </div>
                     <button class="btn-action" id="btn-switch-room" style="display:none; font-size:11px; padding:5px 10px; background:rgba(255,255,255,0.12); color:#fff; border:1px solid rgba(255,255,255,0.2);" onclick="window.MonopolyGame.showRoomSelector()">
                         🔄 Raum wechseln
+                    </button>
+                    <button class="btn-action" style="font-size:11px; padding:5px 9px; background:rgba(255,255,255,0.10); color:#fff; border:1px solid rgba(255,255,255,0.2);" title="Debug & Animations-Menü" onclick="window.MonopolyGame && window.MonopolyGame.openDebugModal && window.MonopolyGame.openDebugModal()">
+                        🛠️
                     </button>
                 </div>
             </div>
@@ -388,13 +392,135 @@
         </div>
     </div>
 
+    <!-- 10. Password-Protected Debug & Animation Timings Modal -->
+    <div class="modal-overlay" id="modal-debug" style="z-index: 2400;">
+        <div class="modal-box" style="max-width:500px;">
+            <div class="modal-header">
+                <span class="modal-title">🛠️ Debug & Animations-Menü</span>
+                <button class="modal-close" onclick="window.MonopolyGame.closeModal('modal-debug')">✕</button>
+            </div>
+
+            <!-- Step 1: Password Gate -->
+            <div class="modal-body" id="debug-auth-step">
+                <div style="text-align:center; padding:8px 0 4px;">
+                    <div style="font-size:36px; margin-bottom:6px;">🔒</div>
+                    <div style="font-size:14px; font-weight:700; color:#f1f5f9;">Passwortgeschützter Bereich</div>
+                    <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">Bitte Admin-Passwort eingeben, um Bewegungs- und Animations-Timings anzupassen.</div>
+                </div>
+                <div style="display:flex; gap:8px; margin-top:6px;">
+                    <input type="password" id="debug-password-input" class="chat-input" style="flex:1; font-size:15px; padding:10px 12px;" placeholder="Passwort..." onkeydown="if(event.key==='Enter') window.MonopolyGame.unlockDebugModal()">
+                    <button class="btn-action btn-buy" style="padding:10px 18px;" onclick="window.MonopolyGame.unlockDebugModal()">Entsperren</button>
+                </div>
+                <div id="debug-auth-error" style="display:none; color:#e74c3c; font-size:12px; font-weight:700; text-align:center; margin-top:4px;">❌ Falsches Passwort!</div>
+            </div>
+
+            <!-- Step 2: Unlocked Debug Controls -->
+            <div class="modal-body" id="debug-settings-step" style="display:none; max-height:76vh; overflow-y:auto;">
+                <div>
+                    <label style="font-size:11px; font-weight:800; color:var(--text-muted); letter-spacing:0.6px; display:block; margin-bottom:6px;">⚡ SCHNELL-PRESETS</label>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                        <button class="btn-action" style="justify-content:center; font-size:12px; padding:7px 10px; background:rgba(46,204,113,0.18); border:1px solid rgba(46,204,113,0.5); color:#fff;" onclick="window.MonopolyGame.applyDebugPreset('default')">🐢 Gemütlich (Standard)</button>
+                        <button class="btn-action" style="justify-content:center; font-size:12px; padding:7px 10px; background:rgba(52,152,219,0.18); border:1px solid rgba(52,152,219,0.5); color:#fff;" onclick="window.MonopolyGame.applyDebugPreset('cinema')">🎬 Kino (Sehr langsam)</button>
+                        <button class="btn-action" style="justify-content:center; font-size:12px; padding:7px 10px; background:rgba(241,196,15,0.18); border:1px solid rgba(241,196,15,0.5); color:#fff;" onclick="window.MonopolyGame.applyDebugPreset('classic')">⚡ Klassisch (Schnell)</button>
+                        <button class="btn-action" style="justify-content:center; font-size:12px; padding:7px 10px; background:rgba(231,76,60,0.18); border:1px solid rgba(231,76,60,0.5); color:#fff;" onclick="window.MonopolyGame.applyDebugPreset('turbo')">🚀 Turbo</button>
+                    </div>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:10px; background:rgba(0,0,0,0.22); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.08);">
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:3px;">
+                            <span>👟 Hüpf-Dauer pro Feld</span>
+                            <strong id="val-dbg-step-duration" style="color:#f1c40f;">280 ms</strong>
+                        </div>
+                        <input type="range" id="dbg-step-duration" min="50" max="800" step="10" value="280" style="width:100%;" oninput="window.MonopolyGame.onDebugSliderInput()">
+                    </div>
+
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:3px;">
+                            <span>⏱️ Pause zwischen zwei Feldern</span>
+                            <strong id="val-dbg-step-pause" style="color:#f1c40f;">75 ms</strong>
+                        </div>
+                        <input type="range" id="dbg-step-pause" min="0" max="400" step="5" value="75" style="width:100%;" oninput="window.MonopolyGame.onDebugSliderInput()">
+                    </div>
+
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:3px;">
+                            <span>🦘 Sprunghöhe der Spielfigur</span>
+                            <strong id="val-dbg-hop-height" style="color:#f1c40f;">0.38</strong>
+                        </div>
+                        <input type="range" id="dbg-hop-height" min="0.05" max="1.00" step="0.05" value="0.38" style="width:100%;" oninput="window.MonopolyGame.onDebugSliderInput()">
+                    </div>
+
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:3px;">
+                            <span>🏁 Verweilzeit am Zielfeld</span>
+                            <strong id="val-dbg-landing-hold" style="color:#f1c40f;">900 ms</strong>
+                        </div>
+                        <input type="range" id="dbg-landing-hold" min="0" max="2500" step="50" value="900" style="width:100%;" oninput="window.MonopolyGame.onDebugSliderInput()">
+                    </div>
+
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:3px;">
+                            <span>🎲 Würfel-Roll-Dauer</span>
+                            <strong id="val-dbg-dice-duration" style="color:#f1c40f;">1350 ms</strong>
+                        </div>
+                        <input type="range" id="dbg-dice-duration" min="300" max="3000" step="50" value="1350" style="width:100%;" oninput="window.MonopolyGame.onDebugSliderInput()">
+                    </div>
+
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:3px;">
+                            <span>⏸️ Pause nach Würfelwurf</span>
+                            <strong id="val-dbg-dice-pause" style="color:#f1c40f;">550 ms</strong>
+                        </div>
+                        <input type="range" id="dbg-dice-pause" min="0" max="2000" step="50" value="550" style="width:100%;" oninput="window.MonopolyGame.onDebugSliderInput()">
+                    </div>
+
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:3px;">
+                            <span>🎥 Kamera-Folgegeschwindigkeit</span>
+                            <strong id="val-dbg-cam-lerp" style="color:#f1c40f;">0.10</strong>
+                        </div>
+                        <input type="range" id="dbg-cam-lerp" min="0.02" max="0.40" step="0.01" value="0.10" style="width:100%;" oninput="window.MonopolyGame.onDebugSliderInput()">
+                    </div>
+
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; margin-bottom:3px;">
+                            <span>🎬 Kamerafahrt-Dauer (Zoom)</span>
+                            <strong id="val-dbg-cam-trans" style="color:#f1c40f;">650 ms</strong>
+                        </div>
+                        <input type="range" id="dbg-cam-trans" min="150" max="1800" step="50" value="650" style="width:100%;" oninput="window.MonopolyGame.onDebugSliderInput()">
+                    </div>
+
+                    <label style="display:flex; align-items:center; gap:8px; font-size:12px; font-weight:700; cursor:pointer; margin-top:2px;">
+                        <input type="checkbox" id="dbg-cinematic-follow" checked onchange="window.MonopolyGame.onDebugSliderInput()" style="width:16px; height:16px;">
+                        <span>Dynamische Verfolgerkamera beim Ziehen & Würfeln</span>
+                    </label>
+                </div>
+
+                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:4px;">
+                    <button class="btn-action btn-trade" style="flex:1; justify-content:center; font-size:12px; padding:9px 10px;" onclick="window.MonopolyGame.previewDebugMovement()">
+                        👟 Test-Bewegung (Vorschau)
+                    </button>
+                    <button class="btn-action" style="justify-content:center; font-size:12px; padding:9px 12px; background:rgba(255,255,255,0.1); color:#fff;" onclick="window.MonopolyGame.applyDebugPreset('default')">
+                        🔄 Reset
+                    </button>
+                </div>
+
+                <button class="btn-action btn-buy" style="width:100%; justify-content:center; font-size:14px; padding:11px; margin-top:2px;" onclick="window.MonopolyGame.saveAndSyncDebugConfig()">
+                    💾 Speichern & für Raum übernehmen
+                </button>
+                <div id="debug-save-feedback" style="display:none; color:#2ecc71; font-size:12px; font-weight:700; text-align:center;">✅ Gespeichert & für alle Spieler im Raum synchronisiert!</div>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts with Cache Busting -->
     <script src="static/js/three.min.js"></script>
     <script src="static/js/OrbitControls.js"></script>
-    <script src="static/js/asset_config.js?v=3.8"></script>
-    <script src="static/js/audio.js?v=3.8"></script>
-    <script src="static/js/board3d.js?v=3.8"></script>
-    <script src="static/js/game_client.js?v=3.8"></script>
+    <script src="static/js/asset_config.js?v=3.9"></script>
+    <script src="static/js/audio.js?v=3.9"></script>
+    <script src="static/js/board3d.js?v=3.9"></script>
+    <script src="static/js/game_client.js?v=3.9"></script>
 
     <script>
         function launchMonopoly() {

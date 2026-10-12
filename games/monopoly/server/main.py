@@ -424,6 +424,17 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                         "state": room.to_dict()
                     })
 
+            elif action == "UPDATE_ANIM_CONFIG":
+                pwd = str(data.get("password", "")).strip()
+                if pwd == "admin123":
+                    room.update_anim_config(data.get("config", {}))
+                    room.log("🛠️ Debug-Einstellungen für Bewegungs- & Animations-Timings aktualisiert.")
+                    await broadcast_room(room_id, {
+                        "type": "ANIM_CONFIG_UPDATED",
+                        "anim_config": room.anim_config,
+                        "state": room.to_dict()
+                    })
+
     except WebSocketDisconnect:
         if room_id in connections:
             connections[room_id].pop(player_id, None)
@@ -539,6 +550,21 @@ async def finish_bot_turn_after_auction_if_needed(room_id: str):
         await handle_bot_turn_if_needed(room_id)
 
 
+def _calc_anim_wait_seconds(room, old_pos: int, new_pos: int, include_dice: bool = True) -> float:
+    cfg = getattr(room, "anim_config", {}) or {}
+    step_ms = cfg.get("stepDuration", 280) + cfg.get("stepPause", 75)
+    hold_ms = cfg.get("landingHold", 900) if cfg.get("cinematicFollow", True) else 200
+    dice_ms = (cfg.get("diceDuration", 1350) + cfg.get("dicePostPause", 550)) if include_dice else 0
+    if old_pos is not None and new_pos is not None and old_pos != new_pos:
+        fwd = (new_pos - old_pos + 40) % 40
+        bwd = (old_pos - new_pos + 40) % 40
+        steps = bwd if (0 < bwd <= 3) else fwd
+    else:
+        steps = 0
+    total_ms = dice_ms + (steps * step_ms) + hold_ms + 350
+    return max(1.5, min(20.0, total_ms / 1000.0))
+
+
 async def handle_bot_turn_if_needed(room_id: str):
     room = rooms.get(room_id)
     if not room or room.status != "PLAYING" or room.auction_state:
@@ -571,17 +597,32 @@ async def handle_bot_turn_if_needed(room_id: str):
             "result": roll_res,
             "state": room.to_dict()
         })
-        await asyncio.sleep(2.4)
+        roll_wait = _calc_anim_wait_seconds(
+            room,
+            roll_res.get("old_pos"),
+            roll_res.get("new_pos"),
+            include_dice=True
+        )
+        await asyncio.sleep(roll_wait)
 
         while room.pending_action and room.pending_action.get("type") == "CARD_DRAWN":
-            await asyncio.sleep(3.2)
+            await asyncio.sleep(2.4)
             card_res = room.confirm_card(curr.id)
             await broadcast_room(room_id, {
                 "type": "CARD_APPLIED",
                 "result": card_res,
                 "state": room.to_dict()
             })
-            await asyncio.sleep(2.2 if card_res.get("moved") else 1.2)
+            if card_res.get("moved") and not (curr and curr.in_jail):
+                card_wait = _calc_anim_wait_seconds(
+                    room,
+                    card_res.get("old_pos"),
+                    card_res.get("new_pos"),
+                    include_dice=False
+                )
+                await asyncio.sleep(card_wait)
+            else:
+                await asyncio.sleep(1.2)
 
         # Bot decision on pending action
         if room.pending_action and room.pending_action.get("type") == "BUY_OR_AUCTION":

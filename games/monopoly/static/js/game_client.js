@@ -1065,6 +1065,13 @@
                 closeModal('modal-incoming-trade');
                 resetEndTurnTimer();
                 break;
+
+            case 'ANIM_CONFIG_UPDATED':
+                if (msg.anim_config && window.MonopolyBoard3D && window.MonopolyBoard3D.setAnimConfig) {
+                    window.MonopolyBoard3D.setAnimConfig(msg.anim_config, true);
+                    syncDebugModalSliders();
+                }
+                break;
         }
 
         // Sync active Auction or Tax modal state
@@ -2700,8 +2707,207 @@
         hideRentPopup: hideRentPopup,
         getMyPlayerId: function() { return playerId; },
         getCardIllustration: getCardIllustration,
-        closeModal: closeModal
+        closeModal: closeModal,
+        openDebugModal: openDebugModal,
+        unlockDebugModal: unlockDebugModal,
+        onDebugSliderInput: onDebugSliderInput,
+        applyDebugPreset: applyDebugPreset,
+        previewDebugMovement: previewDebugMovement,
+        saveAndSyncDebugConfig: saveAndSyncDebugConfig
     };
+
+    let isDebugUnlocked = false;
+
+    const DEBUG_PRESETS = {
+        default: {
+            stepDuration: 280,
+            stepPause: 75,
+            hopHeight: 0.38,
+            landingHold: 900,
+            diceDuration: 1350,
+            dicePostPause: 550,
+            camFollowLerp: 0.10,
+            camTransitionMs: 650,
+            cinematicFollow: true
+        },
+        cinema: {
+            stepDuration: 420,
+            stepPause: 120,
+            hopHeight: 0.45,
+            landingHold: 1300,
+            diceDuration: 1700,
+            dicePostPause: 750,
+            camFollowLerp: 0.07,
+            camTransitionMs: 900,
+            cinematicFollow: true
+        },
+        classic: {
+            stepDuration: 120,
+            stepPause: 25,
+            hopHeight: 0.38,
+            landingHold: 650,
+            diceDuration: 1100,
+            dicePostPause: 400,
+            camFollowLerp: 0.18,
+            camTransitionMs: 450,
+            cinematicFollow: true
+        },
+        turbo: {
+            stepDuration: 65,
+            stepPause: 10,
+            hopHeight: 0.25,
+            landingHold: 250,
+            diceDuration: 600,
+            dicePostPause: 150,
+            camFollowLerp: 0.30,
+            camTransitionMs: 250,
+            cinematicFollow: false
+        }
+    };
+
+    function syncDebugModalSliders() {
+        const engine = window.MonopolyBoard3D || Board3D;
+        if (!engine || !engine.getAnimConfig) return;
+        const cfg = engine.getAnimConfig();
+
+        const setEl = (id, val, labelId, suffix = '') => {
+            const el = document.getElementById(id);
+            if (el) el.value = val;
+            const lbl = document.getElementById(labelId);
+            if (lbl) lbl.textContent = val + suffix;
+        };
+
+        setEl('dbg-step-duration', cfg.stepDuration, 'val-dbg-step-duration', ' ms');
+        setEl('dbg-step-pause', cfg.stepPause, 'val-dbg-step-pause', ' ms');
+        setEl('dbg-hop-height', Number(cfg.hopHeight).toFixed(2), 'val-dbg-hop-height', '');
+        setEl('dbg-landing-hold', cfg.landingHold, 'val-dbg-landing-hold', ' ms');
+        setEl('dbg-dice-duration', cfg.diceDuration, 'val-dbg-dice-duration', ' ms');
+        setEl('dbg-dice-pause', cfg.dicePostPause, 'val-dbg-dice-pause', ' ms');
+        setEl('dbg-cam-lerp', Number(cfg.camFollowLerp).toFixed(2), 'val-dbg-cam-lerp', '');
+        setEl('dbg-cam-trans', cfg.camTransitionMs, 'val-dbg-cam-trans', ' ms');
+
+        const chk = document.getElementById('dbg-cinematic-follow');
+        if (chk) chk.checked = (cfg.cinematicFollow !== false);
+    }
+
+    function readDebugSlidersToConfig() {
+        return {
+            stepDuration: parseInt((document.getElementById('dbg-step-duration') || {}).value, 10) || 280,
+            stepPause: parseInt((document.getElementById('dbg-step-pause') || {}).value, 10) || 0,
+            hopHeight: parseFloat((document.getElementById('dbg-hop-height') || {}).value) || 0.38,
+            landingHold: parseInt((document.getElementById('dbg-landing-hold') || {}).value, 10) || 0,
+            diceDuration: parseInt((document.getElementById('dbg-dice-duration') || {}).value, 10) || 1350,
+            dicePostPause: parseInt((document.getElementById('dbg-dice-pause') || {}).value, 10) || 0,
+            camFollowLerp: parseFloat((document.getElementById('dbg-cam-lerp') || {}).value) || 0.10,
+            camTransitionMs: parseInt((document.getElementById('dbg-cam-trans') || {}).value, 10) || 650,
+            cinematicFollow: !!(document.getElementById('dbg-cinematic-follow') || {}).checked
+        };
+    }
+
+    function openDebugModal() {
+        const authStep = document.getElementById('debug-auth-step');
+        const settingsStep = document.getElementById('debug-settings-step');
+        const errEl = document.getElementById('debug-auth-error');
+        const pwdInput = document.getElementById('debug-password-input');
+        const fbEl = document.getElementById('debug-save-feedback');
+        if (fbEl) fbEl.style.display = 'none';
+        if (errEl) errEl.style.display = 'none';
+
+        if (isDebugUnlocked) {
+            if (authStep) authStep.style.display = 'none';
+            if (settingsStep) settingsStep.style.display = 'flex';
+            syncDebugModalSliders();
+        } else {
+            if (authStep) authStep.style.display = 'flex';
+            if (settingsStep) settingsStep.style.display = 'none';
+            if (pwdInput) {
+                pwdInput.value = '';
+                setTimeout(() => pwdInput.focus(), 80);
+            }
+        }
+        openModal('modal-debug');
+    }
+
+    function unlockDebugModal() {
+        const pwdInput = document.getElementById('debug-password-input');
+        const errEl = document.getElementById('debug-auth-error');
+        const val = pwdInput ? pwdInput.value.trim() : '';
+        if (val === 'admin123') {
+            isDebugUnlocked = true;
+            if (errEl) errEl.style.display = 'none';
+            const authStep = document.getElementById('debug-auth-step');
+            const settingsStep = document.getElementById('debug-settings-step');
+            if (authStep) authStep.style.display = 'none';
+            if (settingsStep) settingsStep.style.display = 'flex';
+            syncDebugModalSliders();
+            if (Sound && Sound.playClick) Sound.playClick();
+        } else {
+            if (errEl) errEl.style.display = 'block';
+        }
+    }
+
+    function onDebugSliderInput() {
+        const cfg = readDebugSlidersToConfig();
+        const engine = window.MonopolyBoard3D || Board3D;
+        if (engine && engine.setAnimConfig) {
+            engine.setAnimConfig(cfg, true);
+        }
+        syncDebugModalSliders();
+    }
+
+    function applyDebugPreset(presetKey) {
+        const preset = DEBUG_PRESETS[presetKey] || DEBUG_PRESETS.default;
+        const engine = window.MonopolyBoard3D || Board3D;
+        if (engine && engine.setAnimConfig) {
+            engine.setAnimConfig(preset, true);
+        }
+        syncDebugModalSliders();
+        if (Sound && Sound.playClick) Sound.playClick();
+    }
+
+    function saveAndSyncDebugConfig() {
+        const cfg = readDebugSlidersToConfig();
+        const engine = window.MonopolyBoard3D || Board3D;
+        if (engine && engine.setAnimConfig) {
+            engine.setAnimConfig(cfg, true);
+        }
+        sendWsMessage({
+            action: 'UPDATE_ANIM_CONFIG',
+            password: 'admin123',
+            config: cfg
+        });
+        const fbEl = document.getElementById('debug-save-feedback');
+        if (fbEl) {
+            fbEl.style.display = 'block';
+            setTimeout(() => { fbEl.style.display = 'none'; }, 2600);
+        }
+        if (Sound && Sound.playMoney) Sound.playMoney();
+    }
+
+    function previewDebugMovement() {
+        const engine = window.MonopolyBoard3D || Board3D;
+        if (!engine || !engine.animateMoveToken) return;
+        const cfg = readDebugSlidersToConfig();
+        engine.setAnimConfig(cfg, true);
+
+        let targetPid = playerId;
+        let startPos = 0;
+        if (gameState && gameState.players && gameState.players.length > 0) {
+            const me = gameState.players.find(p => p.id === playerId && !p.is_bankrupt) || gameState.players[0];
+            if (me) {
+                targetPid = me.id;
+                startPos = me.position || 0;
+            }
+        }
+        closeModal('modal-debug');
+        const midPos = (startPos + 4) % 40;
+        engine.animateMoveToken(targetPid, startPos, midPos, () => {
+            if (gameState && gameState.players) {
+                engine.syncPlayers(gameState.players);
+            }
+            openDebugModal();
+        }, true);
+    }
 
     window.getCardIllustration = getCardIllustration;
     window.MonopolyGame = GameClient;

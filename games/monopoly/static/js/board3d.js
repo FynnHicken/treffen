@@ -38,6 +38,29 @@
     const CORNER_SIZE = 1.35;
     const INNER_STEP = (BOARD_SIZE - 2 * CORNER_SIZE) / 9.0; // ~0.811
 
+    const DEFAULT_ANIM_CONFIG = {
+        stepDuration: 280,     // ms per field hop (slower default, was 120)
+        stepPause: 75,         // ms pause between hops (was 25)
+        hopHeight: 0.38,       // vertical hop arc height
+        landingHold: 900,      // ms hold on destination square before camera resets (was 650)
+        diceDuration: 1350,    // ms 3D dice roll duration (was 1100)
+        dicePostPause: 550,    // ms pause after dice settle (was 400)
+        camFollowLerp: 0.10,   // camera tracking smoothness (was 0.18)
+        camTransitionMs: 650,  // ms camera zoom transition duration (was 450)
+        cinematicFollow: true  // follow token with camera during move
+    };
+
+    let animConfig = Object.assign({}, DEFAULT_ANIM_CONFIG);
+    try {
+        const savedCfg = localStorage.getItem('monopoly_anim_config_v1');
+        if (savedCfg) {
+            const parsed = JSON.parse(savedCfg);
+            if (parsed && typeof parsed === 'object') {
+                Object.assign(animConfig, parsed);
+            }
+        }
+    } catch (e) {}
+
     // Exact Euler rotations (order XYZ) to point each rolled face (1-6) straight UP (+Y)
     const DICE_EULER_FACING_UP = {
         1: new THREE.Euler(0, 0, 0),
@@ -1298,6 +1321,41 @@
             });
         },
 
+        getAnimConfig: function() {
+            return Object.assign({}, animConfig);
+        },
+
+        getDefaultAnimConfig: function() {
+            return Object.assign({}, DEFAULT_ANIM_CONFIG);
+        },
+
+        setAnimConfig: function(cfg, saveLocal = true) {
+            if (!cfg || typeof cfg !== 'object') return;
+            if (cfg.stepDuration !== undefined) animConfig.stepDuration = Math.max(40, Math.min(1200, parseInt(cfg.stepDuration, 10) || 280));
+            if (cfg.stepPause !== undefined) animConfig.stepPause = Math.max(0, Math.min(800, parseInt(cfg.stepPause, 10) || 0));
+            if (cfg.hopHeight !== undefined) animConfig.hopHeight = Math.max(0.05, Math.min(1.5, parseFloat(cfg.hopHeight) || 0.38));
+            if (cfg.landingHold !== undefined) animConfig.landingHold = Math.max(0, Math.min(3500, parseInt(cfg.landingHold, 10) || 0));
+            if (cfg.diceDuration !== undefined) animConfig.diceDuration = Math.max(200, Math.min(4000, parseInt(cfg.diceDuration, 10) || 1350));
+            if (cfg.dicePostPause !== undefined) animConfig.dicePostPause = Math.max(0, Math.min(3000, parseInt(cfg.dicePostPause, 10) || 0));
+            if (cfg.camFollowLerp !== undefined) animConfig.camFollowLerp = Math.max(0.02, Math.min(0.60, parseFloat(cfg.camFollowLerp) || 0.10));
+            if (cfg.camTransitionMs !== undefined) animConfig.camTransitionMs = Math.max(100, Math.min(2500, parseInt(cfg.camTransitionMs, 10) || 650));
+            if (cfg.cinematicFollow !== undefined) animConfig.cinematicFollow = !!cfg.cinematicFollow;
+
+            if (saveLocal) {
+                try {
+                    localStorage.setItem('monopoly_anim_config_v1', JSON.stringify(animConfig));
+                } catch (e) {}
+            }
+        },
+
+        resetAnimConfig: function() {
+            animConfig = Object.assign({}, DEFAULT_ANIM_CONFIG);
+            try {
+                localStorage.setItem('monopoly_anim_config_v1', JSON.stringify(animConfig));
+            } catch (e) {}
+            return Object.assign({}, animConfig);
+        },
+
         // Token Movement Hop Animation with Dynamic Tracking Camera
         animateMoveToken: function(playerId, fromIdx, toIdx, onFinish, isCinematic = false) {
             const tokenGroup = tokenMeshes[playerId];
@@ -1319,17 +1377,17 @@
 
             let stepCount = 0;
             let fromPos = tokenGroup.position.clone();
-            const tokenType = (tokenGroup.userData && tokenGroup.userData.token) ? tokenGroup.userData.token : null;
+            const useCinematic = isCinematic && (animConfig.cinematicFollow !== false);
 
             const hopNext = () => {
                 if (stepCount >= steps) {
                     // Reached destination!
-                    if (isCinematic) {
-                        // Hold on destination square for 650ms so all players clearly see the landed tile
+                    if (useCinematic) {
+                        const holdMs = (animConfig.landingHold !== undefined) ? animConfig.landingHold : 900;
                         setTimeout(() => {
                             this.setCameraPreset(cameraMode || '2.5d');
                             if (onFinish) onFinish();
-                        }, 650);
+                        }, holdMs);
                     } else {
                         if (onFinish) onFinish();
                     }
@@ -1346,7 +1404,11 @@
                 }
 
                 const startTime = performance.now();
-                const stepDuration = 120; // ms
+                const stepDuration = animConfig.stepDuration || 280; // ms
+                const stepPause = (animConfig.stepPause !== undefined) ? animConfig.stepPause : 75; // ms
+                const maxHopHeight = animConfig.hopHeight || 0.38;
+                const camLerp = animConfig.camFollowLerp || 0.10;
+                const targetLerp = Math.min(0.55, camLerp * 1.25);
 
                 // Compute behind-the-token tracking camera offset for current board side
                 const camOffset = new THREE.Vector3(0, 2.8, 3.4);
@@ -1363,19 +1425,19 @@
                 const stepAnim = (now) => {
                     const elapsed = now - startTime;
                     const t = Math.min(1.0, elapsed / stepDuration);
-                    const hopHeight = Math.sin(t * Math.PI) * 0.38;
+                    const hopHeight = Math.sin(t * Math.PI) * maxHopHeight;
 
                     tokenGroup.position.lerpVectors(fromPos, toPos, t);
                     tokenGroup.position.y = 0.09 + hopHeight;
 
                     // Cinematic camera following behind the token!
-                    if (isCinematic && camera && controls) {
+                    if (useCinematic && camera && controls) {
                         const desiredTarget = tokenGroup.position.clone();
                         desiredTarget.y = 0.09;
                         const desiredCamPos = desiredTarget.clone().add(camOffset);
 
-                        camera.position.lerp(desiredCamPos, 0.18);
-                        controls.target.lerp(desiredTarget, 0.22);
+                        camera.position.lerp(desiredCamPos, camLerp);
+                        controls.target.lerp(desiredTarget, targetLerp);
                         controls.update();
                     }
 
@@ -1384,7 +1446,7 @@
                     } else {
                         tokenGroup.position.y = 0.09;
                         fromPos = toPos;
-                        setTimeout(hopNext, 25);
+                        setTimeout(hopNext, stepPause);
                     }
                 };
 
@@ -1407,15 +1469,19 @@
                 window.MonopolySound.playDiceRoll();
             }
 
+            const useCinematic = isCinematic && (animConfig.cinematicFollow !== false);
+
             // Cinematic Close-Up Camera on dice in board center when it is your turn!
-            if (isCinematic) {
+            if (useCinematic) {
                 const closeUpPos = new THREE.Vector3(0, 3.2, 3.6);
                 const closeUpTarget = new THREE.Vector3(0, 0.28, 0);
-                this.smoothCameraTransition(closeUpPos, closeUpTarget, 0.2, Math.PI / 2.2, 450);
+                const camMs = animConfig.camTransitionMs || 650;
+                this.smoothCameraTransition(closeUpPos, closeUpTarget, 0.2, Math.PI / 2.2, camMs);
             }
 
             const startTime = performance.now();
-            const duration = 1100; // ms
+            const duration = animConfig.diceDuration || 1350; // ms
+            const postPause = (animConfig.dicePostPause !== undefined) ? animConfig.dicePostPause : 550; // ms
 
             // Random slight yaw so dice look naturally tossed on table, but remain strictly 100% flat
             const yaw1 = (Math.random() - 0.5) * 0.4;
@@ -1476,7 +1542,7 @@
                     // Pause briefly so user can see and celebrate their roll result
                     setTimeout(() => {
                         if (onComplete) onComplete();
-                    }, 400);
+                    }, postPause);
                 }
             };
 
