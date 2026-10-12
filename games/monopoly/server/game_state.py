@@ -167,6 +167,7 @@ class Player:
         self.position = 0
         self.in_jail = False
         self.jail_turns = 0
+        self.jail_rolls_this_turn = 0
         self.jail_cards = 0
         self.is_bankrupt = False
         self.is_bot = is_bot
@@ -183,6 +184,7 @@ class Player:
             "position": self.position,
             "in_jail": self.in_jail,
             "jail_turns": self.jail_turns,
+            "jail_rolls_this_turn": self.jail_rolls_this_turn,
             "jail_cards": self.jail_cards,
             "is_bankrupt": self.is_bankrupt,
             "is_bot": self.is_bot,
@@ -375,6 +377,7 @@ class GameRoom:
             p.position = 0
             p.in_jail = False
             p.jail_turns = 0
+            p.jail_rolls_this_turn = 0
             p.jail_cards = 0
             p.is_bankrupt = False
             p.doubles_count = 0
@@ -447,31 +450,55 @@ class GameRoom:
         steps = d1 + d2
         self.log(f"{player.name} würfelt eine {d1} und {d2} (Gesamt: {steps})!")
 
-        # Handle Jail
+        # Handle Jail (3x Würfeln pro Runde im Gefängnis, um einen Pasch zu würfeln)
         if player.in_jail:
+            player.jail_rolls_this_turn += 1
+            attempt = player.jail_rolls_this_turn
             if is_double:
                 player.in_jail = False
                 player.jail_turns = 0
+                player.jail_rolls_this_turn = 0
                 player.doubles_count = 0
-                self.log(f"Pasch! {player.name} kommt frei aus dem Gefängnis (kein Zusatzwurf nach Gefängnis-Pasch)!")
+                self.log(f"🔓 Pasch ({d1} & {d2}) im {attempt}. Versuch! {player.name} kommt frei aus dem Gefängnis und zieht {steps} Felder weiter!")
                 return self.move_player(player, steps, False)
             else:
-                player.jail_turns += 1
-                if player.jail_turns >= 3:
-                    self._record_payment(player, 50, "BANK")
-                    player.in_jail = False
-                    player.jail_turns = 0
-                    self.log(f"{player.name} muss nach dem 3. Versuch 50 DM Bußgeld zahlen und zieht {steps} Felder weiter!")
-                    return self.move_player(player, steps, False)
-                else:
-                    self.log(f"{player.name} bleibt im Gefängnis (Versuch {player.jail_turns}/3).")
-                    self.pending_action = {"type": "END_TURN"}
+                if attempt < 3:
+                    # Spieler darf im Gefängnis bis zu 3x würfeln, um einen Pasch zu schaffen
+                    self.rolled = False
+                    self.pending_action = None
+                    rem = 3 - attempt
+                    self.log(f"🔒 Kein Pasch im {attempt}. Versuch ({d1} & {d2}) – {player.name} darf noch {rem}x würfeln!")
                     return {
                         "dice": self.dice,
-                        "double": is_double,
+                        "double": False,
+                        "jail_reroll": True,
+                        "jail_attempt": attempt,
+                        "jail_max_attempts": 3,
                         "player": player.to_dict(),
-                        "action": self.pending_action
+                        "action": None
                     }
+                else:
+                    # Alle 3 Versuche in dieser Runde verbraucht
+                    player.jail_rolls_this_turn = 0
+                    player.jail_turns += 1
+                    if player.jail_turns >= 3:
+                        self._record_payment(player, 50, "BANK")
+                        player.in_jail = False
+                        player.jail_turns = 0
+                        self.log(f"🔒 Auch im 3. Versuch kein Pasch! Nach der 3. Gefängnis-Runde zahlt {player.name} 50 DM Bußgeld und zieht {steps} Felder weiter!")
+                        return self.move_player(player, steps, False)
+                    else:
+                        self.log(f"🔒 Auch im 3. Versuch kein Pasch! {player.name} bleibt im Gefängnis (Runde {player.jail_turns}/3).")
+                        self.pending_action = {"type": "END_TURN"}
+                        return {
+                            "dice": self.dice,
+                            "double": False,
+                            "jail_reroll": False,
+                            "jail_attempt": 3,
+                            "jail_max_attempts": 3,
+                            "player": player.to_dict(),
+                            "action": self.pending_action
+                        }
 
         # Doubles counter
         if is_double:
@@ -766,6 +793,7 @@ class GameRoom:
         player.position = 10
         player.in_jail = True
         player.jail_turns = 0
+        player.jail_rolls_this_turn = 0
         player.doubles_count = 0
         self.log(f"🚔 {player.name} wurde ins Gefängnis gesteckt!")
 
@@ -1311,13 +1339,14 @@ class GameRoom:
         player = next((p for p in self.players if p.id == player_id), None)
         if not player or not player.in_jail:
             return {"error": "Nicht im Gefängnis."}
-        if self.rolled:
-            return {"error": "Freikaufen ist laut Regel nur VOR dem Würfeln möglich."}
+        if self.rolled or player.jail_rolls_this_turn > 0:
+            return {"error": "Freikaufen ist nur vor dem ersten Würfelversuch der Runde möglich."}
         if player.money < 50:
             return {"error": "Nicht genug Geld für Kaution (50 DM)."}
         player.money -= 50
         player.in_jail = False
         player.jail_turns = 0
+        player.jail_rolls_this_turn = 0
         self.log(f"{player.name} zahlt 50 DM Bußgeld vor dem Wurf und ist frei!")
         return {"success": True, "player": player.to_dict()}
 
@@ -1325,11 +1354,12 @@ class GameRoom:
         player = next((p for p in self.players if p.id == player_id), None)
         if not player or not player.in_jail or player.jail_cards <= 0:
             return {"error": "Keine Gefängnisfrei-Karte vorhanden."}
-        if self.rolled:
-            return {"error": "Gefängnisfrei-Karte muss VOR dem Würfeln eingesetzt werden."}
+        if self.rolled or player.jail_rolls_this_turn > 0:
+            return {"error": "Gefängnisfrei-Karte muss vor dem ersten Würfelversuch der Runde eingesetzt werden."}
         player.jail_cards -= 1
         player.in_jail = False
         player.jail_turns = 0
+        player.jail_rolls_this_turn = 0
         # Karte zurück unter den Stapel legen
         if len(self.chance_deck) < len(CHANCE_CARDS):
             self.chance_deck.append(15)
@@ -1396,6 +1426,7 @@ class GameRoom:
 
         # Advance to next non-bankrupt player
         player.doubles_count = 0
+        player.jail_rolls_this_turn = 0
         game_over_res = self._check_game_over(player)
         if game_over_res:
             return game_over_res

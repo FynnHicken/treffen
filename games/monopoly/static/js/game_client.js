@@ -297,11 +297,17 @@
         const isActivelyInteracting = isManagementModalOpen() || ((Date.now() - lastUserActivityAt) < 1200);
 
         if (btnRoll && rollLabelEl) {
+            const myPlayer = (gameState && gameState.players) ? gameState.players.find(p => p.id === playerId) : null;
+            const isMyTurn = (gameState && gameState.current_player && gameState.current_player.id === playerId);
+            const inJailRolling = (isMyTurn && myPlayer && myPlayer.in_jail && !gameState.rolled);
+            const attemptNum = inJailRolling ? Math.min(3, (myPlayer.jail_rolls_this_turn || 0) + 1) : 0;
+            const baseRollText = inJailRolling ? `Würfeln (${attemptNum}/3)` : 'Würfeln';
+
             if (endTurnTimerInterval && endTurnTimerMode === 'ROLL' && endTurnSecondsLeft > 0 && !isActivelyInteracting) {
-                rollLabelEl.textContent = `Würfeln (${endTurnSecondsLeft}s)`;
+                rollLabelEl.textContent = `${baseRollText} (${endTurnSecondsLeft}s)`;
                 btnRoll.classList.add('countdown-active');
             } else {
-                rollLabelEl.textContent = 'Würfeln';
+                rollLabelEl.textContent = baseRollText;
                 btnRoll.classList.remove('countdown-active');
             }
         }
@@ -1299,7 +1305,18 @@
                     window.MonopolyBoard3D.hideDrawnCards();
                 }
             }
-            if (isMyTurn && gameState && !gameState.rolled && d1 === d2 && !(res.player && res.player.in_jail) && (!res.action || res.action.type !== 'CARD_DRAWN')) {
+            if (isMyTurn && res.jail_reroll) {
+                const rem = 3 - (res.jail_attempt || 1);
+                showYourTurnPopup(
+                    `🔒 KEIN PASCH (VERSUCH ${res.jail_attempt}/3)`,
+                    `Würfle direkt noch einmal! Du hast noch ${rem} ${rem === 1 ? 'Versuch' : 'Versuche'}, um einen Pasch zu schaffen.`
+                );
+            } else if (isMyTurn && res.jail_attempt === 3 && !res.double && res.player && res.player.in_jail) {
+                showYourTurnPopup(
+                    '🔒 3x KEIN PASCH',
+                    'Alle 3 Versuche verbraucht – du bleibst diese Runde im Gefängnis.'
+                );
+            } else if (isMyTurn && gameState && !gameState.rolled && d1 === d2 && !(res.player && res.player.in_jail) && (!res.action || res.action.type !== 'CARD_DRAWN')) {
                 showYourTurnPopup('PASCH! NOCHMAL DRAN!', 'Du hast einen Pasch gewürfelt und darfst direkt nochmal!');
             }
             updateHUD();
@@ -1679,13 +1696,13 @@
             btnEnd.disabled = !canEnd;
         }
 
-        // Jail actions (only BEFORE rolling dice, per Parker rules page 2)
+        // Jail actions (only BEFORE first roll attempt of the turn)
         if (btnBail && myPlayer) {
-            const canBail = isMyTurn && !gameState.rolled && myPlayer.in_jail && myPlayer.money >= 50;
+            const canBail = isMyTurn && !gameState.rolled && !(myPlayer.jail_rolls_this_turn > 0) && myPlayer.in_jail && myPlayer.money >= 50;
             btnBail.style.display = canBail ? 'inline-flex' : 'none';
         }
         if (btnJailCard && myPlayer) {
-            const canCard = isMyTurn && !gameState.rolled && myPlayer.in_jail && myPlayer.jail_cards > 0;
+            const canCard = isMyTurn && !gameState.rolled && !(myPlayer.jail_rolls_this_turn > 0) && myPlayer.in_jail && myPlayer.jail_cards > 0;
             btnJailCard.style.display = canCard ? 'inline-flex' : 'none';
         }
 

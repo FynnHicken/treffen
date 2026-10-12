@@ -582,8 +582,8 @@ async def handle_bot_turn_if_needed(room_id: str):
     curr = room.current_player()
     if curr and curr.is_bot and not curr.is_bankrupt:
         await asyncio.sleep(1.2)
-        # Bot jail handling before rolling
-        if curr.in_jail and not room.rolled:
+        # Bot jail handling before first roll of the turn
+        if curr.in_jail and not room.rolled and getattr(curr, "jail_rolls_this_turn", 0) == 0:
             if curr.jail_cards > 0:
                 room.use_jail_card(curr.id)
                 await broadcast_room(room_id, {
@@ -591,7 +591,7 @@ async def handle_bot_turn_if_needed(room_id: str):
                     "state": room.to_dict()
                 })
                 await asyncio.sleep(0.6)
-            elif curr.money >= 250:
+            elif curr.jail_turns >= 2 and curr.money >= 250:
                 room.pay_bail(curr.id)
                 await broadcast_room(room_id, {
                     "type": "BAIL_PAID",
