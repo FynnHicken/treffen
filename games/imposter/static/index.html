@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Imposter - Das Partyspiel</title>
+    <link rel="stylesheet" href="static/css/style.css?v=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header id="game-header">
+            <div class="header-left">
+                <span class="room-tag" id="room-code-tag">Raum: ---</span>
+                <span class="category-badge" id="category-badge">Kategorie</span>
+            </div>
+            <div class="header-right">
+                <span class="round-badge" id="phase-badge">Lobby</span>
+            </div>
+        </header>
+
+        <main id="game-main">
+            <!-- SECRET CARD (Hold to reveal) -->
+            <section id="secret-card-section">
+                <div class="secret-card" id="secret-card">
+                    <div class="card-front">
+                        <span class="lock-icon">🔒</span>
+                        <h3>Deine geheime Rolle</h3>
+                        <p>Halte gedrückt zum Aufdecken</p>
+                    </div>
+                    <div class="card-revealed hidden" id="card-revealed-content">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- PHASE 1: LOBBY -->
+            <section id="phase-lobby" class="phase-panel">
+                <div class="panel-box">
+                    <h2>🕵️ IMPOSTER</h2>
+                    <p class="subtitle">Finde heraus, wer das Geheimwort nicht kennt!</p>
+
+                    <div class="category-selector">
+                        <label for="select-category">Kategorie wählen:</label>
+                        <select id="select-category"></select>
+                    </div>
+
+                    <div class="player-roster">
+                        <div class="roster-title">Spieler im Raum (<span id="player-count">0</span>):</div>
+                        <div class="roster-grid" id="lobby-roster-grid"></div>
+                    </div>
+
+                    <div class="host-controls" id="host-lobby-controls">
+                        <button id="btn-add-bot" class="btn btn-secondary">🤖 Bot hinzufügen</button>
+                        <button id="btn-start-round" class="btn btn-primary">🎮 Runde starten</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PHASE 2: CLUES (REIHUM HINWEISE GEBEN) -->
+            <section id="phase-clues" class="phase-panel hidden">
+                <div class="panel-box">
+                    <div class="turn-announcement" id="turn-announcement">
+                        Warte auf Hinweise...
+                    </div>
+
+                    <div class="clue-history" id="clue-history-container">
+                        <!-- Clue bubbles list -->
+                    </div>
+
+                    <!-- Input for active player -->
+                    <div class="clue-input-box hidden" id="my-turn-input-box">
+                        <p class="input-prompt">Gib genau <strong>EIN</strong> Hinweiswort ein:</p>
+                        <form id="clue-form">
+                            <input type="text" id="clue-input" placeholder="Z. B. Käse, Italien, Lecker..." maxlength="25" autocomplete="off" required>
+                            <button type="submit" class="btn btn-primary">Hinweis senden</button>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PHASE 3: DISCUSSION -->
+            <section id="phase-discussion" class="phase-panel hidden">
+                <div class="panel-box">
+                    <div class="discussion-header">
+                        <h2>🗣️ DISKUSSIONSRUNDE</h2>
+                        <div class="timer-circle" id="discussion-timer">60s</div>
+                    </div>
+                    <p class="discussion-help">Wer hat verdächtige Hinweise gegeben? Wer blufft?</p>
+
+                    <div class="clue-summary-grid" id="discussion-clues-summary"></div>
+
+                    <div class="host-controls">
+                        <button id="btn-proceed-voting" class="btn btn-primary">Zur Abstimmung gehen 🗳️</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PHASE 4: VOTING -->
+            <section id="phase-voting" class="phase-panel hidden">
+                <div class="panel-box">
+                    <h2>🗳️ WER IST DER IMPOSTER?</h2>
+                    <p class="subtitle">Tippe auf den verdächtigsten Spieler, um abzustimmen:</p>
+
+                    <div class="voting-grid" id="voting-cards-grid"></div>
+
+                    <div class="vote-status-bar" id="voting-status-text">
+                        Warte auf alle Stimmen...
+                    </div>
+                </div>
+            </section>
+
+            <!-- PHASE 5: GUESSING (IMPOSTER LAST CHANCE) -->
+            <section id="phase-guessing" class="phase-panel hidden">
+                <div class="panel-box">
+                    <h2 class="warning-title">🚨 DER IMPOSTER WURDE ENTDECKT!</h2>
+                    <p id="guessing-prompt" class="subtitle">Letzte Chance: Errate das Geheimwort, um trotzdem zu gewinnen!</p>
+
+                    <div id="imposter-guess-box" class="guess-form-box hidden">
+                        <input type="text" id="guess-input" placeholder="Welches Wort war es?" autocomplete="off">
+                        <button id="btn-submit-guess" class="btn btn-primary">Wort tippen</button>
+                    </div>
+                    <div id="spectator-wait-guess" class="wait-text">
+                        Der Imposter überlegt und rät das Wort...
+                    </div>
+                </div>
+            </section>
+
+            <!-- PHASE 6: ROUND OVER & REVEAL -->
+            <section id="phase-over" class="phase-panel hidden">
+                <div class="panel-box victory-box">
+                    <h1 id="winner-title">RUNDENENDE</h1>
+                    <p id="winner-desc" class="winner-desc"></p>
+                    <div class="secret-word-reveal" id="secret-word-reveal"></div>
+
+                    <div class="scoreboard" id="scoreboard-container"></div>
+
+                    <div class="host-controls">
+                        <button id="btn-next-round" class="btn btn-primary">Nächste Runde 🔄</button>
+                        <button id="btn-lobby" class="btn btn-secondary">Zurück zur Lobby</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="static/js/game.js?v=1.0"></script>
+</body>
+</html>

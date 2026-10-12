@@ -231,6 +231,15 @@ const partyState = {
             maxPlayers: 10,
             desc: "Finde die Verräter auf der Skeld! Repariere das Raumschiff, rufe Notfall-Besprechungen ein oder eliminiere als Impostor die Besatzung durch die Lüftungsschächte.",
             embedUrl: "/amongus/"
+        },
+        imposter: {
+            id: "imposter",
+            title: "Imposter",
+            icon: "🕵️",
+            minPlayers: 3,
+            maxPlayers: 12,
+            desc: "Das beliebte Social-Deduction-Wortspiel! Alle kennen das Geheimwort – bis auf den Imposter. Gib kluge Ein-Wort-Hinweise, decke den Bluff auf oder errate als Imposter das Wort!",
+            embedUrl: "/imposter/"
         }
     },
     isVotingActive: false,
@@ -241,7 +250,8 @@ const partyState = {
         price_guess: 0,
         monopoly: 0,
         mensch: 0,
-        amongus: 0
+        amongus: 0,
+        imposter: 0
     },
     userVotedGame: null,
     activeModalGameId: null,
@@ -2006,6 +2016,8 @@ function getGameUrl(game, lobbyId) {
         return `/mensch/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}`;
     } else if (game.id === "amongus") {
         return `/amongus/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}`;
+    } else if (game.id === "imposter") {
+        return `/imposter/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}`;
     } else if (game.id === "price_guess") {
         return `/price-guess/`;
     }
@@ -2021,7 +2033,7 @@ function startGameView(game, lobbyId) {
     hudIcon.innerText = game.icon;
     hudTitle.innerText = `${game.title} • Party-Raum`;
 
-    if (game.id === "skribbol" || game.id === "uno" || game.id === "codenames" || game.id === "monopoly" || game.id === "mensch" || game.id === "amongus" || game.id === "price_guess") {
+    if (game.id === "skribbol" || game.id === "uno" || game.id === "codenames" || game.id === "monopoly" || game.id === "mensch" || game.id === "amongus" || game.id === "imposter" || game.id === "price_guess") {
         iframe.src = getGameUrl(game, lobbyId);
     } else {
         iframe.srcdoc = `

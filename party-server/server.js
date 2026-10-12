@@ -11,7 +11,7 @@ class Room {
         this.players = new Map(); // id -> player object
         this.sockets = new Map(); // id -> WebSocket
         this.socketToPlayerId = new Map(); // ws -> playerId
-        this.votes = { skribbol: 0, uno: 0, codenames: 0, price_guess: 0, monopoly: 0, mensch: 0, amongus: 0 };
+        this.votes = { skribbol: 0, uno: 0, codenames: 0, price_guess: 0, monopoly: 0, mensch: 0, amongus: 0, imposter: 0 };
         this.userVotes = new Map(); // playerId -> gameId
         this.isVotingActive = false;
         this.activeModalGameId = null;
@@ -166,7 +166,7 @@ class Room {
     }
 
     recalcVotes() {
-        const counts = { skribbol: 0, uno: 0, codenames: 0, price_guess: 0, monopoly: 0, mensch: 0, amongus: 0 };
+        const counts = { skribbol: 0, uno: 0, codenames: 0, price_guess: 0, monopoly: 0, mensch: 0, amongus: 0, imposter: 0 };
         for (const gameId of this.userVotes.values()) {
             if (counts[gameId] !== undefined) {
                 counts[gameId]++;

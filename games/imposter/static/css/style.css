@@ -1,0 +1,444 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+body, html {
+    width: 100%;
+    height: 100%;
+    background-color: #0b0f19;
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: #f1f5f9;
+    overflow-x: hidden;
+}
+
+#app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 12px;
+}
+
+/* Header */
+#game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(8px);
+    border: 1px solid #334155;
+    border-radius: 14px;
+    margin-bottom: 16px;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.room-tag {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #94a3b8;
+}
+
+.category-badge {
+    background: #3b82f6;
+    color: white;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.round-badge {
+    background: #8b5cf6;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+/* Secret Card */
+#secret-card-section {
+    margin-bottom: 16px;
+}
+
+.secret-card {
+    background: linear-gradient(135deg, #1e293b, #0f172a);
+    border: 2px solid #3b82f6;
+    border-radius: 16px;
+    padding: 16px;
+    text-align: center;
+    cursor: pointer;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+    transition: transform 0.15s, border-color 0.2s;
+}
+
+.secret-card:active {
+    transform: scale(0.98);
+}
+
+.card-front {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.card-front .lock-icon {
+    font-size: 2rem;
+}
+
+.card-front h3 {
+    font-size: 1.1rem;
+    color: #38bdf8;
+}
+
+.card-front p {
+    font-size: 0.8rem;
+    color: #94a3b8;
+}
+
+.card-revealed {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.card-revealed.imposter {
+    border: 2px solid #ef4444;
+}
+
+.role-tag-big {
+    font-size: 1.8rem;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+}
+
+.role-tag-big.player {
+    color: #10b981;
+}
+
+.role-tag-big.imposter {
+    color: #ef4444;
+}
+
+.secret-word-display {
+    font-size: 2.2rem;
+    font-weight: 900;
+    color: #f8fafc;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 8px 24px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Panels */
+.phase-panel {
+    flex: 1;
+}
+
+.panel-box {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 20px;
+    padding: 24px;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
+}
+
+.panel-box h2 {
+    font-size: 1.5rem;
+    font-weight: 900;
+    text-align: center;
+    margin-bottom: 6px;
+}
+
+.subtitle {
+    text-align: center;
+    color: #94a3b8;
+    font-size: 0.9rem;
+    margin-bottom: 20px;
+}
+
+/* Category select */
+.category-selector {
+    background: #1e293b;
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.category-selector select {
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #fff;
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    outline: none;
+}
+
+/* Roster */
+.player-roster {
+    background: #1e293b;
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 20px;
+}
+
+.roster-title {
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #38bdf8;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+}
+
+.roster-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 8px;
+}
+
+.roster-pill {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* Controls */
+.host-controls {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 14px;
+}
+
+.btn {
+    padding: 12px 24px;
+    border-radius: 10px;
+    border: none;
+    font-weight: 800;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn:active {
+    transform: scale(0.97);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    color: white;
+}
+
+.btn-secondary {
+    background: #334155;
+    color: #e2e8f0;
+}
+
+/* Clue Phase */
+.turn-announcement {
+    background: rgba(59, 130, 246, 0.15);
+    border: 1px solid #3b82f6;
+    border-radius: 12px;
+    padding: 12px;
+    text-align: center;
+    font-weight: 800;
+    font-size: 1.1rem;
+    color: #38bdf8;
+    margin-bottom: 16px;
+}
+
+.clue-history {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+    max-height: 280px;
+    overflow-y: auto;
+}
+
+.clue-bubble {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 10px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.clue-word {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: #f8fafc;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 4px 12px;
+    border-radius: 6px;
+}
+
+.clue-input-box {
+    background: #1e293b;
+    border: 2px solid #3b82f6;
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+}
+
+.clue-input-box input {
+    width: 100%;
+    background: #0f172a;
+    border: 1px solid #475569;
+    padding: 12px;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 1.1rem;
+    margin: 10px 0;
+    text-align: center;
+    font-weight: 700;
+}
+
+/* Discussion */
+.discussion-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.timer-circle {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+    border: 2px solid #ef4444;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-weight: 900;
+    font-size: 1.1rem;
+}
+
+.clue-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+    margin: 16px 0;
+}
+
+.clue-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 10px;
+}
+
+/* Voting */
+.voting-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.vote-btn-card {
+    background: #1e293b;
+    border: 2px solid #334155;
+    border-radius: 12px;
+    padding: 14px 10px;
+    text-align: center;
+    cursor: pointer;
+    font-weight: 800;
+    font-size: 0.95rem;
+    color: #f1f5f9;
+    transition: all 0.2s;
+}
+
+.vote-btn-card:hover {
+    border-color: #ef4444;
+    background: #271e2b;
+}
+
+.vote-btn-card.selected {
+    border-color: #ef4444;
+    background: rgba(239, 68, 68, 0.25);
+}
+
+.vote-status-bar {
+    text-align: center;
+    font-size: 0.85rem;
+    color: #94a3b8;
+}
+
+/* Guessing */
+.guess-form-box {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.guess-form-box input {
+    background: #1e293b;
+    border: 2px solid #ef4444;
+    border-radius: 10px;
+    padding: 12px;
+    color: #fff;
+    font-size: 1.2rem;
+    text-align: center;
+    font-weight: 800;
+}
+
+/* Victory */
+.victory-box {
+    text-align: center;
+}
+
+.winner-desc {
+    color: #cbd5e1;
+    font-size: 1.1rem;
+    margin: 12px 0;
+}
+
+.secret-word-reveal {
+    background: rgba(16, 185, 129, 0.15);
+    border: 2px solid #10b981;
+    border-radius: 12px;
+    padding: 12px;
+    font-size: 1.3rem;
+    font-weight: 900;
+    color: #10b981;
+    margin-bottom: 20px;
+}
+
+.hidden {
+    display: none !important;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
