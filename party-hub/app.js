@@ -2021,7 +2021,7 @@ function startGameView(game, lobbyId) {
     hudIcon.innerText = game.icon;
     hudTitle.innerText = `${game.title} • Party-Raum`;
 
-    if (game.id === "skribbol" || game.id === "uno" || game.id === "codenames" || game.id === "monopoly" || game.id === "mensch" || game.id === "price_guess") {
+    if (game.id === "skribbol" || game.id === "uno" || game.id === "codenames" || game.id === "monopoly" || game.id === "mensch" || game.id === "amongus" || game.id === "price_guess") {
         iframe.src = getGameUrl(game, lobbyId);
     } else {
         iframe.srcdoc = `
