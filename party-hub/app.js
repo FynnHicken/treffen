@@ -1101,6 +1101,18 @@ function handleServerMessage(data) {
             partyState.activeModalGameId = null;
             break;
 
+        case "SLOT_SPIN_START":
+            handleServerSlotSpin(data);
+            break;
+
+        case "SLOT_MODAL_SYNC":
+            if (data.action === "open") {
+                openSlotMachineModal(false);
+            } else if (data.action === "close") {
+                closeSlotMachineModal(false);
+            }
+            break;
+
         case "READY_STATE_CHANGED":
             if (data.playerId) {
                 const p = partyState.players.find(x => x.id === data.playerId);
@@ -1991,27 +2003,303 @@ function castVote(gameId) {
 // Roulette (Random Game Picker)
 // ==========================================================================
 
-window.spinRoulette = function() {
+// ==========================================================================
+// Slot Machine Engine (Einarmiger Bandit - Synced Game Picker)
+// ==========================================================================
+
+const SLOT_GAMES = [
+    { id: "uno",         title: "UNO",             icon: "🃏" },
+    { id: "skribbol",    title: "skribbl",         icon: "🎨" },
+    { id: "codenames",   title: "Codenames",       icon: "🕵️‍♂️" },
+    { id: "price_guess", title: "Guess The Price", icon: "🏷️" },
+    { id: "monopoly",    title: "Monopoly 3D",     icon: "🎩" }
+];
+
+let isSlotSpinning = false;
+let slotCountdownTimer = null;
+let slotAudioCtx = null;
+
+function getSlotAudioContext() {
+    try {
+        if (!slotAudioCtx) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtx) slotAudioCtx = new AudioCtx();
+        }
+        if (slotAudioCtx && slotAudioCtx.state === "suspended") {
+            slotAudioCtx.resume();
+        }
+    } catch (e) {}
+    return slotAudioCtx;
+}
+
+function playSlotSound(type) {
+    const ctx = getSlotAudioContext();
+    if (!ctx) return;
+    try {
+        const now = ctx.currentTime;
+        if (type === "lever") {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(140, now);
+            osc.frequency.exponentialRampToValueAtTime(70, now + 0.22);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.23);
+        } else if (type === "tick") {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "triangle";
+            osc.frequency.setValueAtTime(480 + Math.random() * 120, now);
+            gain.gain.setValueAtTime(0.12, now);
+            gain.gain.exponentialRampToValueAtTime(0.005, now + 0.05);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.06);
+        } else if (type === "stop") {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "square";
+            osc.frequency.setValueAtTime(260, now);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.13);
+        } else if (type === "jackpot") {
+            const notes = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99];
+            notes.forEach((freq, idx) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = "triangle";
+                osc.frequency.setValueAtTime(freq, now + idx * 0.09);
+                gain.gain.setValueAtTime(0.25, now + idx * 0.09);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + idx * 0.09 + 0.28);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now + idx * 0.09);
+                osc.stop(now + idx * 0.09 + 0.3);
+            });
+        }
+    } catch (e) {}
+}
+
+function initSlotReels() {
+    for (let r = 0; r < 3; r++) {
+        const strip = document.getElementById(`slotReelStrip${r}`);
+        if (!strip) continue;
+        strip.innerHTML = "";
+        strip.style.transition = "none";
+        strip.style.transform = "translateY(0px)";
+
+        // Build a continuous strip of 8 cycles (40 items) so every reel has plenty of items
+        for (let cycle = 0; cycle < 8; cycle++) {
+            SLOT_GAMES.forEach(game => {
+                const item = document.createElement("div");
+                item.className = "slot-item";
+                item.dataset.gameId = game.id;
+                item.innerHTML = `
+                    <span class="slot-item-icon">${game.icon}</span>
+                    <span class="slot-item-title">${game.title}</span>
+                `;
+                strip.appendChild(item);
+            });
+        }
+    }
+}
+
+window.openSlotMachineModal = function(broadcastIt = true) {
+    const modal = document.getElementById("slotModal");
+    if (!modal) return;
+    initSlotReels();
+
+    const banner = document.getElementById("slotResultBanner");
+    if (banner) banner.style.display = "none";
+
+    const spinBtn = document.getElementById("slotSpinActionBtn");
+    const subTitle = document.getElementById("slotStatusSubtitle");
+
+    if (spinBtn) {
+        if (partyState.isHost) {
+            spinBtn.disabled = false;
+            spinBtn.innerText = "🕹️ JETZT DREHEN!";
+        } else {
+            spinBtn.disabled = true;
+            spinBtn.innerText = "⏳ Warten auf Host...";
+        }
+    }
+
+    if (subTitle) {
+        subTitle.innerText = partyState.isHost
+            ? "Ziehe am Hebel, um das Schicksal des Spieleabends zu entscheiden!"
+            : "Der Party-Host zieht am Hebel der Slot Machine...";
+    }
+
+    modal.style.display = "flex";
+
+    if (broadcastIt && partyState.isHost) {
+        broadcast({
+            type: "SLOT_MODAL_SYNC",
+            action: "open"
+        });
+    }
+};
+
+window.closeSlotMachineModal = function(broadcastIt = true) {
+    if (isSlotSpinning) return;
+    const modal = document.getElementById("slotModal");
+    if (modal) modal.style.display = "none";
+    if (slotCountdownTimer) {
+        clearInterval(slotCountdownTimer);
+        slotCountdownTimer = null;
+    }
+    if (broadcastIt && partyState.isHost) {
+        broadcast({
+            type: "SLOT_MODAL_SYNC",
+            action: "close"
+        });
+    }
+};
+
+window.triggerSlotLeverPull = function() {
     if (!partyState.isHost) {
-        showToast("⚠️ Nur der Party-Leader kann das Roulette drehen!");
+        showToast("⚠️ Nur der Party-Leader kann den Hebel ziehen!");
         return;
     }
-    const available = ["skribbol", "uno", "codenames", "price_guess", "monopoly"];
-    const pick = available[Math.floor(Math.random() * available.length)];
-    const chosenGame = partyState.games[pick];
+    if (isSlotSpinning) return;
 
-    const card = document.querySelector(`[data-game-id="${pick}"]`);
-    if (card) {
-        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        card.style.transform = "scale(1.06)";
-        card.style.borderColor = "#ec4899";
-        setTimeout(() => {
-            card.style.transform = "";
-            card.style.borderColor = "";
-            openGameModal(pick);
-        }, 600);
+    // Pick random target game
+    const winningGame = SLOT_GAMES[Math.floor(Math.random() * SLOT_GAMES.length)];
+    const spinData = {
+        type: "SLOT_SPIN_START",
+        winningGameId: winningGame.id,
+        spinId: Date.now()
+    };
+
+    broadcast(spinData);
+    handleServerSlotSpin(spinData);
+};
+
+function handleServerSlotSpin(data) {
+    if (!data || !data.winningGameId) return;
+
+    const modal = document.getElementById("slotModal");
+    if (modal && modal.style.display === "none") {
+        modal.style.display = "flex";
     }
-    showToast(`🎰 Das Schicksal hat entschieden: ${chosenGame.title}!`);
+
+    const lever = document.getElementById("slotLeverContainer");
+    if (lever) {
+        lever.classList.add("pulled");
+        playSlotSound("lever");
+        setTimeout(() => lever.classList.remove("pulled"), 400);
+    }
+
+    const spinBtn = document.getElementById("slotSpinActionBtn");
+    if (spinBtn) spinBtn.disabled = true;
+
+    const banner = document.getElementById("slotResultBanner");
+    if (banner) banner.style.display = "none";
+
+    isSlotSpinning = true;
+
+    const targetGameId = data.winningGameId;
+    const targetIdx = SLOT_GAMES.findIndex(g => g.id === targetGameId);
+    const itemHeight = 140;
+
+    // Slot reels timing: Reel 0 stops first, Reel 1 stops next, Reel 2 creates the jackpot!
+    const spinDurations = [2000, 2600, 3200];
+
+    // Sound tick interval during spinning
+    let tickCount = 0;
+    const tickInterval = setInterval(() => {
+        if (!isSlotSpinning) {
+            clearInterval(tickInterval);
+            return;
+        }
+        playSlotSound("tick");
+        tickCount++;
+        if (tickCount > 35) clearInterval(tickInterval);
+    }, 120);
+
+    for (let r = 0; r < 3; r++) {
+        const strip = document.getElementById(`slotReelStrip${r}`);
+        if (!strip) continue;
+
+        // Number of full rotations
+        const rounds = 2 + r;
+        const totalItemsInCycle = SLOT_GAMES.length;
+        const stopIndex = (rounds * totalItemsInCycle) + (targetIdx >= 0 ? targetIdx : 0);
+        const finalTranslateY = -(stopIndex * itemHeight);
+
+        strip.style.transition = `transform ${spinDurations[r]}ms cubic-bezier(0.2, 0.9, 0.3, 1.02)`;
+        strip.style.transform = `translateY(${finalTranslateY}px)`;
+
+        setTimeout(() => {
+            playSlotSound("stop");
+        }, spinDurations[r]);
+    }
+
+    // When the last reel finishes: JACKPOT!
+    setTimeout(() => {
+        clearInterval(tickInterval);
+        isSlotSpinning = false;
+        playSlotSound("jackpot");
+
+        const winningGame = SLOT_GAMES.find(g => g.id === targetGameId) || SLOT_GAMES[0];
+        const winnerTitleEl = document.getElementById("slotWinnerTitle");
+        const countdownEl = document.getElementById("slotWinnerCountdown");
+
+        // Flash/glow all 3 matching reels
+        for (let r = 0; r < 3; r++) {
+            const strip = document.getElementById(`slotReelStrip${r}`);
+            if (strip && strip.children) {
+                const rounds = 3 + r;
+                const stopIndex = (rounds * SLOT_GAMES.length) + (targetIdx >= 0 ? targetIdx : 0);
+                const winningEl = strip.children[stopIndex];
+                if (winningEl) {
+                    winningEl.style.animation = "pulse 0.8s infinite alternate";
+                    winningEl.style.color = "#FF007F";
+                }
+            }
+        }
+
+        if (winnerTitleEl) winnerTitleEl.innerText = `3x MATCH: ${winningGame.icon} ${winningGame.title}!`;
+        if (banner) banner.style.display = "block";
+
+        let countdown = 3;
+        if (countdownEl) countdownEl.innerText = `Alle 3 Walzen gleich! Spiel startet in ${countdown}...`;
+
+        if (slotCountdownTimer) clearInterval(slotCountdownTimer);
+        slotCountdownTimer = setInterval(() => {
+            countdown--;
+            if (countdown > 0) {
+                if (countdownEl) countdownEl.innerText = `Alle 3 Walzen gleich! Spiel startet in ${countdown}...`;
+            } else {
+                clearInterval(slotCountdownTimer);
+                slotCountdownTimer = null;
+                const modal = document.getElementById("slotModal");
+                if (modal) modal.style.display = "none";
+
+                // Open the picked game modal for all players
+                if (partyState.isHost) {
+                    openGameModal(targetGameId);
+                }
+            }
+        }, 1000);
+
+        showToast(`🎰 3/3 MATCH! JACKPOT: ${winningGame.title}!`);
+    }, spinDurations[2] + 150);
+}
+
+// Fallback for legacy calls
+window.spinRoulette = function() {
+    window.openSlotMachineModal();
 };
 
 // ==========================================================================

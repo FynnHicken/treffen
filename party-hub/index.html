@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Treffen – Dein Spieleabend</title>
-    <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="themes.css">
+    <link rel="stylesheet" href="styles.css?v=slot2">
+    <link rel="stylesheet" href="themes.css?v=slot2">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Comic+Neue:wght@400;700&family=Orbitron:wght@600;800&family=Outfit:wght@400;600;700&family=Patrick+Hand&family=Plus+Jakarta+Sans:wght@600;800&display=swap" rel="stylesheet">
@@ -239,28 +239,98 @@
                     </div>
                 </div>
 
-                <!-- Game Card 6: Roulette (Random Picker) -->
+                <!-- Game Card 6: Slot Machine (Einarmiger Bandit - Game Picker) -->
                 <div class="game-card roulette-card" data-game-id="random" data-category="quick">
                     <div class="card-media random-bg">
                         <div class="card-icon-big">🎰</div>
                     </div>
                     <div class="card-body">
                         <div class="card-title-row">
-                            <h3>Zufalls-Roulette</h3>
+                            <h3>Einarmiger Bandit</h3>
                         </div>
                         <div class="card-tags">
                             <span class="tag">👥 2–12 Spieler</span>
+                            <span class="tag" style="background: rgba(236,72,153,0.18); color: #be185d;">✨ Casino Mode</span>
                         </div>
                     </div>
                     <div class="card-actions">
-                        <button class="action-btn roulette-btn" onclick="spinRoulette()">
-                            🎲 Zufälliges Spiel wählen
+                        <button class="action-btn roulette-btn" onclick="openSlotMachineModal()" title="Zufälliges Spiel über die Slot Machine auslosen">
+                            🎰 Hebel ziehen
                         </button>
                     </div>
                 </div>
             </div>
         </section>
     </main>
+
+    <!-- Slot Machine / Einarmiger Bandit Modal -->
+    <div class="modal-backdrop" id="slotModal" style="display: none; z-index: 9999;">
+        <div class="modal-card slot-modal-card">
+            <button class="close-modal-btn" onclick="closeSlotMachineModal()">✕</button>
+            <div class="slot-header">
+                <span class="slot-neon-badge">TREFFEN CASINO</span>
+                <h2 class="slot-title">🎰 Einarmiger Bandit</h2>
+                <p class="slot-subtitle" id="slotStatusSubtitle">Ziehe am Hebel, um das Schicksal des Spieleabends zu entscheiden!</p>
+            </div>
+
+            <!-- Arcade Slot Frame -->
+            <div class="slot-machine-body">
+                <div class="slot-lights-bar top">
+                    <span class="bulb"></span><span class="bulb"></span><span class="bulb"></span><span class="bulb"></span><span class="bulb"></span><span class="bulb"></span><span class="bulb"></span>
+                </div>
+
+                <div class="slot-reels-stage">
+                    <!-- Reel 1 -->
+                    <div class="slot-reel-window" id="slotReelWindow0">
+                        <div class="slot-reel-strip" id="slotReelStrip0"></div>
+                        <div class="reel-glass-glare"></div>
+                    </div>
+                    <!-- Reel 2 -->
+                    <div class="slot-reel-window" id="slotReelWindow1">
+                        <div class="slot-reel-strip" id="slotReelStrip1"></div>
+                        <div class="reel-glass-glare"></div>
+                    </div>
+                    <!-- Reel 3 -->
+                    <div class="slot-reel-window" id="slotReelWindow2">
+                        <div class="slot-reel-strip" id="slotReelStrip2"></div>
+                        <div class="reel-glass-glare"></div>
+                    </div>
+                    <!-- Payline Indicator -->
+                    <div class="slot-payline"></div>
+                </div>
+
+                <div class="slot-lights-bar bottom">
+                    <span class="bulb"></span><span class="bulb"></span><span class="bulb"></span><span class="bulb"></span><span class="bulb"></span><span class="bulb"></span><span class="bulb"></span>
+                </div>
+            </div>
+
+            <!-- Slot Result Display -->
+            <div class="slot-result-banner" id="slotResultBanner" style="display: none;">
+                <span class="slot-jackpot-icon">🎉 JACKPOT 🎉</span>
+                <div class="slot-winner-title" id="slotWinnerTitle">UNO!</div>
+                <div class="slot-winner-countdown" id="slotWinnerCountdown">Spiel startet in 3...</div>
+            </div>
+
+            <!-- Slot Controls & Lever -->
+            <div class="slot-controls-row">
+                <div class="slot-lever-container" id="slotLeverContainer" onclick="triggerSlotLeverPull()">
+                    <div class="slot-lever-base"></div>
+                    <div class="slot-lever-arm" id="slotLeverArm">
+                        <div class="slot-lever-knob"></div>
+                    </div>
+                </div>
+
+                <div class="slot-action-buttons">
+                    <button type="button" class="btn-primary-launch slot-spin-btn" id="slotSpinActionBtn" onclick="triggerSlotLeverPull()">
+                        🕹️ JETZT DREHEN!
+                    </button>
+                    <button type="button" class="btn-secondary" onclick="closeSlotMachineModal()" style="font-size: 0.9rem;">
+                        Abbrechen
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Modal for Game Launch / Config -->
     <div class="modal-backdrop" id="gameModal" style="display: none;">
@@ -527,6 +597,6 @@
     <!-- Toast Notification -->
     <div class="toast" id="toast">Link kopiert!</div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=slot2"></script>
 </body>
 </html>
