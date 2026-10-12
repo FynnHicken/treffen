@@ -82,9 +82,123 @@
         }
     }
 
+    let pieceElements = {}; // key `${color}_${piece_id}` -> HTMLElement
+    let isAnimatingMove = false;
+
+    function getPixelForPiecePos(color, pState, pPos, pieceId) {
+        if (!gameState) return { x: 0, y: 0 };
+        const meta = gameState.color_meta[color];
+        if (!meta) return { x: 0, y: 0 };
+
+        if (pState === 'BASE') {
+            return {
+                x: meta.home_x[pieceId] !== undefined ? meta.home_x[pieceId] : 84,
+                y: meta.home_y[pieceId] !== undefined ? meta.home_y[pieceId] : 84
+            };
+        } else if (pState === 'TRACK') {
+            const coord = gameState.track_pixels[pPos];
+            return coord ? { x: coord.x, y: coord.y } : { x: 0, y: 0 };
+        } else if (pState === 'GOAL') {
+            const goals = gameState.goal_pixels[color];
+            if (goals && goals[pPos]) {
+                return { x: goals[pPos].x, y: goals[pPos].y };
+            }
+        }
+        return { x: 0, y: 0 };
+    }
+
+    async function animateStepByStep(color, pieceId, path, beatenPiece) {
+        const key = `${color}_${pieceId}`;
+        const pieceEl = pieceElements[key];
+        if (!pieceEl || !path || path.length === 0) return;
+
+        isAnimatingMove = true;
+
+        for (let i = 0; i < path.length; i++) {
+            const step = path[i];
+            const pt = getPixelForPiecePos(color, step.state, step.pos, pieceId);
+            const leftPct = (pt.x / 1024) * 100;
+            const topPct = (pt.y / 1024) * 100;
+
+            pieceEl.classList.add('hopping');
+            pieceEl.style.left = `${leftPct}%`;
+            pieceEl.style.top = `${topPct}%`;
+
+            // Wait for step hop transition
+            await new Promise(r => setTimeout(r, 200));
+            pieceEl.classList.remove('hopping');
+            await new Promise(r => setTimeout(r, 40));
+        }
+
+        // If a piece was beaten, animate it retreating to base
+        if (beatenPiece) {
+            const beatenKey = `${beatenPiece.color}_${beatenPiece.piece_id}`;
+            const beatenEl = pieceElements[beatenKey];
+            if (beatenEl) {
+                const basePt = getPixelForPiecePos(beatenPiece.color, 'BASE', -1, beatenPiece.piece_id);
+                beatenEl.classList.add('hopping');
+                beatenEl.style.left = `${(basePt.x / 1024) * 100}%`;
+                beatenEl.style.top = `${(basePt.y / 1024) * 100}%`;
+                await new Promise(r => setTimeout(r, 220));
+                beatenEl.classList.remove('hopping');
+            }
+        }
+
+        isAnimatingMove = false;
+    }
+
     function handleServerMessage(msg) {
         if (msg.type === 'ERROR') {
             alert(msg.message || 'Fehler aufgetreten!');
+            return;
+        }
+
+        if (msg.type === 'PIECE_MOVED') {
+            const move = msg.result && msg.result.move;
+            const beaten = msg.result && msg.result.beaten;
+            const movingPlayer = gameState ? gameState.players.find(p => p.pieces.some(x => x.piece_id === (move ? move.piece_id : null))) : null;
+            const movingColor = (msg.state && msg.state.current_player_idx !== undefined) 
+                ? (gameState ? gameState.current_player.color : 'yellow') 
+                : 'yellow';
+
+            const runAnimationAndRender = async () => {
+                if (move && move.path && move.path.length > 0) {
+                    await animateStepByStep(movingColor, move.piece_id, move.path, beaten);
+                }
+                const prevStatus = gameState ? gameState.status : null;
+                gameState = msg.state;
+                renderGame();
+                if (prevStatus === 'LOBBY' && gameState.status === 'PLAYING') {
+                    closeModal('modal-lobby');
+                }
+                if (gameState.status === 'GAME_OVER') {
+                    showGameOverModal();
+                }
+            };
+            runAnimationAndRender();
+            return;
+        }
+
+        if (msg.type === 'STATE_UPDATE' && msg.bot_action && msg.bot_action.type === 'BOT_MOVED') {
+            const botMove = msg.bot_action.move;
+            const beaten = msg.bot_action.result && msg.bot_action.result.beaten;
+            const movingColor = gameState ? gameState.current_player.color : 'yellow';
+
+            const runBotAnimationAndRender = async () => {
+                if (botMove && botMove.path && botMove.path.length > 0) {
+                    await animateStepByStep(movingColor, botMove.piece_id, botMove.path, beaten);
+                }
+                const prevStatus = gameState ? gameState.status : null;
+                gameState = msg.state;
+                renderGame();
+                if (prevStatus === 'LOBBY' && gameState.status === 'PLAYING') {
+                    closeModal('modal-lobby');
+                }
+                if (gameState.status === 'GAME_OVER') {
+                    showGameOverModal();
+                }
+            };
+            runBotAnimationAndRender();
             return;
         }
 
@@ -161,7 +275,9 @@
         }
 
         // Pieces on board
-        renderPiecesOnBoard();
+        if (!isAnimatingMove) {
+            renderPiecesOnBoard();
+        }
 
         // Player list
         const playerListEl = document.getElementById('players-list');
@@ -197,37 +313,24 @@
         const overlay = document.getElementById('board-overlay');
         if (!overlay || !gameState) return;
 
-        overlay.innerHTML = '';
-
         const validPieceIds = (isMyTurn && gameState.valid_moves) ? new Set(gameState.valid_moves.map(m => m.piece_id)) : new Set();
 
         gameState.players.forEach(pl => {
-            const meta = gameState.color_meta[pl.color];
             pl.pieces.forEach(p => {
-                let px = 0, py = 0;
-                if (p.state === 'BASE') {
-                    px = meta.home_x[p.piece_id];
-                    py = meta.home_y[p.piece_id];
-                } else if (p.state === 'TRACK') {
-                    const coord = gameState.track_pixels[p.track_pos];
-                    if (coord) {
-                        px = coord.x;
-                        py = coord.y;
-                    }
-                } else if (p.state === 'GOAL') {
-                    const goals = gameState.goal_pixels[pl.color];
-                    if (goals && goals[p.goal_pos]) {
-                        px = goals[p.goal_pos].x;
-                        py = goals[p.goal_pos].y;
-                    }
+                const key = `${pl.color}_${p.piece_id}`;
+                let pieceEl = pieceElements[key];
+
+                if (!pieceEl) {
+                    pieceEl = document.createElement('div');
+                    pieceEl.className = `piece piece-${pl.color}`;
+                    pieceElements[key] = pieceEl;
+                    overlay.appendChild(pieceEl);
                 }
 
-                // Convert 1024x1024 coord to percentage
-                const leftPct = (px / 1024) * 100;
-                const topPct = (py / 1024) * 100;
+                const pt = getPixelForPiecePos(pl.color, p.state, (p.state === 'TRACK' ? p.track_pos : p.goal_pos), p.piece_id);
+                const leftPct = (pt.x / 1024) * 100;
+                const topPct = (pt.y / 1024) * 100;
 
-                const pieceEl = document.createElement('div');
-                pieceEl.className = `piece piece-${pl.color}`;
                 pieceEl.style.left = `${leftPct}%`;
                 pieceEl.style.top = `${topPct}%`;
 
@@ -237,9 +340,10 @@
                     pieceEl.onclick = () => {
                         sendWsMessage({ action: 'MOVE_PIECE', piece_id: p.piece_id });
                     };
+                } else {
+                    pieceEl.classList.remove('can-move');
+                    pieceEl.onclick = null;
                 }
-
-                overlay.appendChild(pieceEl);
             });
         });
     }

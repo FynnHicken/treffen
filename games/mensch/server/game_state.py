@@ -13,32 +13,32 @@ COLOR_META = {
         "hex": "#f1c40f",
         "start_pos": 0,       # Track index for Start "A"
         "target_entry": 39,   # Last common track index before entering goal
-        "home_x": [82, 166, 82, 166],
-        "home_y": [82, 82, 166, 166]
+        "home_x": [84, 170, 84, 170],
+        "home_y": [84, 84, 170, 170]
     },
     "green": {
         "name": "Grün",
         "hex": "#27ae60",
         "start_pos": 10,
         "target_entry": 9,
-        "home_x": [858, 942, 858, 942],
-        "home_y": [82, 82, 166, 166]
+        "home_x": [851, 933, 851, 933],
+        "home_y": [84, 84, 170, 170]
     },
     "red": {
         "name": "Rot",
         "hex": "#e74c3c",
         "start_pos": 20,
         "target_entry": 19,
-        "home_x": [858, 942, 858, 942],
-        "home_y": [858, 858, 942, 942]
+        "home_x": [850, 932, 851, 933],
+        "home_y": [850, 851, 932, 933]
     },
     "black": {
         "name": "Schwarz",
         "hex": "#2c3e50",
         "start_pos": 30,
         "target_entry": 29,
-        "home_x": [82, 166, 82, 166],
-        "home_y": [858, 858, 942, 942]
+        "home_x": [84, 170, 87, 167],
+        "home_y": [849, 849, 927, 927]
     }
 }
 
@@ -77,8 +77,8 @@ GRID_GOAL_COORDS = {
 
 # Precompute pixel positions (x, y) on 1024x1024 board
 def _grid_to_pixel(r: int, c: int) -> dict:
-    x = 84 * c + 92
-    y = 84 * r + 92
+    x = int(round(89.0 + c * 84.5))
+    y = int(round(89.0 + r * 84.5))
     return {"x": x, "y": y}
 
 TRACK_PIXELS = [_grid_to_pixel(r, c) for (r, c) in GRID_TRACK_COORDS]
@@ -280,7 +280,6 @@ class GameRoom:
             # Check if start square is blocked by own piece
             piece_on_start = self._piece_at_track_pos(start_idx)
             if not (piece_on_start and piece_on_start.color == player.color):
-                # We can move one piece from base onto the start field
                 first_base_piece = player.pieces_in_base()[0]
                 moves.append({
                     "piece_id": first_base_piece.piece_id,
@@ -289,6 +288,7 @@ class GameRoom:
                     "from_pos": -1,
                     "to_state": "TRACK",
                     "to_pos": start_idx,
+                    "path": [{"state": "TRACK", "pos": start_idx}],
                     "beats_piece": piece_on_start.to_dict() if piece_on_start else None,
                     "description": f"Figur aus dem Haus auf Startfeld setzen"
                 })
@@ -302,6 +302,12 @@ class GameRoom:
                 dest_piece = self._piece_at_track_pos(new_track_pos)
                 if dest_piece and dest_piece.color == player.color:
                     continue  # Cannot land on own piece
+                
+                path = [
+                    {"state": "TRACK", "pos": (p.track_pos + s) % 40}
+                    for s in range(1, roll + 1)
+                ]
+
                 moves.append({
                     "piece_id": p.piece_id,
                     "type": "MOVE_TRACK",
@@ -309,15 +315,24 @@ class GameRoom:
                     "from_pos": p.track_pos,
                     "to_state": "TRACK",
                     "to_pos": new_track_pos,
+                    "path": path,
                     "beats_piece": dest_piece.to_dict() if dest_piece else None,
                     "description": f"Figur um {roll} Felder vorrücken" + (f" (schlägt {dest_piece.color}!)" if dest_piece else "")
                 })
             elif new_steps <= 43:
                 # Entering or advancing into the home goal (a=0, b=1, c=2, d=3)
                 goal_target = new_steps - 40
-                # Check if target goal house is free
                 existing_in_goal = any(x.state == "GOAL" and x.goal_pos == goal_target for x in player.pieces)
                 if not existing_in_goal:
+                    # Intermediate track steps up to target entry (steps_taken < 40), then goal steps
+                    path = []
+                    steps_on_track = 39 - p.steps_taken
+                    for s in range(1, steps_on_track + 1):
+                        path.append({"state": "TRACK", "pos": (p.track_pos + s) % 40})
+                    # Goal steps 0..goal_target
+                    for g in range(0, goal_target + 1):
+                        path.append({"state": "GOAL", "pos": g})
+
                     moves.append({
                         "piece_id": p.piece_id,
                         "type": "ENTER_GOAL",
@@ -325,6 +340,7 @@ class GameRoom:
                         "from_pos": p.track_pos,
                         "to_state": "GOAL",
                         "to_pos": goal_target,
+                        "path": path,
                         "beats_piece": None,
                         "description": f"Figur ins Zielfeld {chr(ord('a') + goal_target).upper()} ziehen"
                     })
@@ -335,6 +351,10 @@ class GameRoom:
             if new_goal_pos <= 3:
                 existing_in_goal = any(x.state == "GOAL" and x.goal_pos == new_goal_pos for x in player.pieces)
                 if not existing_in_goal:
+                    path = [
+                        {"state": "GOAL", "pos": g}
+                        for g in range(p.goal_pos + 1, new_goal_pos + 1)
+                    ]
                     moves.append({
                         "piece_id": p.piece_id,
                         "type": "ADVANCE_GOAL",
@@ -342,6 +362,7 @@ class GameRoom:
                         "from_pos": p.goal_pos,
                         "to_state": "GOAL",
                         "to_pos": new_goal_pos,
+                        "path": path,
                         "beats_piece": None,
                         "description": f"Figur im Ziel nach Feld {chr(ord('a') + new_goal_pos).upper()} vorziehen"
                     })
