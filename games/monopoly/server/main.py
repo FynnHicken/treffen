@@ -293,6 +293,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 res = room.build_house(player_id, sq_idx)
                 await broadcast_room(room_id, {
                     "type": "HOUSE_BUILT",
+                    "actor_id": player_id,
+                    "sq_idx": sq_idx,
                     "result": res,
                     "state": room.to_dict()
                 })
@@ -302,6 +304,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 res = room.sell_house(player_id, sq_idx)
                 await broadcast_room(room_id, {
                     "type": "HOUSE_SOLD",
+                    "actor_id": player_id,
+                    "sq_idx": sq_idx,
                     "result": res,
                     "state": room.to_dict()
                 })
@@ -320,6 +324,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 )
                 await broadcast_room(room_id, {
                     "type": "TRADE_PROPOSED",
+                    "actor_id": player_id,
                     "result": res,
                     "state": room.to_dict()
                 })
@@ -365,6 +370,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 res = room.toggle_mortgage(player_id, sq_idx)
                 await broadcast_room(room_id, {
                     "type": "MORTGAGE_TOGGLED",
+                    "actor_id": player_id,
+                    "sq_idx": sq_idx,
                     "result": res,
                     "state": room.to_dict()
                 })
@@ -373,6 +380,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 res = room.pay_bail(player_id)
                 await broadcast_room(room_id, {
                     "type": "BAIL_PAID",
+                    "actor_id": player_id,
                     "result": res,
                     "state": room.to_dict()
                 })
@@ -381,6 +389,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 res = room.use_jail_card(player_id)
                 await broadcast_room(room_id, {
                     "type": "JAIL_CARD_USED",
+                    "actor_id": player_id,
                     "result": res,
                     "state": room.to_dict()
                 })

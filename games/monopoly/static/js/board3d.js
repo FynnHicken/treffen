@@ -213,6 +213,20 @@
         return cardTextureCache[sqIdx];
     }
 
+    const jailFreeTextureCache = {};
+    function getJailFreeTexture(cardIdx) {
+        const key = (cardIdx % 2 === 1) ? 'gemeinschaft_16' : 'ereignis_16';
+        if (!jailFreeTextureCache[key]) {
+            const url = `static/assets/chance_chest/cards/${key}.png`;
+            const tex = new THREE.TextureLoader().load(url);
+            tex.colorSpace = THREE.SRGBColorSpace || THREE.sRGBEncoding;
+            tex.generateMipmaps = true;
+            tex.minFilter = THREE.LinearMipmapLinearFilter;
+            jailFreeTextureCache[key] = tex;
+        }
+        return jailFreeTextureCache[key];
+    }
+
     let banknoteTexture = null;
     function getBanknoteTexture() {
         if (!banknoteTexture) {
@@ -878,7 +892,7 @@
                         while (cur && (!cur.userData || !cur.userData.type) && cur.parent) {
                             cur = cur.parent;
                         }
-                        if (cur && cur.userData && (cur.userData.type === 'table_card' || cur.userData.type === 'table_bills')) {
+                        if (cur && cur.userData && (cur.userData.type === 'table_card' || cur.userData.type === 'table_jail_card' || cur.userData.type === 'table_bills')) {
                             foundCard = cur;
                             break;
                         }
@@ -929,7 +943,7 @@
                 mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
                 raycaster.setFromCamera(mouse, camera);
 
-                // 1. Click on table card or bills
+                // 1. Click on table card, jail card, or bills
                 if (tableCardsGroup && tableCardsGroup.children.length > 0) {
                     const cardHits = raycaster.intersectObjects(tableCardsGroup.children, true);
                     for (const hit of cardHits) {
@@ -948,6 +962,19 @@
                                 // Already in Nahansicht -> open deed detail modal
                                 if (onSquareClickCallback) {
                                     onSquareClickCallback(cur.userData.sqIdx);
+                                }
+                                if (window.MonopolySound) window.MonopolySound.playCard();
+                                return;
+                            }
+                        } else if (cur && cur.userData && cur.userData.type === 'table_jail_card') {
+                            const seatIdx = cur.userData.seatIdx;
+                            if (currentFocusedSeat !== seatIdx) {
+                                this.focusSeatCards(seatIdx);
+                                if (window.MonopolySound) window.MonopolySound.playClick();
+                                return;
+                            } else {
+                                if (window.MonopolyGame && window.MonopolyGame.showOwnedJailCardModal) {
+                                    window.MonopolyGame.showOwnedJailCardModal(cur.userData.ownerId, cur.userData.jailIdx || 0);
                                 }
                                 if (window.MonopolySound) window.MonopolySound.playCard();
                                 return;
@@ -1737,20 +1764,28 @@
                 };
                 seatGroup.add(billStack);
 
-                // B. Physical 3D Property Deed Cards laid flat on the table
+                // B. Physical 3D Property Deed Cards + "Du kommst aus dem Gefängnis frei" Cards laid flat on the table
                 const cardW = 0.68;
                 const cardH = 1.05;
                 const cardGeo = new THREE.PlaneGeometry(cardW, cardH);
-                const backMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+                const jailCardGeo = new THREE.PlaneGeometry(0.96, 0.66);
 
-                const N = owned.length;
+                const tableItems = owned.map(sqIdx => ({ kind: 'deed', sqIdx }));
+                const jailCardCount = p.jail_cards || 0;
+                for (let j = 0; j < jailCardCount; j++) {
+                    tableItems.push({ kind: 'jail', jailIdx: j });
+                }
+
+                const N = tableItems.length;
                 if (N > 0) {
                     const maxSpan = 4.4;
-                    const spacing = Math.min(0.56, maxSpan / Math.max(N, 1));
+                    const spacing = Math.min(0.58, maxSpan / Math.max(N, 1));
                     const startX = -((N - 1) * spacing) / 2 + 0.35;
 
-                    owned.forEach((sqIdx, k) => {
-                        const tex = getDeedTexture(sqIdx);
+                    tableItems.forEach((item, k) => {
+                        const tex = (item.kind === 'jail')
+                            ? getJailFreeTexture(item.jailIdx)
+                            : getDeedTexture(item.sqIdx);
                         if (!tex) return;
 
                         const cardFrontMat = new THREE.MeshStandardMaterial({
@@ -1760,11 +1795,12 @@
                             side: THREE.DoubleSide
                         });
 
-                        const cardMesh = new THREE.Mesh(cardGeo, cardFrontMat);
+                        const geomToUse = (item.kind === 'jail') ? jailCardGeo : cardGeo;
+                        const cardMesh = new THREE.Mesh(geomToUse, cardFrontMat);
                         cardMesh.rotation.x = -Math.PI / 2;
                         cardMesh.rotation.z = (k % 3 - 1) * 0.035; // Authentic slight hand tilt
 
-                        const cardX = startX + k * spacing;
+                        const cardX = startX + k * spacing + (item.kind === 'jail' ? 0.14 : 0);
                         const cardZ = (k % 2 === 0) ? -0.04 : 0.04; // Subtle alternating stagger
                         const cardY = 0.005 + k * 0.001; // Avoid z-fighting
 
@@ -1773,13 +1809,23 @@
                         cardMesh.receiveShadow = true;
 
                         // Click target metadata & base elevation
-                        cardMesh.userData = {
-                            type: 'table_card',
-                            sqIdx: sqIdx,
-                            ownerId: p.id,
-                            seatIdx: seatIdx,
-                            baseY: cardY
-                        };
+                        if (item.kind === 'jail') {
+                            cardMesh.userData = {
+                                type: 'table_jail_card',
+                                jailIdx: item.jailIdx,
+                                ownerId: p.id,
+                                seatIdx: seatIdx,
+                                baseY: cardY
+                            };
+                        } else {
+                            cardMesh.userData = {
+                                type: 'table_card',
+                                sqIdx: item.sqIdx,
+                                ownerId: p.id,
+                                seatIdx: seatIdx,
+                                baseY: cardY
+                            };
+                        }
 
                         seatGroup.add(cardMesh);
                     });

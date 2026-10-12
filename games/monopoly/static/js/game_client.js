@@ -52,9 +52,10 @@
         popup.classList.remove('hiding');
         popup.style.display = 'block';
 
+        const durationMs = (titleText && titleText.includes('⚠️')) ? 4200 : 2600;
         yourTurnPopupTimeout = setTimeout(() => {
             hideYourTurnPopup();
-        }, 2600);
+        }, durationMs);
     }
 
     function hideYourTurnPopup() {
@@ -1014,17 +1015,60 @@
                 break;
 
             case 'HOUSE_BUILT':
-                if (Sound) Sound.playBuild();
-                resetEndTurnTimer();
+                if (msg.result && msg.result.error) {
+                    if (!msg.result.actor_id || msg.result.actor_id === playerId) {
+                        showDeedErrorBanner(msg.result.error, '⚠️ HAUSBAU NICHT MÖGLICH');
+                    }
+                } else {
+                    if (Sound) Sound.playBuild();
+                    closeModal('modal-deed');
+                    resetEndTurnTimer();
+                }
                 break;
 
             case 'HOUSE_SOLD':
-                if (Sound) Sound.playMoney();
-                resetEndTurnTimer();
+                if (msg.result && msg.result.error) {
+                    if (!msg.result.actor_id || msg.result.actor_id === playerId) {
+                        showDeedErrorBanner(msg.result.error, '⚠️ VERKAUF NICHT MÖGLICH');
+                    }
+                } else {
+                    if (Sound) Sound.playMoney();
+                    closeModal('modal-deed');
+                    resetEndTurnTimer();
+                }
+                break;
+
+            case 'MORTGAGE_TOGGLED':
+                if (msg.result && msg.result.error) {
+                    if (!msg.result.actor_id || msg.result.actor_id === playerId) {
+                        showDeedErrorBanner(msg.result.error, '⚠️ HYPOTHEK NICHT MÖGLICH');
+                    }
+                } else {
+                    if (Sound) Sound.playMoney();
+                    closeModal('modal-deed');
+                    resetEndTurnTimer();
+                }
                 break;
 
             case 'BAIL_PAID':
-                if (Sound) Sound.playMoney();
+                if (msg.result && msg.result.error) {
+                    if (!msg.result.actor_id || msg.result.actor_id === playerId) {
+                        showYourTurnPopup('⚠️ KAUTION NICHT MÖGLICH', msg.result.error);
+                    }
+                } else {
+                    if (Sound) Sound.playMoney();
+                }
+                break;
+
+            case 'JAIL_CARD_USED':
+                if (msg.result && msg.result.error) {
+                    if (!msg.result.actor_id || msg.result.actor_id === playerId) {
+                        showYourTurnPopup('⚠️ KARTE NICHT EINLÖSBAR', msg.result.error);
+                    }
+                } else {
+                    if (Sound) Sound.playCard();
+                    closeModal('modal-deed');
+                }
                 break;
 
             case 'WENT_TO_JAIL':
@@ -1034,7 +1078,7 @@
 
             case 'CARD':
                 if (!isTokenInTransit && msg.card) {
-                    const dDeck = msg.deck || 'Ereignis';
+                    const dDeck = msg.card || msg.deck ? (msg.deck || 'Ereignis') : 'Ereignis';
                     const dText = msg.card.text;
                     const dImg = msg.card.image || msg.card.card_image_filename;
                     const drawerName = msg.player || (gameState && gameState.current_player && gameState.current_player.name) || '';
@@ -1047,7 +1091,11 @@
                 break;
 
             case 'TRADE_PROPOSED':
-                if (msg.state && msg.state.pending_trade) {
+                if (msg.result && msg.result.error) {
+                    if (!msg.result.actor_id || msg.result.actor_id === playerId) {
+                        showYourTurnPopup('⚠️ HANDEL UNGÜLTIG', msg.result.error);
+                    }
+                } else if (msg.state && msg.state.pending_trade) {
                     const trade = msg.state.pending_trade;
                     if (trade.target_id === playerId) {
                         showIncomingTradeModal(trade);
@@ -1514,16 +1562,17 @@
                     if (sq) ownedList.push({ idx: sqIdx, state: st, sq: sq });
                 }
             }
+            const jailCardCount = (targetViewPlayer && targetViewPlayer.jail_cards) ? parseInt(targetViewPlayer.jail_cards) || 0 : 0;
 
             if (tableRackCount) {
-                tableRackCount.textContent = `${ownedList.length} Grundstücke`;
+                tableRackCount.textContent = `${ownedList.length} Grundstücke${jailCardCount > 0 ? ` + ${jailCardCount} 🗝️` : ''}`;
             }
 
-            if (ownedList.length === 0) {
+            if (ownedList.length === 0 && jailCardCount === 0) {
                 tableCardsScroll.innerHTML = `<div class="table-empty-hint">${isViewingMe ? 'Noch keine Straßen im Besitz. Ziehe über das Spielfeld, um Straßen zu erwerben!' : 'Dieser Spieler besitzt noch keine Straßen.'}</div>`;
             } else {
                 ownedList.sort((a, b) => a.idx - b.idx);
-                tableCardsScroll.innerHTML = ownedList.map(item => {
+                const streetCardsHtml = ownedList.map(item => {
                     const sq = item.sq;
                     const st = item.state;
                     const col = GROUP_COLORS[sq.group] || '#444';
@@ -1542,6 +1591,20 @@
                         </div>
                     `;
                 }).join('');
+
+                let jailCardsHtml = '';
+                for (let j = 0; j < jailCardCount; j++) {
+                    const barCol = (j % 2 === 0) ? '#f39c12' : '#3498db';
+                    jailCardsHtml += `
+                        <div class="table-mini-card" style="border-color:rgba(241,196,15,0.5); background:rgba(241,196,15,0.1);" onclick="window.MonopolyGame.showOwnedJailCardModal('${activeViewId}', ${j})" title="Du kommst aus dem Gefängnis frei! (Klicken zum Ansehen / Einlösen)">
+                            <div class="table-mini-card-bar" style="background:${barCol};"></div>
+                            <div class="table-mini-card-name">🗝️ Gefängnisfrei</div>
+                            <div class="table-mini-card-houses"><span style="font-size:9px; color:#f1c40f; font-weight:800;">KARTE</span></div>
+                        </div>
+                    `;
+                }
+
+                tableCardsScroll.innerHTML = streetCardsHtml + jailCardsHtml;
             }
         }
 
@@ -1964,6 +2027,190 @@
         }, 1000);
     }
 
+    function getBuildHouseRestriction(sqIdx) {
+        if (!gameState || !squaresData || !squaresData[sqIdx]) return 'Spielfeld-Daten noch nicht geladen.';
+        const sq = squaresData[sqIdx];
+        if (sq.type !== 'property') return 'Auf Bahnhöfen und Werken können keine Häuser gebaut werden.';
+        const st = gameState.board_state ? gameState.board_state[sqIdx] : null;
+        if (!st || st.owner !== playerId) return 'Dieses Grundstück gehört dir nicht.';
+        if (st.mortgaged) return 'Auf einem mit Hypothek belasteten Grundstück kann nicht gebaut werden!';
+
+        const groupSquares = squaresData.filter(s => s && s.group === sq.group);
+        const missingStreets = groupSquares.filter(s => {
+            const gst = gameState.board_state ? gameState.board_state[s.index] : null;
+            return !gst || gst.owner !== playerId;
+        });
+        if (missingStreets.length > 0) {
+            const missingNames = missingStreets.map(s => s.name).join(', ');
+            return `Du musst erst alle Straßen dieser Farbgruppe besitzen! Dir fehlt noch: ${missingNames}.`;
+        }
+
+        const mortgagedInGroup = groupSquares.filter(s => {
+            const gst = gameState.board_state ? gameState.board_state[s.index] : null;
+            return gst && gst.mortgaged;
+        });
+        if (mortgagedInGroup.length > 0) {
+            return `Hausbau nicht möglich, solange eine Straße dieser Farbgruppe mit einer Hypothek belastet ist (${mortgagedInGroup.map(s => s.name).join(', ')})!`;
+        }
+
+        const houses = st.houses || 0;
+        if (houses >= 5) return 'Auf dieser Straße steht bereits ein Hotel (Maximalausbau)!';
+
+        const minHouses = Math.min(...groupSquares.map(s => {
+            const gst = gameState.board_state ? gameState.board_state[s.index] : null;
+            return (gst && gst.houses) ? gst.houses : 0;
+        }));
+        if (houses > minHouses) {
+            const laggingNames = groupSquares
+                .filter(s => {
+                    const gst = gameState.board_state ? gameState.board_state[s.index] : null;
+                    return ((gst && gst.houses) ? gst.houses : 0) === minHouses;
+                })
+                .map(s => s.name)
+                .join(', ');
+            return `Gleichmäßiges Bauen erforderlich! Baue zuerst auf: ${laggingNames}.`;
+        }
+
+        const bankHouses = (gameState.bank_houses !== undefined) ? gameState.bank_houses : 32;
+        const bankHotels = (gameState.bank_hotels !== undefined) ? gameState.bank_hotels : 12;
+        if (houses < 4 && bankHouses <= 0) {
+            return 'Die Bank hat aktuell keine Häuser mehr auf Vorrat (alle 32 Häuser sind verbaut)!';
+        }
+        if (houses === 4 && bankHotels <= 0) {
+            return 'Die Bank hat aktuell keine Hotels mehr auf Vorrat (alle 12 Hotels sind verbaut)!';
+        }
+
+        const myPlayer = gameState.players ? gameState.players.find(p => p.id === playerId) : null;
+        if (!myPlayer || myPlayer.money < sq.house_cost) {
+            return `Nicht genügend Bargeld! Ein ${houses === 4 ? 'Hotel' : 'Haus'} kostet ${sq.house_cost} DM (Du hast ${myPlayer ? myPlayer.money : 0} DM).`;
+        }
+
+        return null;
+    }
+
+    function getSellHouseRestriction(sqIdx) {
+        if (!gameState || !squaresData || !squaresData[sqIdx]) return 'Spielfeld-Daten noch nicht geladen.';
+        const sq = squaresData[sqIdx];
+        const st = gameState.board_state ? gameState.board_state[sqIdx] : null;
+        if (!st || st.owner !== playerId) return 'Dieses Grundstück gehört dir nicht.';
+        const houses = st.houses || 0;
+        if (houses <= 0) return 'Auf dieser Straße stehen keine Häuser zum Verkaufen.';
+
+        const groupSquares = squaresData.filter(s => s && s.group === sq.group);
+        const maxHouses = Math.max(...groupSquares.map(s => {
+            const gst = gameState.board_state ? gameState.board_state[s.index] : null;
+            return (gst && gst.houses) ? gst.houses : 0;
+        }));
+        if (houses < maxHouses) {
+            const higherNames = groupSquares
+                .filter(s => {
+                    const gst = gameState.board_state ? gameState.board_state[s.index] : null;
+                    return ((gst && gst.houses) ? gst.houses : 0) === maxHouses;
+                })
+                .map(s => s.name)
+                .join(', ');
+            return `Gleichmäßiger Abbau erforderlich! Verkaufe zuerst ein Gebäude von: ${higherNames}.`;
+        }
+
+        const bankHouses = (gameState.bank_houses !== undefined) ? gameState.bank_houses : 32;
+        if (houses === 5 && bankHouses < 4) {
+            return `In der Bank sind nur noch ${bankHouses} Häuser verfügbar (4 benötigt, um das Hotel abzubauen).`;
+        }
+
+        return null;
+    }
+
+    function getMortgageRestriction(sqIdx) {
+        if (!gameState || !squaresData || !squaresData[sqIdx]) return 'Spielfeld-Daten noch nicht geladen.';
+        const sq = squaresData[sqIdx];
+        const st = gameState.board_state ? gameState.board_state[sqIdx] : null;
+        if (!st || st.owner !== playerId) return 'Dieses Grundstück gehört dir nicht.';
+        const myPlayer = gameState.players ? gameState.players.find(p => p.id === playerId) : null;
+
+        if (!st.mortgaged) {
+            if ((st.houses || 0) > 0) {
+                return 'Vor einer Hypothek müssen erst alle Häuser auf dieser Straße verkauft werden!';
+            }
+            const groupSquares = squaresData.filter(s => s && s.group === sq.group);
+            const builtInGroup = groupSquares.filter(s => {
+                const gst = gameState.board_state ? gameState.board_state[s.index] : null;
+                return gst && (gst.houses || 0) > 0;
+            });
+            if (builtInGroup.length > 0) {
+                return `Alle Häuser dieser Farbgruppe müssen zuerst verkauft werden (${builtInGroup.map(s => s.name).join(', ')})!`;
+            }
+        } else {
+            const mortgageVal = sq.mortgage || (sq.price / 2);
+            const unmortgageCost = Math.round(mortgageVal * 1.1);
+            if (!myPlayer || myPlayer.money < unmortgageCost) {
+                return `Nicht genügend Bargeld zum Ablösen der Hypothek (${unmortgageCost} DM inkl. 10% Zinsen benötigt)!`;
+            }
+        }
+        return null;
+    }
+
+    function showDeedErrorBanner(message, popupTitle = '⚠️ AKTION NICHT MÖGLICH') {
+        const bannerEl = document.getElementById('deed-error-banner');
+        if (bannerEl) {
+            bannerEl.innerHTML = `<span style="font-size:15px; flex-shrink:0;">⚠️</span><span>${message}</span>`;
+            bannerEl.style.display = 'flex';
+            bannerEl.style.animation = 'none';
+            void bannerEl.offsetWidth;
+            bannerEl.style.animation = 'monoShakeError 0.38s ease';
+        }
+        showYourTurnPopup(popupTitle, message);
+    }
+
+    // Show Owned "Du kommst aus dem Gefängnis frei" Card Modal
+    function showOwnedJailCardModal(ownerId, jailIdx = 0) {
+        const owner = (gameState && gameState.players) ? gameState.players.find(p => p.id === ownerId) : null;
+        const isMe = (owner && owner.id === playerId);
+        const isMyTurn = (gameState && gameState.current_player && gameState.current_player.id === playerId);
+
+        const titleEl = document.getElementById('deed-modal-title');
+        if (titleEl) titleEl.textContent = '🗝️ Gefängnisfrei-Karte';
+
+        const modalBody = document.getElementById('deed-modal-body');
+        if (!modalBody) return;
+
+        const isSecond = ((jailIdx || 0) % 2 === 1);
+        const cardImgRel = isSecond
+            ? 'static/assets/chance_chest/cards/gemeinschaft_16.png'
+            : 'static/assets/chance_chest/cards/ereignis_16.png';
+        const deckLabel = isSecond ? 'GEMEINSCHAFTSKARTE' : 'EREIGNISKARTE';
+        preloadImageUrl(cardImgRel);
+
+        const canUseNow = isMe && owner && owner.in_jail && isMyTurn && (!gameState.pending_action);
+
+        modalBody.innerHTML = `
+            <div class="deed-image-wrap" style="display:block; text-align:center;">
+                <img class="deed-card-img" src="${resolveUrl(cardImgRel)}" alt="Du kommst aus dem Gefängnis frei" style="width:100%; max-width:340px; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,0.45);" />
+            </div>
+            <div style="background:rgba(255,255,255,0.06); padding:10px 14px; border-radius:8px; margin-top:10px; font-size:12px; display:flex; flex-direction:column; gap:5px;">
+                <div style="font-weight:800; color:#f1c40f; font-size:13px;">🗝️ Du kommst aus dem Gefängnis frei! (${deckLabel})</div>
+                <div style="color:#cbd5e1; line-height:1.4;">Diese Karte liegt offen bei deinen Straßen und darf aufbewahrt werden, bis du sie im Gefängnis einsetzt oder im Handel an einen Mitspieler verkaufst.</div>
+                <div style="margin-top:2px; font-weight:700; color:${owner ? owner.color : '#888'};">
+                    Besitzer: ${owner ? owner.name + (isMe ? ' (Du)' : '') : 'Spieler'}
+                </div>
+            </div>
+            <div id="deed-error-banner" style="display:none; align-items:center; gap:8px; background:rgba(231,76,60,0.18); border:1px solid rgba(231,76,60,0.55); color:#fecaca; padding:9px 12px; border-radius:8px; margin-top:10px; font-size:12px; font-weight:600; line-height:1.35;"></div>
+            <div class="deed-actions-row" style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+                ${canUseNow ? `
+                    <button class="btn-action btn-buy" style="font-size:13px; padding:8px 12px; flex:1;" onclick="window.MonopolyGame.useJailCardFromModal()">
+                        🗝️ Jetzt einlösen (Gefängnis verlassen)
+                    </button>
+                ` : `
+                    <div style="width:100%; font-size:11px; color:var(--text-muted); text-align:center; padding:4px 0;">
+                        ${isMe ? (owner && owner.in_jail ? 'Du kannst diese Karte einlösen, sobald du am Zug bist.' : 'Du befindest dich aktuell nicht im Gefängnis. Du kannst die Karte behalten oder über „Handel“ tauschen.') : ''}
+                    </div>
+                `}
+            </div>
+        `;
+
+        closeModal('modal-portfolio');
+        openModal('modal-deed');
+    }
+
     // Show Besitzurkunde (Property Deed Modal with Instant Text Fallback + Cached ROM Card Graphics)
     function showDeedModal(sqIdx) {
         if (!squaresData || squaresData.length === 0) return;
@@ -1974,6 +2221,9 @@
         if (!['property', 'station', 'utility'].includes(sq.type)) {
             return;
         }
+
+        const titleEl = document.getElementById('deed-modal-title');
+        if (titleEl) titleEl.textContent = 'Besitzrecht-Urkunde';
 
         const st = gameState ? gameState.board_state[sqIdx] : null;
         const owner = (st && st.owner && gameState) ? gameState.players.find(p => p.id === st.owner) : null;
@@ -2029,17 +2279,25 @@
 
             // Build / Sell buttons (allowed anytime per Parker rules page 3)
             if (sq.type === 'property' && !isMortgaged) {
-                const canBuild = houses < 5 && myPlayer && myPlayer.money >= sq.house_cost;
+                const buildRestriction = getBuildHouseRestriction(sqIdx);
                 const canSell = houses > 0;
-                actionsHtml += `
-                    <button class="btn-action btn-buy" style="font-size:12px; padding:6px 12px; flex:1;" ${canBuild ? '' : 'disabled'} onclick="window.MonopolyGame.buildHouse(${sqIdx})">
-                        🔨 ${houses === 4 ? 'Hotel' : 'Haus'} bauen (${sq.house_cost} DM)
-                    </button>
-                    ${canSell ? `
-                    <button class="btn-action" style="font-size:12px; padding:6px 12px; background:#e67e22; color:#fff;" onclick="window.MonopolyGame.sellHouse(${sqIdx})">
-                        Verkaufen (+${sq.house_cost / 2} DM)
-                    </button>` : ''}
-                `;
+                const buildBtnStyle = buildRestriction
+                    ? 'font-size:12px; padding:6px 12px; flex:1; background:rgba(46,204,113,0.22); border:1px solid rgba(46,204,113,0.45); color:#e2e8f0;'
+                    : 'font-size:12px; padding:6px 12px; flex:1;';
+                if (houses < 5) {
+                    actionsHtml += `
+                        <button class="btn-action btn-buy" style="${buildBtnStyle}" onclick="window.MonopolyGame.buildHouse(${sqIdx})">
+                            🔨 ${houses === 4 ? 'Hotel' : 'Haus'} bauen (${sq.house_cost} DM)
+                        </button>
+                    `;
+                }
+                if (canSell) {
+                    actionsHtml += `
+                        <button class="btn-action" style="font-size:12px; padding:6px 12px; background:#e67e22; color:#fff;" onclick="window.MonopolyGame.sellHouse(${sqIdx})">
+                            Verkaufen (+${sq.house_cost / 2} DM)
+                        </button>
+                    `;
+                }
             }
 
             // Mortgage button
@@ -2053,9 +2311,8 @@
                         </button>
                     `;
                 } else {
-                    const canUnmortgage = (myPlayer && myPlayer.money >= unmortgageCost);
                     actionsHtml += `
-                        <button class="btn-action" style="font-size:12px; padding:6px 12px; background:#27ae60; color:#fff;" ${canUnmortgage ? '' : 'disabled'} onclick="window.MonopolyGame.toggleMortgage(${sqIdx})">
+                        <button class="btn-action" style="font-size:12px; padding:6px 12px; background:#27ae60; color:#fff;" onclick="window.MonopolyGame.toggleMortgage(${sqIdx})">
                             Hypothek ablösen (-${unmortgageCost} DM)
                         </button>
                     `;
@@ -2107,6 +2364,7 @@
         modalBody.innerHTML = `
             ${textCardHtml}
             ${imageCardHtml}
+            <div id="deed-error-banner" style="display:none; align-items:center; gap:8px; background:rgba(231,76,60,0.18); border:1px solid rgba(231,76,60,0.55); color:#fecaca; padding:9px 12px; border-radius:8px; margin-top:10px; font-size:12px; font-weight:600; line-height:1.35;"></div>
             ${actionsHtml ? `<div class="deed-actions-row" style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">${actionsHtml}</div>` : ''}
         `;
 
@@ -2128,7 +2386,7 @@
         syncBuyOrAuctionTimer();
     }
 
-    // Show Player Portfolio (All owned streets)
+    // Show Player Portfolio (All owned streets + Gefängnisfrei cards)
     function showPlayerPortfolio(targetPlayerId) {
         if (!gameState) return;
         const target = gameState.players.find(p => p.id === targetPlayerId);
@@ -2145,11 +2403,12 @@
                 ownedSquares.push({ idx: parseInt(sqIdxStr), state: st, square: squaresData[parseInt(sqIdxStr)] });
             }
         }
+        const jailCardCount = parseInt(target.jail_cards) || 0;
 
-        if (ownedSquares.length === 0) {
-            gridEl.innerHTML = `<p style="grid-column:1/-1; text-align:center; color:var(--text-muted); padding:20px;">Keine Grundstücke im Besitz.</p>`;
+        if (ownedSquares.length === 0 && jailCardCount === 0) {
+            gridEl.innerHTML = `<p style="grid-column:1/-1; text-align:center; color:var(--text-muted); padding:20px;">Keine Grundstücke oder Karten im Besitz.</p>`;
         } else {
-            gridEl.innerHTML = ownedSquares.map(item => {
+            const streetsHtml = ownedSquares.map(item => {
                 const sq = item.square;
                 const st = item.state;
                 const col = GROUP_COLORS[sq.group] || '#444';
@@ -2172,6 +2431,24 @@
                     </div>
                 `;
             }).join('');
+
+            let jailCardsHtml = '';
+            for (let j = 0; j < jailCardCount; j++) {
+                const barCol = (j % 2 === 0) ? '#f39c12' : '#3498db';
+                const deckName = (j % 2 === 0) ? 'Ereigniskarte' : 'Gemeinschaftskarte';
+                jailCardsHtml += `
+                    <div class="portfolio-card-mini" style="border-color:rgba(241,196,15,0.55); background:rgba(241,196,15,0.08);" onclick="window.MonopolyGame.showOwnedJailCardModal('${target.id}', ${j})">
+                        <div class="portfolio-mini-header" style="background:${barCol};"></div>
+                        <div class="portfolio-mini-body">
+                            <div class="portfolio-mini-title">🗝️ Gefängnisfrei</div>
+                            <div style="font-size:10px; color:#f1c40f; margin-top:2px; font-weight:700;">${deckName}</div>
+                            <div style="font-size:9px; color:var(--text-muted); margin-top:2px;">Klicken zum Ansehen</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            gridEl.innerHTML = streetsHtml + jailCardsHtml;
         }
 
         openModal('modal-portfolio');
@@ -2617,7 +2894,12 @@
         },
 
         showDeedModal: showDeedModal,
+        showOwnedJailCardModal: showOwnedJailCardModal,
         showPlayerPortfolio: showPlayerPortfolio,
+
+        useJailCardFromModal: function() {
+            sendWsMessage({ action: 'USE_JAIL_CARD' });
+        },
 
         focusPlayerSeat: function(targetId) {
             if (!gameState || !gameState.players) return;
@@ -2673,18 +2955,30 @@
         },
 
         buildHouse: function(sqIdx) {
+            const restriction = getBuildHouseRestriction(sqIdx);
+            if (restriction) {
+                showDeedErrorBanner(restriction, '⚠️ HAUSBAU NICHT MÖGLICH');
+                return;
+            }
             sendWsMessage({ action: 'BUILD_HOUSE', sq_idx: sqIdx });
-            closeModal('modal-deed');
         },
 
         sellHouse: function(sqIdx) {
+            const restriction = getSellHouseRestriction(sqIdx);
+            if (restriction) {
+                showDeedErrorBanner(restriction, '⚠️ VERKAUF NICHT MÖGLICH');
+                return;
+            }
             sendWsMessage({ action: 'SELL_HOUSE', sq_idx: sqIdx });
-            closeModal('modal-deed');
         },
 
         toggleMortgage: function(sqIdx) {
+            const restriction = getMortgageRestriction(sqIdx);
+            if (restriction) {
+                showDeedErrorBanner(restriction, '⚠️ HYPOTHEK NICHT MÖGLICH');
+                return;
+            }
             sendWsMessage({ action: 'TOGGLE_MORTGAGE', sq_idx: sqIdx });
-            closeModal('modal-deed');
         },
 
         acceptTrade: function() {

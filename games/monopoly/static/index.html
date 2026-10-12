@@ -514,13 +514,23 @@
         </div>
     </div>
 
+    <style>
+        @keyframes monoShakeError {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translateX(-6px); }
+            40% { transform: translateX(6px); }
+            60% { transform: translateX(-4px); }
+            80% { transform: translateX(4px); }
+        }
+    </style>
+
     <!-- Scripts with Cache Busting -->
     <script src="static/js/three.min.js"></script>
     <script src="static/js/OrbitControls.js"></script>
-    <script src="static/js/asset_config.js?v=3.9"></script>
-    <script src="static/js/audio.js?v=3.9"></script>
-    <script src="static/js/board3d.js?v=3.9"></script>
-    <script src="static/js/game_client.js?v=3.9"></script>
+    <script src="static/js/asset_config.js?v=4.0"></script>
+    <script src="static/js/audio.js?v=4.0"></script>
+    <script src="static/js/board3d.js?v=4.0"></script>
+    <script src="static/js/game_client.js?v=4.0"></script>
 
     <script>
         function launchMonopoly() {
