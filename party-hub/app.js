@@ -268,7 +268,6 @@ function showWelcomeOverlay(opts = {}) {
         const poolToChooseFrom = availablePresets.length > 0 ? availablePresets : AVATAR_POOL;
         const chosenPreset = poolToChooseFrom[Math.floor(Math.random() * poolToChooseFrom.length)];
         chosenAvatar = chosenPreset.avatar;
-        if (!chosenName) chosenName = chosenPreset.name;
     }
 
     tempWelcomeAvatar = chosenAvatar || "🐶";
