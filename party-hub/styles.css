@@ -473,7 +473,7 @@ body {
 
 .player-roster {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
     gap: 14px;
 }
 
@@ -489,6 +489,7 @@ body {
     box-shadow: 2px 2px 0px var(--ink);
     transition: transform 0.15s, box-shadow 0.15s;
     color: var(--ink);
+    min-width: 0;
 }
 
 .player-card:hover {
@@ -534,6 +535,8 @@ body {
 .player-card-details {
     display: flex;
     flex-direction: column;
+    min-width: 0;
+    flex: 1;
     overflow: hidden;
 }
 
@@ -559,23 +562,22 @@ body {
     background: #fef08a;
     color: #854d0e;
     border: 1.5px solid var(--ink);
-    border-radius: var(--radius-pill);
-    padding: 4px 10px;
-    font-size: 0.78rem;
-    font-family: var(--font-heading);
-    font-weight: 700;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 0.95rem;
     cursor: pointer;
     box-shadow: 1.5px 1.5px 0px var(--ink);
     transition: all 0.12s;
-    white-space: nowrap;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    justify-content: center;
     flex-shrink: 0;
 }
 
 .transfer-host-btn:hover {
-    transform: scale(1.05);
+    transform: scale(1.1);
     background: #fde047;
     box-shadow: 2px 2px 0px var(--ink);
 }

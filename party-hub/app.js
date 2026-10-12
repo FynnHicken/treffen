@@ -671,7 +671,7 @@ function renderPlayerRoster() {
         if (isHostMe && !isMe) {
             hostBtnHtml = `
                 <button class="transfer-host-btn" type="button" title="${p.name} zum Party-Leader machen">
-                    👑 Leader übergeben
+                    👑
                 </button>
             `;
         }
