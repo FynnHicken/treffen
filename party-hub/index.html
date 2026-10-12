@@ -553,25 +553,14 @@
 
             <!-- Choice Actions (default when visiting treffen.ddns.net without room) -->
             <div class="welcome-actions-section" id="welcomeChoiceActions">
-                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <!-- Action 1: Create Party -->
-                    <button type="button" class="btn-welcome-create" id="btnWelcomeCreate" onclick="handleWelcomeCreateParty()" style="flex: 1.3; min-width: 190px;">
-                        <span class="btn-welcome-icon">👑</span>
-                        <div class="btn-welcome-text">
-                            <span class="btn-welcome-title">Party erstellen</span>
-                            <span class="btn-welcome-desc">Neuen Raum eröffnen & Host werden</span>
-                        </div>
-                    </button>
-
-                    <!-- Action: Zur Kartenansicht -->
-                    <button type="button" class="btn-welcome-create" onclick="handleQuickViewCatalog()" style="flex: 1; min-width: 165px; background: var(--bg-surface); color: var(--ink);">
-                        <span class="btn-welcome-icon">🃏</span>
-                        <div class="btn-welcome-text">
-                            <span class="btn-welcome-title">Zur Kartenansicht</span>
-                            <span class="btn-welcome-desc" style="color: var(--ink-light);">Direkt alle Spiele ansehen</span>
-                        </div>
-                    </button>
-                </div>
+                <!-- Action 1: Create Party -->
+                <button type="button" class="btn-welcome-create" id="btnWelcomeCreate" onclick="handleWelcomeCreateParty()">
+                    <span class="btn-welcome-icon">👑</span>
+                    <div class="btn-welcome-text">
+                        <span class="btn-welcome-title">Party erstellen</span>
+                        <span class="btn-welcome-desc">Neuen Raum eröffnen & Host werden</span>
+                    </div>
+                </button>
 
                 <div class="welcome-divider">
                     <span>ODER PARTY BEITRETEN</span>
