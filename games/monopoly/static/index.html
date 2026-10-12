@@ -4,18 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Monopoly 3D - Wii Edition</title>
-    <link rel="stylesheet" href="static/css/style.css?v=2.5">
+    <link rel="stylesheet" href="static/css/style.css?v=3.8">
     <link rel="icon" href="static/assets/textures/board_wt_cl_go_cm.png">
     <script>
         (function() {
             var p = new URLSearchParams(window.location.search);
             var r = p.get('room') || p.get('lobby') || p.get('party') || p.get('roomId');
-            if (!r) {
-                r = Math.random().toString(36).substring(2, 8).toUpperCase();
-                var newUrl = window.location.pathname + '?room=' + r;
-                try { window.history.replaceState({ path: newUrl }, '', newUrl); } catch(e) {}
-            }
-            window.__INITIAL_ROOM_ID__ = r.toUpperCase();
+            window.__INITIAL_ROOM_ID__ = r ? r.toUpperCase() : null;
         })();
     </script>
 </head>
@@ -30,6 +25,29 @@
         </button>
     </div>
 
+    <!-- Floating "Du bist dran!" Turn Notification Popup -->
+    <div id="your-turn-popup" class="your-turn-popup" style="display:none;" onclick="window.MonopolyGame && window.MonopolyGame.hideYourTurnPopup && window.MonopolyGame.hideYourTurnPopup()">
+        <div class="your-turn-popup-card">
+            <div class="your-turn-popup-icon">🎲</div>
+            <div class="your-turn-popup-texts">
+                <div class="your-turn-popup-title" id="your-turn-popup-title">DU BIST DRAN!</div>
+                <div class="your-turn-popup-sub" id="your-turn-popup-sub">Würfle jetzt oder verwalte deine Straßen</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Rent Payment Notification Popup -->
+    <div id="rent-toast-popup" class="rent-toast-popup" style="display:none;" onclick="window.MonopolyGame && window.MonopolyGame.hideRentPopup && window.MonopolyGame.hideRentPopup()">
+        <div class="rent-toast-card" id="rent-toast-card">
+            <div class="rent-toast-icon" id="rent-toast-icon">💸</div>
+            <div class="rent-toast-texts">
+                <div class="rent-toast-title" id="rent-toast-title">MIETZAHLUNG</div>
+                <div class="rent-toast-sub" id="rent-toast-sub">Spieler zahlt Miete</div>
+            </div>
+            <div class="rent-toast-amount" id="rent-toast-amount">-0 DM</div>
+        </div>
+    </div>
+
     <!-- UI Overlay Layer (Minimalist 2012 Console Aesthetic) -->
     <div id="ui-root">
         <!-- Top Game Header Bar -->
@@ -38,7 +56,7 @@
                 <div class="brand-badge">MONOPOLY</div>
                 <div class="room-chip" id="btn-copy-link" title="Klicke zum Kopieren des Einladungslinks">
                     <span>Raum:</span>
-                    <strong class="code" id="header-room-code"><script>document.write(window.__INITIAL_ROOM_ID__ || '------');</script></strong>
+                    <strong class="code" id="header-room-code"><script>document.write(window.__INITIAL_ROOM_ID__ || 'WAHL');</script></strong>
                     <span style="margin-left:4px; font-size:12px;">📋</span>
                 </div>
             </div>
@@ -54,6 +72,7 @@
                     <button class="btn-cam" id="btn-cam-2d" title="2D Draufsicht (Top-Down, Mobil)">2D</button>
                     <button class="btn-cam" id="btn-cam-25d" title="2.5D Schrägansicht (Tisch-Modus)">2.5D</button>
                     <button class="btn-cam" id="btn-cam-3d" title="3D Freie Kamera (Drehen & Zoomen)">3D</button>
+                    <button class="btn-cam" id="btn-cam-cards" title="Zur Kartenansicht auf dem Tisch wechseln" onclick="window.MonopolyBoard3D && window.MonopolyBoard3D.toggleSeatFocus && window.MonopolyBoard3D.toggleSeatFocus(0)">🃏 Karten</button>
                 </div>
                 <button class="btn-icon" id="btn-rot-left" title="Brett 90° nach links drehen">↺</button>
                 <button class="btn-icon" id="btn-rot-right" title="Brett 90° nach rechts drehen">↻</button>
@@ -91,11 +110,15 @@
             <div class="action-buttons-wrap">
                 <button class="btn-action btn-roll" id="btn-roll" disabled>
                     <span>🎲</span>
-                    <span>Würfeln</span>
+                    <span id="btn-roll-label">Würfeln</span>
                 </button>
                 <button class="btn-action btn-buy" id="btn-buy" style="display:none;">
                     <span>🏠</span>
                     <span>Kaufen</span>
+                </button>
+                <button class="btn-action" id="btn-auction" style="display:none; background:#e67e22; color:#fff;">
+                    <span>🔨</span>
+                    <span>Versteigern</span>
                 </button>
                 <button class="btn-action btn-bail" id="btn-bail" style="display:none; background:#e74c3c; color:#fff;">
                     <span>👮 Kaution (50 DM)</span>
@@ -111,9 +134,17 @@
                     <span>📋</span>
                     <span>Besitz</span>
                 </button>
+                <button class="btn-action" id="btn-card-view" title="Zur 3D-Kartenansicht am Tisch zoomen" style="background:rgba(52, 152, 219, 0.28); border:1px solid rgba(52, 152, 219, 0.6); color:#fff;" onclick="window.MonopolyBoard3D && window.MonopolyBoard3D.toggleSeatFocus && window.MonopolyBoard3D.toggleSeatFocus(0)">
+                    <span>🃏</span>
+                    <span id="btn-card-view-label">Zur Kartenansicht</span>
+                </button>
+                <button class="btn-action" id="btn-bankrupt" style="display:none; background:#c0392b; color:#fff;">
+                    <span>💀</span>
+                    <span>Bankrott</span>
+                </button>
                 <button class="btn-action btn-end" id="btn-end-turn" disabled>
                     <span>⏹️</span>
-                    <span>Zug beenden</span>
+                    <span id="btn-end-turn-label">Zug beenden</span>
                 </button>
             </div>
         </footer>
@@ -121,16 +152,59 @@
 
     <!-- Modals -->
 
-    <!-- 1. Lobby Modal -->
+    <!-- 1. Lobby Modal (Step 1: Raum erstellen / beitreten & Step 2: Spiellobby) -->
     <div class="modal-overlay open" id="modal-lobby">
         <div class="modal-box">
             <div class="modal-header">
-                <div class="modal-title">Monopoly Spiellobby</div>
-                <div class="room-chip" style="cursor:default;">
-                    <span>Raum: <strong id="lobby-room-code"><script>document.write(window.__INITIAL_ROOM_ID__ || '------');</script></strong></span>
+                <div class="modal-title" id="lobby-modal-title">Monopoly 3D</div>
+                <div id="lobby-header-actions" style="display:flex; align-items:center; gap:8px;">
+                    <div class="room-chip" id="lobby-room-chip" style="cursor:default; display:none;">
+                        <span>Raum: <strong id="lobby-room-code"><script>document.write(window.__INITIAL_ROOM_ID__ || '------');</script></strong></span>
+                    </div>
+                    <button class="btn-action" id="btn-switch-room" style="display:none; font-size:11px; padding:5px 10px; background:rgba(255,255,255,0.12); color:#fff; border:1px solid rgba(255,255,255,0.2);" onclick="window.MonopolyGame.showRoomSelector()">
+                        🔄 Raum wechseln
+                    </button>
                 </div>
             </div>
-            <div class="modal-body">
+
+            <!-- STEP 1: Raum erstellen oder Raum beitreten -->
+            <div class="modal-body" id="lobby-step-select" style="display:none;">
+                <div>
+                    <label style="font-size:12px; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px;">DEIN SPIELERNAME</label>
+                    <input type="text" id="input-welcome-name" class="chat-input" style="font-size:15px; padding:10px; width:100%;" maxlength="18" placeholder="Name eingeben...">
+                </div>
+
+                <div style="background:rgba(46, 204, 113, 0.08); border:1px solid rgba(46, 204, 113, 0.35); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:8px;">
+                    <div style="font-size:13px; font-weight:800; color:#2ecc71;">🏠 Neuen Spielraum starten</div>
+                    <div style="font-size:12px; color:var(--text-muted);">Erstelle eine neue Lobby und lade deine Freunde per Raum-Code oder über die Raumliste ein.</div>
+                    <button class="btn-action btn-buy" style="width:100%; justify-content:center; font-size:15px; padding:11px;" onclick="window.MonopolyGame.createNewRoom()">
+                        ➕ Neuen Raum erstellen
+                    </button>
+                </div>
+
+                <div style="background:rgba(255, 255, 255, 0.04); border:1px solid rgba(255, 255, 255, 0.14); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:8px;">
+                    <div style="font-size:13px; font-weight:800; color:#f1c40f;">🔑 Mit Raum-Code beitreten</div>
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" id="input-join-room-code" class="chat-input" style="flex:1; font-size:15px; padding:9px 12px; text-transform:uppercase; font-weight:800; letter-spacing:1.5px;" maxlength="12" placeholder="CODE (z.B. AB12CD)">
+                        <button class="btn-action btn-trade" style="padding:9px 18px; font-size:14px;" onclick="window.MonopolyGame.joinRoomByInput()">
+                            Beitreten →
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <label style="font-size:12px; font-weight:700; color:var(--text-muted);">🌐 OFFENE RÄUME AUF DEM SERVER</label>
+                        <button onclick="window.MonopolyGame.refreshOpenRooms()" style="background:none; border:none; color:#3498db; font-size:12px; font-weight:700; cursor:pointer; padding:2px 6px;">🔄 Aktualisieren</button>
+                    </div>
+                    <div id="open-rooms-list" class="lobby-players-list" style="max-height:160px; overflow-y:auto;">
+                        <div style="font-size:12px; color:var(--text-muted); text-align:center; padding:12px;">Suche nach aktiven Räumen...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 2: Aktive Raum-Lobby -->
+            <div class="modal-body" id="lobby-step-room" style="display:none;">
                 <div>
                     <label style="font-size:12px; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px;">DEIN SPIELERNAME</label>
                     <input type="text" id="input-player-name" class="chat-input" style="font-size:15px; padding:10px;" maxlength="18" placeholder="Name eingeben...">
@@ -176,43 +250,22 @@
                 <span class="modal-title" id="deed-modal-title">Besitzrecht-Urkunde</span>
                 <button class="modal-close" onclick="window.MonopolyGame.closeModal('modal-deed')">✕</button>
             </div>
-            <div class="modal-body">
-                <!-- Authentic Deed Card Image Display -->
-                <div class="deed-card-container">
-                    <img id="deed-card-img" class="deed-card-graphic" src="" alt="Urkunde" />
-                    <div id="deed-mortgage-stamp" class="mortgage-stamp" style="display:none;">HYPOTHEK</div>
-                </div>
-
-                <!-- Owner Information -->
-                <div class="deed-owner-strip" id="deed-owner-strip">
-                    <span id="deed-owner-text">Zu verkaufen</span>
-                    <span id="deed-houses-text"></span>
-                </div>
-
-                <!-- House & Mortgage Actions -->
-                <div class="deed-actions" id="deed-actions">
-                    <button class="btn-action btn-buy" id="btn-build-house" style="display:none;">
-                        🏠 Haus bauen (<span id="build-cost">0</span> DM)
-                    </button>
-                    <button class="btn-action" id="btn-sell-house" style="display:none; background:#d35400; color:#fff;">
-                        🏚️ Haus verkaufen
-                    </button>
-                    <button class="btn-action" id="btn-mortgage" style="background:#7f8c8d; color:#fff;">
-                        📜 Hypothek aufnehmen
-                    </button>
-                </div>
+            <div class="modal-body" id="deed-modal-body">
+                <!-- Populated dynamically by showDeedModal -->
             </div>
         </div>
     </div>
 
     <!-- 3. Chance / Community Chest Card Modal -->
-    <div class="modal-overlay" id="modal-card">
+    <div class="modal-overlay" id="modal-card" style="z-index: 2150;">
         <div class="modal-box" style="max-width:440px; text-align:center;">
-            <div class="modal-header" style="justify-content:center; margin-bottom:8px;">
+            <div class="modal-header" style="justify-content:center; margin-bottom:4px; flex-direction:column; gap:2px;">
                 <span class="modal-title" id="card-modal-title">EREIGNISKARTE</span>
+                <span id="card-modal-subtitle" style="font-size:12px; color:var(--text-muted); font-weight:600; display:none;"></span>
             </div>
             <!-- Full High-Res Authentic ROM Card Image -->
             <img id="card-modal-full-img" class="card-modal-full-img" src="" alt="Gezogene Karte" style="width:100%; max-width:410px; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.55); display:none; margin:0 auto;" />
+            <div id="card-modal-caption" style="font-size:13px; font-weight:600; color:#f1f5f9; background:rgba(255,255,255,0.06); padding:8px 12px; border-radius:8px; margin-top:10px; display:none;"></div>
             
             <!-- Traditional Layout Fallback -->
             <div class="chance-chest-card" id="card-modal-container">
@@ -222,7 +275,7 @@
                 <div class="chance-card-text" id="card-modal-text">Ziehe vor bis auf LOS!</div>
             </div>
 
-            <button class="btn-action btn-buy" style="margin-top:14px; width:100%;" onclick="window.MonopolyGame.closeModal('modal-card')">
+            <button class="btn-action btn-buy" id="btn-card-confirm" style="margin-top:14px; width:100%;" onclick="window.MonopolyGame.confirmCard()">
                 OK
             </button>
         </div>
@@ -262,8 +315,12 @@
                             <label style="font-size:11px; color:#aaa;">Geld (DM):</label>
                             <input type="number" id="trade-offer-money" class="chat-input" min="0" step="10" value="0" style="width:100%; padding:4px 6px;">
                         </div>
+                        <div style="margin:6px 0;">
+                            <label style="font-size:11px; color:#aaa;">Gefängnisfrei-Karten:</label>
+                            <input type="number" id="trade-offer-jail-cards" class="chat-input" min="0" max="2" step="1" value="0" style="width:100%; padding:4px 6px;">
+                        </div>
                         <div style="font-size:11px; color:#aaa; margin-bottom:4px;">Grundstücke:</div>
-                        <div id="trade-my-props" style="max-height:160px; overflow-y:auto; background:rgba(0,0,0,0.2); padding:6px; border-radius:6px;"></div>
+                        <div id="trade-my-props" style="max-height:140px; overflow-y:auto; background:rgba(0,0,0,0.2); padding:6px; border-radius:6px;"></div>
                     </div>
                     <div>
                         <strong style="font-size:13px; color:var(--accent-red);">Deine Forderung:</strong>
@@ -271,8 +328,12 @@
                             <label style="font-size:11px; color:#aaa;">Geld (DM):</label>
                             <input type="number" id="trade-req-money" class="chat-input" min="0" step="10" value="0" style="width:100%; padding:4px 6px;">
                         </div>
+                        <div style="margin:6px 0;">
+                            <label style="font-size:11px; color:#aaa;">Gefängnisfrei-Karten:</label>
+                            <input type="number" id="trade-req-jail-cards" class="chat-input" min="0" max="2" step="1" value="0" style="width:100%; padding:4px 6px;">
+                        </div>
                         <div style="font-size:11px; color:#aaa; margin-bottom:4px;">Grundstücke:</div>
-                        <div id="trade-target-props" style="max-height:160px; overflow-y:auto; background:rgba(0,0,0,0.2); padding:6px; border-radius:6px;"></div>
+                        <div id="trade-target-props" style="max-height:140px; overflow-y:auto; background:rgba(0,0,0,0.2); padding:6px; border-radius:6px;"></div>
                     </div>
                 </div>
                 <button class="btn-action btn-trade" id="btn-submit-trade" style="width:100%; margin-top:12px;">
@@ -294,13 +355,46 @@
         </div>
     </div>
 
+    <!-- 7. Property Auction Modal (Versteigerung) -->
+    <div class="modal-overlay" id="modal-auction">
+        <div class="modal-box" style="max-width:420px;">
+            <div class="modal-header">
+                <span class="modal-title">🔨 Grundstücks-Versteigerung</span>
+            </div>
+            <div class="modal-body" id="auction-modal-body">
+                <!-- Dynamically injected -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 8. Income Tax Choice Modal (Einkommensteuer: 200 DM oder 10%) -->
+    <div class="modal-overlay" id="modal-tax">
+        <div class="modal-box" style="max-width:400px;">
+            <div class="modal-header">
+                <span class="modal-title">💸 Einkommensteuer</span>
+            </div>
+            <div class="modal-body" id="tax-modal-body">
+                <!-- Dynamically injected -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 9. Game Over / Victory Modal (Siegerehrung) -->
+    <div class="modal-overlay" id="modal-gameover" style="z-index: 2300;">
+        <div class="modal-box" style="max-width:450px; text-align:center; border:2px solid #f1c40f; box-shadow:0 20px 60px rgba(241, 196, 15, 0.35);">
+            <div class="modal-body" id="gameover-modal-body">
+                <!-- Dynamically injected -->
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts with Cache Busting -->
     <script src="static/js/three.min.js"></script>
     <script src="static/js/OrbitControls.js"></script>
-    <script src="static/js/asset_config.js?v=3.0"></script>
-    <script src="static/js/audio.js?v=3.0"></script>
-    <script src="static/js/board3d.js?v=3.0"></script>
-    <script src="static/js/game_client.js?v=3.0"></script>
+    <script src="static/js/asset_config.js?v=3.8"></script>
+    <script src="static/js/audio.js?v=3.8"></script>
+    <script src="static/js/board3d.js?v=3.8"></script>
+    <script src="static/js/game_client.js?v=3.8"></script>
 
     <script>
         function launchMonopoly() {

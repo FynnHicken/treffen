@@ -1572,3 +1572,195 @@ html, body {
     display: none;
     margin: 0 auto;
 }
+
+/* "Du bist dran!" Floating Turn Popup */
+.your-turn-popup {
+    position: fixed;
+    top: 22%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1200;
+    pointer-events: auto;
+    cursor: pointer;
+    animation: yourTurnPopIn 0.38s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
+}
+
+.your-turn-popup.hiding {
+    animation: yourTurnPopOut 0.25s ease-in forwards;
+}
+
+.your-turn-popup-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.96));
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 2px solid #f1c40f;
+    border-radius: 20px;
+    padding: 16px 28px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 28px rgba(241, 196, 15, 0.45);
+}
+
+.your-turn-popup-icon {
+    font-size: 40px;
+    line-height: 1;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+    animation: diceBounce 0.8s ease-in-out infinite alternate;
+}
+
+.your-turn-popup-texts {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.your-turn-popup-title {
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    color: #f1c40f;
+    text-shadow: 0 2px 8px rgba(241, 196, 15, 0.45);
+}
+
+.your-turn-popup-sub {
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+@keyframes yourTurnPopIn {
+    0% {
+        opacity: 0;
+        transform: translate(-50%, -65%) scale(0.75);
+    }
+    100% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
+@keyframes yourTurnPopOut {
+    0% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -40%) scale(0.85);
+    }
+}
+
+@keyframes diceBounce {
+    0% { transform: rotate(-8deg) scale(1); }
+    100% { transform: rotate(8deg) scale(1.12); }
+}
+
+/* 10s Turn Inactivity Timer Button Highlight */
+.btn-end.countdown-active,
+.btn-roll.countdown-active {
+    border: 1.5px solid #f39c12 !important;
+    box-shadow: 0 0 14px rgba(243, 156, 18, 0.45);
+    animation: endTurnPulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes endTurnPulse {
+    0% { box-shadow: 0 0 8px rgba(243, 156, 18, 0.3); }
+    100% { box-shadow: 0 0 18px rgba(243, 156, 18, 0.75); }
+}
+
+/* Floating Rent Payment Notification Popup */
+.rent-toast-popup {
+    position: fixed;
+    top: 32%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1180;
+    pointer-events: auto;
+    cursor: pointer;
+    animation: yourTurnPopIn 0.38s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
+}
+
+.rent-toast-popup.hiding {
+    animation: yourTurnPopOut 0.25s ease-in forwards;
+}
+
+.rent-toast-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.96));
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 2px solid #f39c12;
+    border-radius: 18px;
+    padding: 14px 24px;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.7), 0 0 24px rgba(243, 156, 18, 0.35);
+    min-width: 310px;
+}
+
+.rent-toast-card.rent-paid {
+    border-color: #e74c3c;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.7), 0 0 28px rgba(231, 76, 60, 0.45);
+}
+
+.rent-toast-card.rent-received {
+    border-color: #2ecc71;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.7), 0 0 28px rgba(46, 204, 113, 0.45);
+}
+
+.rent-toast-icon {
+    font-size: 34px;
+    line-height: 1;
+    filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5));
+}
+
+.rent-toast-texts {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+}
+
+.rent-toast-title {
+    font-size: 16px;
+    font-weight: 900;
+    letter-spacing: 0.8px;
+    color: #f39c12;
+}
+
+.rent-toast-card.rent-paid .rent-toast-title {
+    color: #ff6b6b;
+}
+
+.rent-toast-card.rent-received .rent-toast-title {
+    color: #2ecc71;
+}
+
+.rent-toast-sub {
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.88);
+}
+
+.rent-toast-amount {
+    font-size: 20px;
+    font-weight: 900;
+    padding: 6px 12px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #f1c40f;
+    white-space: nowrap;
+}
+
+.rent-toast-card.rent-paid .rent-toast-amount {
+    color: #ff6b6b;
+    background: rgba(231, 76, 60, 0.16);
+}
+
+.rent-toast-card.rent-received .rent-toast-amount {
+    color: #2ecc71;
+    background: rgba(46, 204, 113, 0.16);
+}
+
+
