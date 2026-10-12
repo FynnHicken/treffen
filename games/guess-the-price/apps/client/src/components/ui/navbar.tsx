@@ -4,11 +4,12 @@ import { useTheme } from '@/context/theme-provider';
 
 export const Navbar = () => {
 	const { theme } = useTheme();
+	const base = import.meta.env.BASE_URL || '/';
 
 	return (
 		<nav className='p-5 flex justify-between'>
 			<Link to='/'>
-				<img src={`/images/${theme == 'dark' ? 'd-' : ''}logo.svg`} alt='Guess the price logo' className='w-[260px]' />
+				<img src={`${base}images/${theme == 'dark' ? 'd-' : ''}logo.svg`} alt='Guess the price logo' className='w-[260px]' />
 			</Link>
 			<div>
 				<ThemeToggle />

@@ -9,7 +9,10 @@ export class WSService {
 	private socketIoServer: SocketIoServer;
 
 	constructor(httpServer: HttpServer) {
-		this.socketIoServer = new SocketIoServer(httpServer, { cors: { origin: process.env.CORS_ORIGIN ?? '*' } });
+		this.socketIoServer = new SocketIoServer(httpServer, {
+			path: '/price-guess-socket',
+			cors: { origin: process.env.CORS_ORIGIN ?? '*' },
+		});
 		this.start();
 	}
 

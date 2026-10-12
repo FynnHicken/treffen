@@ -2517,4 +2517,308 @@ body {
     }
 }
 
+/* ==========================================================================
+   SLOT MACHINE (EINARMIGER BANDIT) MODAL & ARCADE STYLING
+   ========================================================================== */
+.slot-modal-card {
+    max-width: 520px;
+    width: 95vw;
+    background: linear-gradient(145deg, #18122B 0%, #251B37 50%, #392852 100%);
+    border: 3.5px solid #FFD369;
+    box-shadow: 0 0 35px rgba(255, 211, 105, 0.4), 6px 6px 0px var(--ink);
+    border-radius: 28px;
+    padding: 24px 28px;
+    color: #ffffff;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.slot-header {
+    margin-bottom: 16px;
+}
+
+.slot-neon-badge {
+    display: inline-block;
+    padding: 3px 12px;
+    background: #FF007F;
+    color: #fff;
+    font-family: var(--font-heading);
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.22em;
+    border-radius: 999px;
+    box-shadow: 0 0 12px #FF007F;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+}
+
+.slot-title {
+    font-size: 1.9rem;
+    font-family: var(--font-heading);
+    font-weight: 900;
+    color: #FFD369;
+    text-shadow: 0 0 14px rgba(255, 211, 105, 0.6), 2px 2px 0px #000;
+    margin: 4px 0;
+}
+
+.slot-subtitle {
+    font-size: 0.88rem;
+    color: #E0E7FF;
+    opacity: 0.9;
+}
+
+.slot-machine-body {
+    background: #0f0a1c;
+    border: 3px solid #FFD369;
+    border-radius: 20px;
+    padding: 12px 14px;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.8), 0 8px 18px rgba(0,0,0,0.4);
+    position: relative;
+    margin-bottom: 14px;
+}
+
+.slot-lights-bar {
+    display: flex;
+    justify-content: space-around;
+    padding: 4px 6px;
+}
+
+.slot-lights-bar .bulb {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #FFD369;
+    box-shadow: 0 0 8px #FFD369;
+    animation: bulbBlink 0.9s infinite alternate;
+}
+
+.slot-lights-bar .bulb:nth-child(2n) {
+    background: #FF007F;
+    box-shadow: 0 0 8px #FF007F;
+    animation-delay: 0.45s;
+}
+
+@keyframes bulbBlink {
+    0% { opacity: 0.35; transform: scale(0.9); }
+    100% { opacity: 1; transform: scale(1.15); }
+}
+
+.slot-reels-stage {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    align-items: center;
+    background: #000;
+    border: 2.5px solid #4a3869;
+    border-radius: 14px;
+    padding: 8px 10px;
+    position: relative;
+    box-shadow: inset 0 0 24px rgba(0,0,0,0.95);
+    overflow: hidden;
+}
+
+.slot-reel-window {
+    flex: 1;
+    height: 140px;
+    max-width: 130px;
+    background: #ffffff;
+    border: 2.5px solid #22153b;
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: inset 0 10px 14px rgba(0,0,0,0.45), inset 0 -10px 14px rgba(0,0,0,0.45);
+}
+
+.reel-glass-glare {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 35%, rgba(0,0,0,0) 65%, rgba(0,0,0,0.3) 100%);
+    border-radius: 10px;
+}
+
+.slot-payline {
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    top: 50%;
+    height: 3px;
+    background: rgba(255, 0, 127, 0.7);
+    box-shadow: 0 0 8px #ff007f;
+    transform: translateY(-50%);
+    pointer-events: none;
+    z-index: 10;
+}
+
+.slot-reel-strip {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    will-change: transform;
+}
+
+.slot-item {
+    height: 140px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex-shrink: 0;
+    color: #1e1b4b;
+    font-family: var(--font-heading);
+    user-select: none;
+}
+
+.slot-item-icon {
+    font-size: 3.2rem;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+    line-height: 1;
+}
+
+.slot-item-title {
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: #1e1b4b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Result Jackpot Banner */
+.slot-result-banner {
+    background: linear-gradient(135deg, #FFD369 0%, #F59E0B 100%);
+    border: 2px solid #fff;
+    border-radius: 16px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    color: #18122B;
+    animation: jackpotPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: 0 0 25px rgba(255, 211, 105, 0.8);
+}
+
+@keyframes jackpotPop {
+    0% { transform: scale(0.6); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+.slot-jackpot-icon {
+    font-size: 0.85rem;
+    font-weight: 900;
+    letter-spacing: 0.15em;
+    color: #92400E;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 2px;
+}
+
+.slot-winner-title {
+    font-size: 1.6rem;
+    font-weight: 900;
+    font-family: var(--font-heading);
+    color: #1e1b4b;
+}
+
+.slot-winner-countdown {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #78350F;
+    margin-top: 2px;
+}
+
+/* Slot Controls & Lever */
+.slot-controls-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding-top: 4px;
+}
+
+.slot-lever-container {
+    width: 44px;
+    height: 70px;
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.1s;
+}
+
+.slot-lever-container:hover {
+    transform: scale(1.05);
+}
+
+.slot-lever-base {
+    position: absolute;
+    bottom: 0;
+    left: 8px;
+    width: 28px;
+    height: 22px;
+    background: linear-gradient(180deg, #64748B 0%, #334155 100%);
+    border: 2px solid #000;
+    border-radius: 6px;
+    box-shadow: 2px 2px 0px #000;
+}
+
+.slot-lever-arm {
+    position: absolute;
+    bottom: 12px;
+    left: 20px;
+    width: 6px;
+    height: 52px;
+    background: linear-gradient(90deg, #E2E8F0 0%, #94A3B8 50%, #475569 100%);
+    border-radius: 3px;
+    transform-origin: bottom center;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slot-lever-knob {
+    position: absolute;
+    top: -14px;
+    left: -11px;
+    width: 28px;
+    height: 28px;
+    background: radial-gradient(circle at 35% 35%, #FF007F 0%, #be185d 65%, #831843 100%);
+    border: 2px solid #000;
+    border-radius: 50%;
+    box-shadow: 0 0 10px #ff007f, 2px 2px 0px #000;
+}
+
+.slot-lever-container.pulled .slot-lever-arm {
+    transform: rotate(65deg) scaleY(0.7);
+}
+
+.slot-action-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+}
+
+.slot-spin-btn {
+    padding: 12px 20px;
+    font-size: 1.15rem;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    background: linear-gradient(135deg, #FF007F 0%, #D946EF 100%);
+    border: 2.5px solid #000;
+    color: #fff;
+    box-shadow: 0 0 15px rgba(255, 0, 127, 0.5), 3px 3px 0px #000;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.slot-spin-btn:hover {
+    transform: scale(1.03);
+    box-shadow: 0 0 22px rgba(255, 0, 127, 0.8), 3px 3px 0px #000;
+}
+
+.slot-spin-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
 

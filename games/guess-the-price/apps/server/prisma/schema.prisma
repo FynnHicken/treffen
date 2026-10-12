@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -19,7 +19,7 @@ model Product {
   image        String
   description  String?
   source       String?
-  price        Decimal @db.Money
+  price        Decimal
   priceMessage String?
 
   categoryId String?

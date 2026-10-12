@@ -1,8 +1,14 @@
 export const getApiUrl = (): string => {
 	const envUrl = import.meta.env.VITE_API_URL;
-	if (envUrl && !envUrl.includes('localhost')) {
+	if (envUrl) {
 		return envUrl;
 	}
-	const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-	return `http://${host}:3005/api`;
+	if (typeof window !== 'undefined') {
+		if (window.location.port === '8088') {
+			return `http://${window.location.hostname}:3005/api`;
+		}
+		return '/price-guess-api';
+	}
+	return 'http://localhost:3005/api';
 };
+
