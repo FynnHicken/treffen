@@ -83,12 +83,6 @@ COPY games/mensch/requirements.txt ./
 RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 COPY games/mensch ./
 
-# 8. Among Us
-WORKDIR /app/amongus
-COPY games/amongus/requirements.txt ./
-RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
-COPY games/amongus ./
-
 # 9. Imposter
 WORKDIR /app/imposter
 COPY games/imposter/requirements.txt ./

@@ -223,15 +223,6 @@ const partyState = {
             desc: "Der beliebte Brettspiel-Klassiker! Würfle eine 6 zum Rauskommen, wirf gegnerische Spielfiguren und bringe alle 4 Hütchen sicher ins Haus.",
             embedUrl: "/mensch/"
         },
-        amongus: {
-            id: "amongus",
-            title: "Among Us",
-            icon: "🚀",
-            minPlayers: 3,
-            maxPlayers: 10,
-            desc: "Finde die Verräter auf der Skeld! Repariere das Raumschiff, rufe Notfall-Besprechungen ein oder eliminiere als Impostor die Besatzung durch die Lüftungsschächte.",
-            embedUrl: "/amongus/"
-        },
         imposter: {
             id: "imposter",
             title: "Imposter",
@@ -250,7 +241,6 @@ const partyState = {
         price_guess: 0,
         monopoly: 0,
         mensch: 0,
-        amongus: 0,
         imposter: 0
     },
     userVotedGame: null,
@@ -2014,8 +2004,6 @@ function getGameUrl(game, lobbyId) {
         return `/monopoly/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}`;
     } else if (game.id === "mensch") {
         return `/mensch/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}`;
-    } else if (game.id === "amongus") {
-        return `/amongus/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}`;
     } else if (game.id === "imposter") {
         return `/imposter/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}`;
     } else if (game.id === "price_guess") {
@@ -2033,7 +2021,7 @@ function startGameView(game, lobbyId) {
     hudIcon.innerText = game.icon;
     hudTitle.innerText = `${game.title} • Party-Raum`;
 
-    if (game.id === "skribbol" || game.id === "uno" || game.id === "codenames" || game.id === "monopoly" || game.id === "mensch" || game.id === "amongus" || game.id === "imposter" || game.id === "price_guess") {
+    if (game.id === "skribbol" || game.id === "uno" || game.id === "codenames" || game.id === "monopoly" || game.id === "mensch" || game.id === "imposter" || game.id === "price_guess") {
         iframe.src = getGameUrl(game, lobbyId);
     } else {
         iframe.srcdoc = `

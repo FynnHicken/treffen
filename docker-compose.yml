@@ -168,19 +168,6 @@ services:
     networks:
       - party-net
 
-  # =========================================================================
-  # Spiel: Among Us (Experimentell) - Nur TrueNAS
-  # =========================================================================
-  amongus:
-    build:
-      context: ./games/amongus
-      dockerfile: Dockerfile
-    container_name: amongus
-    restart: unless-stopped
-    ports:
-      - "8093:8093"
-    networks:
-      - party-net
 
   # =========================================================================
   # Spiel: Imposter - Worträtsel & Social Deduction - Nur TrueNAS

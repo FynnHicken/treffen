@@ -43,12 +43,6 @@ if [ -f /app/mensch/server/main.py ]; then
     cd /app/mensch && PORT=8092 HOST=0.0.0.0 python3 server/main.py &
 fi
 
-# 8. Among Us (Python on port 8093)
-if [ -f /app/amongus/server/main.py ]; then
-    echo "Starting amongus..."
-    cd /app/amongus && PORT=8093 HOST=0.0.0.0 python3 server/main.py &
-fi
-
 # 9. Imposter (Python on port 8094)
 if [ -f /app/imposter/server/main.py ]; then
     echo "Starting imposter..."
