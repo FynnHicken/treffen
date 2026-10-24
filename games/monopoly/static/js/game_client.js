@@ -154,6 +154,7 @@
     let buyOrAuctionTimerInterval = null;
     let buyOrAuctionSecondsLeft = 0;
     let buyOrAuctionSqIdx = null;
+    let activeDeedSqIdx = null;
     const BUY_OR_AUCTION_TIMEOUT_SEC = 10;
 
     function clearCardModalTimer() {
@@ -1037,7 +1038,11 @@
                     }
                 } else {
                     if (Sound) Sound.playBuild();
-                    closeModal('modal-deed');
+                    if (activeDeedSqIdx !== null && isDeedModalOpen()) {
+                        showDeedModal(activeDeedSqIdx);
+                    } else {
+                        closeModal('modal-deed');
+                    }
                     resetEndTurnTimer();
                 }
                 break;
@@ -1049,7 +1054,11 @@
                     }
                 } else {
                     if (Sound) Sound.playMoney();
-                    closeModal('modal-deed');
+                    if (activeDeedSqIdx !== null && isDeedModalOpen()) {
+                        showDeedModal(activeDeedSqIdx);
+                    } else {
+                        closeModal('modal-deed');
+                    }
                     resetEndTurnTimer();
                 }
                 break;
@@ -1061,7 +1070,11 @@
                     }
                 } else {
                     if (Sound) Sound.playMoney();
-                    closeModal('modal-deed');
+                    if (activeDeedSqIdx !== null && isDeedModalOpen()) {
+                        showDeedModal(activeDeedSqIdx);
+                    } else {
+                        closeModal('modal-deed');
+                    }
                     resetEndTurnTimer();
                 }
                 break;
@@ -2284,6 +2297,8 @@
             return;
         }
 
+        activeDeedSqIdx = sqIdx;
+
         const titleEl = document.getElementById('deed-modal-title');
         if (titleEl) titleEl.textContent = 'Besitzrecht-Urkunde';
 
@@ -2297,15 +2312,90 @@
         const modalBody = document.getElementById('deed-modal-body');
         if (!modalBody) return;
 
+        // Farbgruppen-Navigation
+        let groupNavHtml = '';
+        if (sq.type === 'property' && sq.group) {
+            const groupSquares = squaresData.filter(s => s && s.group === sq.group);
+            if (groupSquares.length > 1) {
+                const chips = groupSquares.map(s => {
+                    const gst = gameState ? gameState.board_state[s.index] : null;
+                    const isSelected = (s.index === sqIdx);
+                    let badge = '0';
+                    if (gst) {
+                        if (gst.mortgaged) {
+                            badge = '⚠️ Hyp.';
+                        } else if (gst.houses === 5) {
+                            badge = '🏨 Hotel';
+                        } else if (gst.houses > 0) {
+                            badge = `🏠 ${gst.houses}`;
+                        }
+                    }
+                    const gOwner = (gst && gst.owner && gameState) ? gameState.players.find(p => p.id === gst.owner) : null;
+                    const ownerIndicator = gOwner ? (gOwner.id === playerId ? '⭐ Du' : gOwner.name.slice(0, 4)) : 'Frei';
+                    const activeStyle = isSelected
+                        ? 'border: 2px solid #f1c40f; background: rgba(241, 196, 15, 0.22); font-weight: bold; transform: scale(1.02);'
+                        : 'border: 1px solid rgba(255, 255, 255, 0.16); background: rgba(0, 0, 0, 0.32);';
+
+                    return `
+                        <button type="button" class="group-nav-chip" style="padding: 6px 8px; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; color: #fff; flex: 1; min-width: 0; transition: all 0.15s ease; ${activeStyle}" onclick="window.MonopolyGame.showDeedModal(${s.index})">
+                            <span style="font-size: 10px; opacity: 0.9; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${s.name}</span>
+                            <span style="display: flex; align-items: center; gap: 4px; font-size: 10px;">
+                                <span style="color: ${gOwner ? gOwner.color : '#888'}; font-size: 9px;">${ownerIndicator}</span>
+                                <b style="color: ${gst && gst.houses === 5 ? '#e74c3c' : (gst && gst.houses > 0 ? '#2ecc71' : '#ccc')};">${badge}</b>
+                            </span>
+                        </button>
+                    `;
+                }).join('');
+
+                const ownedCount = groupSquares.filter(s => gameState?.board_state[s.index]?.owner === playerId).length;
+                groupNavHtml = `
+                    <div class="deed-group-nav" style="margin-bottom: 10px; padding: 8px; background: rgba(0,0,0,0.25); border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                        <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 6px; display: flex; justify-content: space-between;">
+                            <span>Farbgruppe ${sq.group}</span>
+                            <span>${ownedCount}/${groupSquares.length} im Besitz</span>
+                        </div>
+                        <div style="display: flex; gap: 6px; width: 100%;">
+                            ${chips}
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Current Rent calculation
+        let currentRent = 0;
+        if (sq.type === 'property' && sq.rents) {
+            const h = st ? (st.houses || 0) : 0;
+            if (h > 0) {
+                currentRent = sq.rents[h] || 0;
+            } else {
+                const groupSquares = squaresData.filter(s => s && s.group === sq.group);
+                const allOwnedByOwner = owner && groupSquares.every(s => gameState?.board_state[s.index]?.owner === owner.id);
+                currentRent = allOwnedByOwner ? (sq.rents[0] * 2) : sq.rents[0];
+            }
+        } else if (sq.type === 'station') {
+            const stations = squaresData.filter(s => s && s.type === 'station');
+            const ownedStations = owner ? stations.filter(s => gameState?.board_state[s.index]?.owner === owner.id).length : 0;
+            currentRent = sq.rents[Math.max(0, ownedStations - 1)] || 25;
+        } else if (sq.type === 'utility') {
+            const utilities = squaresData.filter(s => s && s.type === 'utility');
+            const ownedUtilities = owner ? utilities.filter(s => gameState?.board_state[s.index]?.owner === owner.id).length : 0;
+            currentRent = (ownedUtilities >= 2 ? '10x Augen' : '4x Augen');
+        }
+
         let rentHtml = '';
         if (sq.type === 'property') {
+            const curHouses = st ? (st.houses || 0) : 0;
+            const groupSquares = squaresData.filter(s => s && s.group === sq.group);
+            const allOwnedByOwner = owner && groupSquares.every(s => gameState?.board_state[s.index]?.owner === owner.id);
             rentHtml = `
-                <div class="deed-row"><span>Miete Grundstück allein</span><span>${sq.rents[0]} DM</span></div>
-                <div class="deed-row"><span>Mit 1 Haus</span><span>${sq.rents[1]} DM</span></div>
-                <div class="deed-row"><span>Mit 2 Häusern</span><span>${sq.rents[2]} DM</span></div>
-                <div class="deed-row"><span>Mit 3 Häusern</span><span>${sq.rents[3]} DM</span></div>
-                <div class="deed-row"><span>Mit 4 Häusern</span><span>${sq.rents[4]} DM</span></div>
-                <div class="deed-row bold"><span>Mit HOTEL</span><span>${sq.rents[5]} DM</span></div>
+                <div class="deed-row ${(curHouses === 0 && !allOwnedByOwner) ? 'active-rent' : ''}"><span>Miete Grundstück allein</span><span>${sq.rents[0]} DM</span></div>
+                <div class="deed-row ${(curHouses === 0 && allOwnedByOwner) ? 'active-rent' : ''}"><span>Miete mit ganzer Gruppe</span><span>${sq.rents[0] * 2} DM</span></div>
+                <div class="deed-row ${curHouses === 1 ? 'active-rent' : ''}"><span>Mit 1 Haus</span><span>${sq.rents[1]} DM</span></div>
+                <div class="deed-row ${curHouses === 2 ? 'active-rent' : ''}"><span>Mit 2 Häusern</span><span>${sq.rents[2]} DM</span></div>
+                <div class="deed-row ${curHouses === 3 ? 'active-rent' : ''}"><span>Mit 3 Häusern</span><span>${sq.rents[3]} DM</span></div>
+                <div class="deed-row ${curHouses === 4 ? 'active-rent' : ''}"><span>Mit 4 Häusern</span><span>${sq.rents[4]} DM</span></div>
+                <div class="deed-row bold ${curHouses === 5 ? 'active-rent' : ''}"><span>Mit HOTEL</span><span>${sq.rents[5]} DM</span></div>
             `;
         } else if (sq.type === 'station') {
             rentHtml = `
@@ -2320,6 +2410,9 @@
                 <div class="deed-row bold"><span>2 Werke besessen</span><span>10x Augen</span></div>
             `;
         }
+
+        const bankHouses = (gameState && gameState.bank_houses !== undefined) ? gameState.bank_houses : 32;
+        const bankHotels = (gameState && gameState.bank_hotels !== undefined) ? gameState.bank_hotels : 12;
 
         let actionsHtml = '';
 
@@ -2336,29 +2429,111 @@
                 </button>
             `;
         } else if (isMyProperty) {
-            const houses = st.houses || 0;
-            const isMortgaged = st.mortgaged;
+            const houses = st ? (st.houses || 0) : 0;
+            const isMortgaged = st ? st.mortgaged : false;
+            const groupSquares = squaresData.filter(s => s && s.group === sq.group);
 
             // Build / Sell buttons (allowed anytime per Parker rules page 3)
             if (sq.type === 'property' && !isMortgaged) {
                 const buildRestriction = getBuildHouseRestriction(sqIdx);
                 const canSell = houses > 0;
-                const buildBtnStyle = buildRestriction
-                    ? 'font-size:12px; padding:6px 12px; flex:1; background:rgba(46,204,113,0.22); border:1px solid rgba(46,204,113,0.45); color:#e2e8f0;'
-                    : 'font-size:12px; padding:6px 12px; flex:1;';
-                if (houses < 5) {
+                const canBuild = houses < 5;
+
+                // Even building rule: calculate how many houses this specific street can receive right now
+                let maxBuildableOnStreet = 0;
+                if (!buildRestriction && canBuild) {
+                    const otherSquares = groupSquares.filter(s => s.index !== sqIdx);
+                    const minOther = Math.min(...otherSquares.map(s => (gameState?.board_state[s.index]?.houses || 0)));
+                    const maxAllowed = Math.min(5, minOther + 1);
+                    const allowedSteps = Math.max(0, maxAllowed - houses);
+                    const canAffordSteps = Math.floor((myPlayer ? myPlayer.money : 0) / sq.house_cost);
+                    maxBuildableOnStreet = Math.min(allowedSteps, canAffordSteps);
+                }
+
+                // Check group building
+                const ownsAllGroup = groupSquares.length > 0 && groupSquares.every(s => gameState?.board_state[s.index]?.owner === playerId);
+                const anyMortgagedInGroup = groupSquares.some(s => gameState?.board_state[s.index]?.mortgaged);
+                let groupBuildBtnHtml = '';
+                let groupSellBtnHtml = '';
+
+                if (ownsAllGroup && !anyMortgagedInGroup) {
+                    const minH = Math.min(...groupSquares.map(s => (gameState?.board_state[s.index]?.houses || 0)));
+                    if (minH < 5) {
+                        const targetSquares = groupSquares.filter(s => (gameState?.board_state[s.index]?.houses || 0) === minH);
+                        const groupCost = targetSquares.length * sq.house_cost;
+                        const canAffordGroup = myPlayer && myPlayer.money >= groupCost;
+                        const isHotelStep = (minH === 4);
+                        const supplyOk = isHotelStep ? (bankHotels >= targetSquares.length) : (bankHouses >= targetSquares.length);
+                        const isGroupEven = (targetSquares.length === groupSquares.length);
+                        const groupLabel = isGroupEven
+                            ? `🏘️ Farbgruppe ausbauen (+1 ${isHotelStep ? 'Hotel' : 'Haus'} je Straße: ${groupCost} DM)`
+                            : `🏘️ Farbgruppe angleichen (${targetSquares.length}x Haus: ${groupCost} DM)`;
+
+                        const btnDisabled = (!canAffordGroup || !supplyOk);
+                        let tip = '';
+                        if (!canAffordGroup) tip = ` (${myPlayer ? myPlayer.money : 0} DM verfügbar)`;
+                        else if (!supplyOk) tip = ` (Kein Vorrat)`;
+
+                        groupBuildBtnHtml = `
+                            <button class="btn-action" style="font-size:12px; padding:7px 12px; flex:1 1 100%; background:#16a085; color:#fff;" ${btnDisabled ? 'disabled' : ''} onclick="window.MonopolyGame.buildGroup('${sq.group}', ${sqIdx})">
+                                ${groupLabel}${tip}
+                            </button>
+                        `;
+                    }
+
+                    // Group sell button
+                    const maxH = Math.max(...groupSquares.map(s => (gameState?.board_state[s.index]?.houses || 0)));
+                    if (maxH > 0) {
+                        const targetsSell = groupSquares.filter(s => (gameState?.board_state[s.index]?.houses || 0) === maxH);
+                        const refundGroup = targetsSell.length * (sq.house_cost / 2);
+                        const isHotelDowngrade = (maxH === 5);
+                        const canDowngrade = !isHotelDowngrade || (bankHouses >= 4 * targetsSell.length);
+                        if (canDowngrade) {
+                            groupSellBtnHtml = `
+                                <button class="btn-action" style="font-size:11px; padding:5px 10px; background:#7f8c8d; color:#fff;" onclick="window.MonopolyGame.sellGroup('${sq.group}', ${sqIdx})">
+                                    🔻 Farbgruppe -1 Stufe (+${refundGroup} DM)
+                                </button>
+                            `;
+                        }
+                    }
+                }
+
+                // 1. Single House Build button
+                if (canBuild) {
+                    const buildBtnStyle = buildRestriction
+                        ? 'font-size:12px; padding:6px 12px; flex:1; background:rgba(46,204,113,0.22); border:1px solid rgba(46,204,113,0.45); color:#e2e8f0;'
+                        : 'font-size:12px; padding:6px 12px; flex:1;';
                     actionsHtml += `
-                        <button class="btn-action btn-buy" style="${buildBtnStyle}" onclick="window.MonopolyGame.buildHouse(${sqIdx})">
+                        <button class="btn-action btn-buy" style="${buildBtnStyle}" onclick="window.MonopolyGame.buildHouse(${sqIdx}, 1)">
                             🔨 ${houses === 4 ? 'Hotel' : 'Haus'} bauen (${sq.house_cost} DM)
                         </button>
                     `;
                 }
+
+                // 2. Multi-House Build button on this street if allowed > 1
+                if (maxBuildableOnStreet >= 2) {
+                    actionsHtml += `
+                        <button class="btn-action btn-buy" style="font-size:12px; padding:6px 12px; flex:1; background:#27ae60;" onclick="window.MonopolyGame.buildHouse(${sqIdx}, ${maxBuildableOnStreet})">
+                            🔨🔨 +${maxBuildableOnStreet} Häuser (${sq.house_cost * maxBuildableOnStreet} DM)
+                        </button>
+                    `;
+                }
+
+                // 3. Sell House button
                 if (canSell) {
                     actionsHtml += `
-                        <button class="btn-action" style="font-size:12px; padding:6px 12px; background:#e67e22; color:#fff;" onclick="window.MonopolyGame.sellHouse(${sqIdx})">
+                        <button class="btn-action" style="font-size:12px; padding:6px 12px; background:#e67e22; color:#fff;" onclick="window.MonopolyGame.sellHouse(${sqIdx}, 1)">
                             Verkaufen (+${sq.house_cost / 2} DM)
                         </button>
                     `;
+                }
+
+                // 4. Farbgruppe ausbauen button (if owned whole group)
+                if (groupBuildBtnHtml) {
+                    actionsHtml += groupBuildBtnHtml;
+                }
+                if (groupSellBtnHtml) {
+                    actionsHtml += groupSellBtnHtml;
                 }
             }
 
@@ -2385,8 +2560,6 @@
         const deedImgSrc = DEED_CARD_IMAGES[sqIdx];
         if (deedImgSrc) preloadImageUrl(deedImgSrc);
         const isDeedCached = deedImgSrc && isImageReady(deedImgSrc);
-        const bankHouses = (gameState && gameState.bank_houses !== undefined) ? gameState.bank_houses : 32;
-        const bankHotels = (gameState && gameState.bank_hotels !== undefined) ? gameState.bank_hotels : 12;
 
         const textCardHtml = `
             <div class="deed-card" id="deed-fallback-card" style="display:${isDeedCached ? 'none' : 'block'};">
@@ -2396,8 +2569,8 @@
                 </div>
                 <div class="deed-content">${rentHtml}</div>
                 <div class="deed-footer">
-                    <div><strong>Kaufpreis:</strong> ${sq.price} DM</div>
-                    <div><strong>Hypothekenwert:</strong> ${sq.mortgage || sq.price / 2} DM</div>
+                    <div><strong>Aktuelle Miete:</strong> <span style="color:#27ae60; font-weight:700;">${typeof currentRent === 'number' ? currentRent + ' DM' : currentRent}</span></div>
+                    <div><strong>Kaufpreis:</strong> ${sq.price} DM | <strong>Hypothekenwert:</strong> ${sq.mortgage || sq.price / 2} DM</div>
                     ${sq.house_cost ? `<div><strong>Hauskosten:</strong> je ${sq.house_cost} DM</div>` : ''}
                     <div style="margin-top:4px; font-weight:700; color:${owner ? owner.color : '#666'};">
                         Besitzer: ${owner ? owner.name + (isMyProperty ? ' (Du)' : '') : 'Niemand (Frei)'}
@@ -2413,6 +2586,7 @@
                 ${st && st.mortgaged ? '<div class="mortgage-stamp-overlay">HYPOTHEK</div>' : ''}
             </div>
             <div id="deed-img-meta" style="display:${isDeedCached ? 'flex' : 'none'}; background:rgba(255,255,255,0.06); padding:10px 14px; border-radius:8px; margin-top:10px; font-size:12px; flex-direction:column; gap:4px;">
+                <div><strong>Aktuelle Miete:</strong> <span style="color:#2ecc71; font-weight:700;">${typeof currentRent === 'number' ? currentRent + ' DM' : currentRent}</span></div>
                 <div><strong>Kaufpreis:</strong> ${sq.price} DM | <strong>Hypothekenwert:</strong> ${sq.mortgage || sq.price / 2} DM</div>
                 ${sq.house_cost ? `<div><strong>Hausbau:</strong> je ${sq.house_cost} DM ${st && st.houses ? `(Aktuell: ${st.houses === 5 ? 'Hotel' : st.houses + ' Häuser'})` : ''}</div>` : ''}
                 ${sq.house_cost ? `<div style="font-size:11px; color:var(--text-muted);">Bank-Vorrat: ${bankHouses} Häuser, ${bankHotels} Hotels</div>` : ''}
@@ -2424,6 +2598,7 @@
         ` : '';
 
         modalBody.innerHTML = `
+            ${groupNavHtml}
             ${textCardHtml}
             ${imageCardHtml}
             <div id="deed-error-banner" style="display:none; align-items:center; gap:8px; background:rgba(231,76,60,0.18); border:1px solid rgba(231,76,60,0.55); color:#fecaca; padding:9px 12px; border-radius:8px; margin-top:10px; font-size:12px; font-weight:600; line-height:1.35;"></div>
@@ -2634,6 +2809,11 @@
     }
 
     // Modal Helpers
+    function isDeedModalOpen() {
+        const el = document.getElementById('modal-deed');
+        return !!(el && el.classList.contains('open'));
+    }
+
     function openModal(id) {
         const el = document.getElementById(id);
         if (el) el.classList.add('open');
@@ -2643,6 +2823,9 @@
     function closeModal(id) {
         const el = document.getElementById(id);
         if (el) el.classList.remove('open');
+        if (id === 'modal-deed') {
+            activeDeedSqIdx = null;
+        }
         resetEndTurnTimer();
         syncEndTurnTimer();
     }
@@ -3018,22 +3201,34 @@
             closeModal('modal-tax');
         },
 
-        buildHouse: function(sqIdx) {
+        buildHouse: function(sqIdx, count = 1) {
             const restriction = getBuildHouseRestriction(sqIdx);
             if (restriction) {
                 showDeedErrorBanner(restriction, '⚠️ HAUSBAU NICHT MÖGLICH');
                 return;
             }
-            sendWsMessage({ action: 'BUILD_HOUSE', sq_idx: sqIdx });
+            sendWsMessage({ action: 'BUILD_HOUSE', sq_idx: sqIdx, count: count || 1 });
         },
 
-        sellHouse: function(sqIdx) {
+        sellHouse: function(sqIdx, count = 1) {
             const restriction = getSellHouseRestriction(sqIdx);
             if (restriction) {
                 showDeedErrorBanner(restriction, '⚠️ VERKAUF NICHT MÖGLICH');
                 return;
             }
-            sendWsMessage({ action: 'SELL_HOUSE', sq_idx: sqIdx });
+            sendWsMessage({ action: 'SELL_HOUSE', sq_idx: sqIdx, count: count || 1 });
+        },
+
+        buildGroup: function(group, sqIdx) {
+            sendWsMessage({ action: 'BUILD_GROUP', group: group, sq_idx: sqIdx });
+        },
+
+        sellGroup: function(group, sqIdx) {
+            sendWsMessage({ action: 'SELL_GROUP', group: group, sq_idx: sqIdx });
+        },
+
+        showDeed: function(sqIdx) {
+            showDeedModal(sqIdx);
         },
 
         toggleMortgage: function(sqIdx) {

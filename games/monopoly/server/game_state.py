@@ -1119,7 +1119,7 @@ class GameRoom:
     # =========================================================================
     # Häuser & Hotels mit Gebäudelimit (32 Häuser / 12 Hotels, Seite 3)
     # =========================================================================
-    def build_house(self, player_id: str, sq_idx: int) -> dict:
+    def build_house(self, player_id: str, sq_idx: int, count: int = 1) -> dict:
         player = next((p for p in self.players if p.id == player_id), None)
         if not player:
             return {"error": "Spieler nicht gefunden."}
@@ -1140,33 +1140,58 @@ class GameRoom:
         if any(self.board_state[s]["mortgaged"] for s in group_squares):
             return {"error": "In der Farbgruppe existiert eine Hypothek!"}
 
-        # Even building rule
-        current_houses = state["houses"]
-        if current_houses >= 5:
-            return {"error": "Maximaler Ausbau (Hotel) bereits erreicht!"}
-        min_houses = min(self.board_state[s]["houses"] for s in group_squares)
-        if current_houses > min_houses:
-            return {"error": "Gleichmäßiges Bauen erforderlich (andere Straßen der Gruppe haben weniger Häuser)."}
-
-        # Check bank building limits (32 houses, 12 hotels)
-        if current_houses < 4:
-            if self.available_bank_houses() <= 0:
-                return {"error": f"Mangel an Gebäuden: Die Bank hat keine Häuser mehr übrig (alle {MAX_BANK_HOUSES} verbaut)!"}
-        else:
-            if self.available_bank_hotels() <= 0:
-                return {"error": f"Mangel an Gebäuden: Die Bank hat keine Hotels mehr übrig (alle {MAX_BANK_HOTELS} verbaut)!"}
-
         cost = square["house_cost"]
-        if player.money < cost:
-            return {"error": "Nicht genug Geld."}
+        built_count = 0
+        total_cost = 0
 
-        player.money -= cost
-        state["houses"] += 1
-        name = "ein Haus" if state["houses"] < 5 else "ein HOTEL"
-        self.log(f"{player.name} baut {name} auf {square['name']} ({cost} DM)!")
-        return {"success": True, "houses": state["houses"], "money": player.money}
+        target_iterations = max(1, count)
+        for _ in range(target_iterations):
+            current_houses = state["houses"]
+            if current_houses >= 5:
+                if built_count == 0:
+                    return {"error": "Maximaler Ausbau (Hotel) bereits erreicht!"}
+                break
+            min_houses = min(self.board_state[s]["houses"] for s in group_squares)
+            if current_houses > min_houses:
+                if built_count == 0:
+                    return {"error": "Gleichmäßiges Bauen erforderlich (andere Straßen der Gruppe haben weniger Häuser)."}
+                break
 
-    def sell_house(self, player_id: str, sq_idx: int) -> dict:
+            # Check bank building limits (32 houses, 12 hotels)
+            if current_houses < 4:
+                if self.available_bank_houses() <= 0:
+                    if built_count == 0:
+                        return {"error": f"Mangel an Gebäuden: Die Bank hat keine Häuser mehr übrig (alle {MAX_BANK_HOUSES} verbaut)!"}
+                    break
+            else:
+                if self.available_bank_hotels() <= 0:
+                    if built_count == 0:
+                        return {"error": f"Mangel an Gebäuden: Die Bank hat keine Hotels mehr übrig (alle {MAX_BANK_HOTELS} verbaut)!"}
+                    break
+
+            if player.money < cost:
+                if built_count == 0:
+                    return {"error": "Nicht genug Geld."}
+                break
+
+            player.money -= cost
+            state["houses"] += 1
+            built_count += 1
+            total_cost += cost
+
+        if built_count == 0:
+            return {"error": "Hausbau nicht möglich."}
+
+        if built_count == 1:
+            name = "ein Haus" if state["houses"] < 5 else "ein HOTEL"
+            self.log(f"{player.name} baut {name} auf {square['name']} ({cost} DM)!")
+        else:
+            hotel_suffix = " (jetzt HOTEL)" if state["houses"] == 5 else ""
+            self.log(f"{player.name} baut {built_count} Häuser auf {square['name']}{hotel_suffix} ({total_cost} DM)!")
+
+        return {"success": True, "houses": state["houses"], "built_count": built_count, "money": player.money}
+
+    def sell_house(self, player_id: str, sq_idx: int, count: int = 1) -> dict:
         player = next((p for p in self.players if p.id == player_id), None)
         if not player:
             return {"error": "Spieler nicht gefunden."}
@@ -1176,27 +1201,138 @@ class GameRoom:
         state = self.board_state[sq_idx]
         if state["owner"] != player.id:
             return {"error": "Nicht dein Grundstück."}
-        if state["houses"] <= 0:
-            return {"error": "Keine Häuser vorhanden zum Verkaufen."}
 
         group = square["group"]
         group_squares = COLOR_GROUPS[group]
-        max_houses = max(self.board_state[s]["houses"] for s in group_squares)
-        if state["houses"] < max_houses:
-            return {"error": "Gleichmäßiges Verkaufen erforderlich (zuerst von stärker bebauten Straßen verkaufen)."}
+        refund_each = square["house_cost"] // 2
+        sold_count = 0
+        total_refund = 0
 
-        # Wenn ein Hotel (5) in 4 Häuser umgewandelt wird, prüfen ob 4 Häuser in der Bank sind
-        if state["houses"] == 5 and self.available_bank_houses() < 4:
-            return {"error": f"In der Bank sind nur noch {self.available_bank_houses()} Häuser verfügbar (4 benötigt für Hotel-Abbau)."}
+        target_iterations = max(1, count)
+        for _ in range(target_iterations):
+            current_houses = state["houses"]
+            if current_houses <= 0:
+                if sold_count == 0:
+                    return {"error": "Keine Häuser vorhanden zum Verkaufen."}
+                break
 
-        refund = square["house_cost"] // 2
-        was_hotel = (state["houses"] == 5)
-        state["houses"] -= 1
-        self._credit_money(player, refund)
-        name = "ein HOTEL (zurück zu 4 Häusern)" if was_hotel else "ein Haus"
-        self.log(f"{player.name} verkauft {name} auf {square['name']} (+{refund} DM)!")
+            max_houses = max(self.board_state[s]["houses"] for s in group_squares)
+            if current_houses < max_houses:
+                if sold_count == 0:
+                    return {"error": "Gleichmäßiges Verkaufen erforderlich (zuerst von stärker bebauten Straßen verkaufen)."}
+                break
+
+            # Wenn ein Hotel (5) in 4 Häuser umgewandelt wird, prüfen ob 4 Häuser in der Bank sind
+            if current_houses == 5 and self.available_bank_houses() < 4:
+                if sold_count == 0:
+                    return {"error": f"In der Bank sind nur noch {self.available_bank_houses()} Häuser verfügbar (4 benötigt für Hotel-Abbau)."}
+                break
+
+            state["houses"] -= 1
+            self._credit_money(player, refund_each)
+            sold_count += 1
+            total_refund += refund_each
+
+        if sold_count == 0:
+            return {"error": "Verkauf nicht möglich."}
+
+        if sold_count == 1:
+            name = "ein HOTEL (zurück zu 4 Häusern)" if (state["houses"] == 4 and target_iterations == 1) else "ein Haus"
+            self.log(f"{player.name} verkauft {name} auf {square['name']} (+{refund_each} DM)!")
+        else:
+            self.log(f"{player.name} verkauft {sold_count} Häuser auf {square['name']} (+{total_refund} DM)!")
+
         self._check_doubles_reroll(player)
-        return {"success": True, "houses": state["houses"], "money": player.money}
+        return {"success": True, "houses": state["houses"], "sold_count": sold_count, "money": player.money}
+
+    def build_group(self, player_id: str, group: str) -> dict:
+        player = next((p for p in self.players if p.id == player_id), None)
+        if not player:
+            return {"error": "Spieler nicht gefunden."}
+        if group not in COLOR_GROUPS:
+            return {"error": "Ungültige Farbgruppe."}
+
+        group_squares = COLOR_GROUPS[group]
+        if not all(self.board_state[s]["owner"] == player.id for s in group_squares):
+            return {"error": "Du musst alle Straßen dieser Farbgruppe besitzen!"}
+        if any(self.board_state[s]["mortgaged"] for s in group_squares):
+            return {"error": "In der Farbgruppe existiert eine Hypothek!"}
+
+        min_houses = min(self.board_state[s]["houses"] for s in group_squares)
+        if min_houses >= 5:
+            return {"error": "Die gesamte Farbgruppe hat bereits Hotels (Maximalausbau)!"}
+
+        target_squares = [s for s in group_squares if self.board_state[s]["houses"] == min_houses]
+        house_cost = SQUARES[target_squares[0]]["house_cost"]
+        total_cost = house_cost * len(target_squares)
+
+        if player.money < total_cost:
+            return {"error": f"Nicht genug Geld! Erforderlich: {total_cost} DM (Du hast {player.money} DM)."}
+
+        if min_houses < 4:
+            if self.available_bank_houses() < len(target_squares):
+                return {"error": f"Mangel an Gebäuden: Die Bank hat nur noch {self.available_bank_houses()} Häuser (benötigt: {len(target_squares)})!"}
+        else:
+            if self.available_bank_hotels() < len(target_squares):
+                return {"error": f"Mangel an Gebäuden: Die Bank hat nur noch {self.available_bank_hotels()} Hotels (benötigt: {len(target_squares)})!"}
+
+        player.money -= total_cost
+        for s in target_squares:
+            self.board_state[s]["houses"] += 1
+
+        tier_label = "ein HOTEL" if min_houses == 4 else "je 1 Haus"
+        if len(target_squares) == len(group_squares):
+            self.log(f"{player.name} baut {tier_label} auf allen Straßen der Farbgruppe ({total_cost} DM)!")
+        else:
+            target_names = [SQUARES[s]["name"] for s in target_squares]
+            self.log(f"{player.name} gleicht die Farbgruppe aus (+1 Haus auf {', '.join(target_names)}, {total_cost} DM)!")
+
+        return {
+            "success": True,
+            "group": group,
+            "target_squares": target_squares,
+            "money": player.money
+        }
+
+    def sell_group(self, player_id: str, group: str) -> dict:
+        player = next((p for p in self.players if p.id == player_id), None)
+        if not player:
+            return {"error": "Spieler nicht gefunden."}
+        if group not in COLOR_GROUPS:
+            return {"error": "Ungültige Farbgruppe."}
+
+        group_squares = COLOR_GROUPS[group]
+        if not all(self.board_state[s]["owner"] == player.id for s in group_squares):
+            return {"error": "Du besitzt diese Farbgruppe nicht!"}
+
+        max_houses = max(self.board_state[s]["houses"] for s in group_squares)
+        if max_houses <= 0:
+            return {"error": "Keine Häuser auf dieser Farbgruppe zum Verkaufen."}
+
+        target_squares = [s for s in group_squares if self.board_state[s]["houses"] == max_houses]
+        house_cost = SQUARES[target_squares[0]]["house_cost"]
+        refund_each = house_cost // 2
+        total_refund = refund_each * len(target_squares)
+
+        if max_houses == 5:
+            needed_houses = 4 * len(target_squares)
+            if self.available_bank_houses() < needed_houses:
+                return {"error": f"In der Bank sind nur {self.available_bank_houses()} Häuser verfügbar ({needed_houses} benötigt für Hotel-Rückbau)!"}
+
+        for s in target_squares:
+            self.board_state[s]["houses"] -= 1
+        self._credit_money(player, total_refund)
+
+        self.log(f"{player.name} verkauft Gebäude auf Farbgruppe ({total_refund} DM).")
+        self._check_doubles_reroll(player)
+
+        return {
+            "success": True,
+            "group": group,
+            "target_squares": target_squares,
+            "refund": total_refund,
+            "money": player.money
+        }
 
     # =========================================================================
     # Handel zwischen Spielern (inkl. Gefängnisfrei-Karten & 10% Hypothekenzins)

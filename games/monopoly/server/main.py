@@ -307,22 +307,52 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
 
             elif action == "BUILD_HOUSE":
                 sq_idx = data.get("sq_idx")
-                res = room.build_house(player_id, sq_idx)
+                count = int(data.get("count", 1))
+                res = room.build_house(player_id, sq_idx, count)
                 await broadcast_room(room_id, {
                     "type": "HOUSE_BUILT",
                     "actor_id": player_id,
                     "sq_idx": sq_idx,
+                    "count": count,
                     "result": res,
                     "state": room.to_dict()
                 })
 
             elif action == "SELL_HOUSE":
                 sq_idx = data.get("sq_idx")
-                res = room.sell_house(player_id, sq_idx)
+                count = int(data.get("count", 1))
+                res = room.sell_house(player_id, sq_idx, count)
                 await broadcast_room(room_id, {
                     "type": "HOUSE_SOLD",
                     "actor_id": player_id,
                     "sq_idx": sq_idx,
+                    "count": count,
+                    "result": res,
+                    "state": room.to_dict()
+                })
+
+            elif action == "BUILD_GROUP":
+                group = data.get("group")
+                sq_idx = data.get("sq_idx")
+                res = room.build_group(player_id, group)
+                await broadcast_room(room_id, {
+                    "type": "HOUSE_BUILT",
+                    "actor_id": player_id,
+                    "sq_idx": sq_idx,
+                    "group": group,
+                    "result": res,
+                    "state": room.to_dict()
+                })
+
+            elif action == "SELL_GROUP":
+                group = data.get("group")
+                sq_idx = data.get("sq_idx")
+                res = room.sell_group(player_id, group)
+                await broadcast_room(room_id, {
+                    "type": "HOUSE_SOLD",
+                    "actor_id": player_id,
+                    "sq_idx": sq_idx,
+                    "group": group,
                     "result": res,
                     "state": room.to_dict()
                 })

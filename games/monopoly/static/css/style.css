@@ -952,11 +952,26 @@ html, body {
     justify-content: space-between;
     border-bottom: 1px dotted #ccc;
     padding-bottom: 2px;
+    padding-left: 4px;
+    padding-right: 4px;
+    transition: background 0.15s ease;
 }
 
 .deed-row.bold {
     font-weight: 700;
     border-bottom: 1px solid #999;
+}
+
+.deed-row.active-rent {
+    background: rgba(39, 174, 96, 0.22);
+    font-weight: 700;
+    color: #27ae60;
+    border-radius: 4px;
+}
+
+.group-nav-chip:hover {
+    border-color: rgba(255, 255, 255, 0.45) !important;
+    transform: translateY(-1px);
 }
 
 .deed-footer {
