@@ -649,10 +649,11 @@
         ctx.fillText(headerTitle, 384, 68);
 
         // Card Text
+        const cleanText = (text || '').replace(/£\s*(\d+)/g, '$1 DM');
         ctx.fillStyle = '#0f172a';
         ctx.font = 'bold 26px sans-serif';
         ctx.textAlign = 'center';
-        wrapCanvasText(ctx, text, 480, 220, 440, 34);
+        wrapCanvasText(ctx, cleanText, 480, 220, 440, 34);
 
         // Click hint
         ctx.fillStyle = '#64748b';
@@ -1349,7 +1350,7 @@
         // Close-up view of physical cards & banknotes on the table for a specific player seat
         focusSeatCards: function(seatIdx) {
             if (!camera || !controls) return;
-            currentFocusedSeat = (seatIdx !== undefined) ? (seatIdx % 4) : 0;
+            currentFocusedSeat = (seatIdx !== undefined) ? (seatIdx % 8) : 0;
             const bar = document.getElementById('seat-focus-bar');
             if (bar) bar.style.display = 'block';
             const cardBtnLabel = document.getElementById('btn-card-view-label');
@@ -1361,13 +1362,17 @@
             const distMult = isMobile ? 1.25 : 1.0;
 
             const SEAT_CAMERAS = [
-                { pos: new THREE.Vector3(0, 3.8 * distMult, 7.8 * distMult), target: new THREE.Vector3(0, 0, 5.8) },     // Seat 0 (Bottom / Player)
-                { pos: new THREE.Vector3(-7.8 * distMult, 3.8 * distMult, 0), target: new THREE.Vector3(-5.8, 0, 0) },    // Seat 1 (Left)
-                { pos: new THREE.Vector3(0, 3.8 * distMult, -7.8 * distMult), target: new THREE.Vector3(0, 0, -5.8) },   // Seat 2 (Top)
-                { pos: new THREE.Vector3(7.8 * distMult, 3.8 * distMult, 0), target: new THREE.Vector3(5.8, 0, 0) }      // Seat 3 (Right)
+                { pos: new THREE.Vector3(0, 3.8 * distMult, 7.8 * distMult), target: new THREE.Vector3(0, 0, 5.8) },       // Seat 0 (Bottom / Player)
+                { pos: new THREE.Vector3(-7.8 * distMult, 3.8 * distMult, 0), target: new THREE.Vector3(-5.8, 0, 0) },      // Seat 1 (Left)
+                { pos: new THREE.Vector3(0, 3.8 * distMult, -7.8 * distMult), target: new THREE.Vector3(0, 0, -5.8) },     // Seat 2 (Top)
+                { pos: new THREE.Vector3(7.8 * distMult, 3.8 * distMult, 0), target: new THREE.Vector3(5.8, 0, 0) },        // Seat 3 (Right)
+                { pos: new THREE.Vector3(0, 4.1 * distMult, 9.2 * distMult), target: new THREE.Vector3(0, 0, 7.2) },       // Seat 4 (Bottom Outer)
+                { pos: new THREE.Vector3(-9.2 * distMult, 4.1 * distMult, 0), target: new THREE.Vector3(-7.2, 0, 0) },      // Seat 5 (Left Outer)
+                { pos: new THREE.Vector3(0, 4.1 * distMult, -9.2 * distMult), target: new THREE.Vector3(0, 0, -7.2) },     // Seat 6 (Top Outer)
+                { pos: new THREE.Vector3(9.2 * distMult, 4.1 * distMult, 0), target: new THREE.Vector3(7.2, 0, 0) }         // Seat 7 (Right Outer)
             ];
 
-            const cfg = SEAT_CAMERAS[(seatIdx || 0) % 4];
+            const cfg = SEAT_CAMERAS[(seatIdx || 0) % SEAT_CAMERAS.length];
             this.smoothCameraTransition(cfg.pos, cfg.target, 0.1, Math.PI / 2.2, 520);
         },
 
@@ -1926,8 +1931,8 @@
 
                 // Relative seat index (0..7)
                 const relIdx = (pIdx - baseOffset + players.length) % players.length;
-                const seatIdx = relIdx % 4;
-                const seatCfg = SEAT_CONFIG[relIdx % SEAT_CONFIG.length];
+                const seatIdx = relIdx % SEAT_CONFIG.length;
+                const seatCfg = SEAT_CONFIG[seatIdx];
 
                 const seatGroup = new THREE.Group();
                 seatGroup.position.copy(seatCfg.pos);

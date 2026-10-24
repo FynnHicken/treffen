@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import random
 import time
@@ -65,6 +66,11 @@ COLOR_GROUPS = {
     "utility": [12, 28]
 }
 
+def _format_dm_text(text: str) -> str:
+    if not text:
+        return ""
+    return re.sub(r"£\s*(\d+)", r"\1 DM", text)
+
 def _load_cards(filename: str, deck_name: str, fallback_cards: list) -> list:
     filepath = ASSETS_DIR / "chance_chest" / filename
     if filepath.exists():
@@ -73,10 +79,11 @@ def _load_cards(filename: str, deck_name: str, fallback_cards: list) -> list:
                 data = json.load(f)
             cards = []
             for item in data:
+                raw_text = _format_dm_text(item.get("text_de", ""))
                 cards.append({
                     "id": item.get("id"),
                     "deck": deck_name,
-                    "text": item.get("text_de", ""),
+                    "text": raw_text,
                     "image": item.get("card_image_filename", ""),
                     "action": item.get("action", ""),
                     "value": item.get("value", 0),
@@ -88,6 +95,9 @@ def _load_cards(filename: str, deck_name: str, fallback_cards: list) -> list:
                 return cards
         except Exception as e:
             print(f"Warning: Failed to load {filename}: {e}")
+    for c in fallback_cards:
+        if "text" in c:
+            c["text"] = _format_dm_text(c["text"])
     return fallback_cards
 
 FALLBACK_COMMUNITY_CHEST_CARDS = [
@@ -539,6 +549,8 @@ class GameRoom:
             return False
         if self.rolled:
             self.rolled = False
+            if self.pending_action and self.pending_action.get("type") == "END_TURN":
+                self.pending_action = None
             self.log(f"🎲 Pasch! {curr.name} darf direkt noch einmal würfeln!")
             return True
         return False
@@ -915,6 +927,10 @@ class GameRoom:
                 if p.id != player.id and not p.is_bankrupt:
                     self._record_payment(p, amt, player.id)
                     self._credit_money(player, amt)
+                    if p.is_bot and p.money < 0:
+                        self.auto_resolve_bot_debt(p)
+                        if p.money < 0:
+                            self.declare_bankruptcy(p.id)
             self.log(f"🎁 Jeder Mitspieler schenkt {player.name} {amt} DM!")
 
         elif act in ["GO_TO_JAIL", "gotojail"]:
@@ -1406,6 +1422,53 @@ class GameRoom:
                     break
             if not mortgaged_any:
                 break
+
+    def auto_build_bot_improvements(self, bot: Player) -> List[int]:
+        """Lässt einen Bot automatisch Hypotheken ablösen und gleichmäßig Häuser/Hotels bauen, wenn genug Reserve vorhanden ist."""
+        if bot.is_bankrupt or bot.money < 300:
+            return []
+
+        built_indices: List[int] = []
+
+        # 1. Ablösen von Hypotheken, falls der Bot genug Puffer (mind. 350 DM übrig) hat
+        for sq_idx, st in self.board_state.items():
+            if st["owner"] == bot.id and st.get("mortgaged", False):
+                sq = SQUARES[sq_idx]
+                m_val = sq.get("mortgage", sq["price"] // 2)
+                cost = int(round(m_val * 1.1))
+                if bot.money - cost >= 350:
+                    self.toggle_mortgage(bot.id, sq_idx)
+
+        # 2. Gleichmäßiger Haus-/Hotelbau auf vollständigen Farbgruppen (mind. 250 DM Reserve behalten)
+        property_groups = ["brown", "lightblue", "pink", "orange", "red", "yellow", "green", "darkblue"]
+        owned_full_groups = []
+        for grp in property_groups:
+            grp_squares = COLOR_GROUPS[grp]
+            if all(self.board_state[s]["owner"] == bot.id and not self.board_state[s]["mortgaged"] for s in grp_squares):
+                owned_full_groups.append(grp)
+
+        for _ in range(3):  # Maximal 3 Gebäude pro Zug bauen, damit das Spieltempo angenehm bleibt
+            built_this_step = False
+            for grp in owned_full_groups:
+                grp_squares = COLOR_GROUPS[grp]
+                min_h = min(self.board_state[s]["houses"] for s in grp_squares)
+                if min_h >= 5:
+                    continue
+                candidates = [s for s in grp_squares if self.board_state[s]["houses"] == min_h]
+                for sq_idx in candidates:
+                    h_cost = SQUARES[sq_idx].get("house_cost", 100)
+                    if bot.money - h_cost >= 250:
+                        res = self.build_house(bot.id, sq_idx)
+                        if res.get("success"):
+                            built_indices.append(sq_idx)
+                            built_this_step = True
+                            break
+                if built_this_step:
+                    break
+            if not built_this_step:
+                break
+
+        return built_indices
 
     def end_turn(self, player_id: str) -> dict:
         player = self.current_player()

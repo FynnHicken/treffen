@@ -608,13 +608,24 @@ async def finish_bot_turn_after_auction_if_needed(room_id: str):
                 "result": bank_res,
                 "state": room.to_dict()
             })
-        elif room.rolled:
-            end_res = room.end_turn(curr.id)
-            await broadcast_room(room_id, {
-                "type": "TURN_ENDED",
-                "result": end_res,
-                "state": room.to_dict()
-            })
+        else:
+            built_list = room.auto_build_bot_improvements(curr)
+            if built_list:
+                await broadcast_room(room_id, {
+                    "type": "HOUSE_BUILT",
+                    "actor_id": curr.id,
+                    "sq_idx": built_list[-1],
+                    "result": {"success": True},
+                    "state": room.to_dict()
+                })
+                await asyncio.sleep(0.5)
+            if room.rolled:
+                end_res = room.end_turn(curr.id)
+                await broadcast_room(room_id, {
+                    "type": "TURN_ENDED",
+                    "result": end_res,
+                    "state": room.to_dict()
+                })
         await handle_bot_turn_if_needed(room_id)
 
 
@@ -693,6 +704,18 @@ async def handle_bot_turn_if_needed(room_id: str):
                 await asyncio.sleep(1.2)
 
         # Bot decision on pending action
+        if room.pending_action and room.pending_action.get("type") == "TAX_CHOICE":
+            flat_tax = room.pending_action.get("flat_tax", 200)
+            pct_tax = room.pending_action.get("percent_tax", 200)
+            mode = "percent" if pct_tax < flat_tax else "flat"
+            tax_res = room.pay_income_tax(curr.id, mode)
+            await broadcast_room(room_id, {
+                "type": "TAX_PAID",
+                "result": tax_res,
+                "state": room.to_dict()
+            })
+            await asyncio.sleep(0.8)
+
         if room.pending_action and room.pending_action.get("type") == "BUY_OR_AUCTION":
             sq = room.pending_action["square"]
             price = sq["price"]
@@ -727,6 +750,18 @@ async def handle_bot_turn_if_needed(room_id: str):
             })
             await handle_bot_turn_if_needed(room_id)
             return
+
+        # Bot builds houses/hotels or unmortgages properties if it has full color groups and extra cash
+        built_list = room.auto_build_bot_improvements(curr)
+        if built_list:
+            await broadcast_room(room_id, {
+                "type": "HOUSE_BUILT",
+                "actor_id": curr.id,
+                "sq_idx": built_list[-1],
+                "result": {"success": True},
+                "state": room.to_dict()
+            })
+            await asyncio.sleep(0.6)
 
         # Bot ends turn (or rolls again immediately if room.rolled was reset due to Pasch)
         if room.rolled:

@@ -1734,6 +1734,13 @@
             btnEnd.disabled = !canEnd;
         }
 
+        if (isMyTurn && !isTokenInTransit && gameState.pending_action && gameState.pending_action.type === 'TAX_CHOICE') {
+            const taxEl = document.getElementById('modal-tax');
+            if (taxEl && !taxEl.classList.contains('open')) {
+                showTaxChoiceModal(gameState.pending_action);
+            }
+        }
+
         // Jail actions (only BEFORE first roll attempt of the turn)
         if (btnBail && myPlayer) {
             const canBail = isMyTurn && !gameState.rolled && !(myPlayer.jail_rolls_this_turn > 0) && myPlayer.in_jail && myPlayer.money >= 50;
@@ -2958,13 +2965,15 @@
 
         focusPlayerSeat: function(targetId) {
             if (!gameState || !gameState.players) return;
+            const totalPlayers = gameState.players.length || 1;
             const myIdx = gameState.players.findIndex(p => p.id === playerId);
             const baseOffset = (myIdx >= 0) ? myIdx : 0;
             const pIdx = gameState.players.findIndex(p => p.id === targetId);
             if (pIdx >= 0) {
-                const seatIdx = (pIdx - baseOffset + 4) % 4;
-                if (Board3D && Board3D.focusSeatCards) {
-                    Board3D.focusSeatCards(seatIdx);
+                const seatIdx = (pIdx - baseOffset + totalPlayers) % totalPlayers;
+                const engine = window.MonopolyBoard3D || Board3D;
+                if (engine && engine.focusSeatCards) {
+                    engine.focusSeatCards(seatIdx);
                 }
             }
         },
