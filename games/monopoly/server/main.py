@@ -21,6 +21,7 @@ STATIC_DIR = BASE_DIR / "static"
 INDEX_HTML = STATIC_DIR / "index.html"
 
 from game_state import GameRoom, TOKEN_OPTIONS, PLAYER_COLORS, SQUARES, MAX_PLAYERS, clean_text
+import bot_ai
 
 app = FastAPI(title="Monopoly 3D Web Edition")
 
@@ -54,6 +55,7 @@ room_expiry: Dict[str, float] = {} # room_id -> unix timestamp when room expires
 
 AWAY_GRACE_SEC = float(os.environ.get("MONOPOLY_AWAY_GRACE_SEC", "30"))  # so lange darf ein Spieler weg sein, bevor der Computer übernimmt
 EMPTY_ROOM_TTL_SEC = 30 * 60   # Räume ganz ohne Verbindung werden nach 30 min gelöscht
+MAX_BOT_INVESTS_PER_TURN = 5   # Häuser/Ablösungen pro Bot-Zug (hält Bot-Züge kurz)
 
 
 def get_lock(room_id: str) -> asyncio.Lock:
@@ -807,7 +809,7 @@ async def _bot_step(room_id: str, room: GameRoom, curr) -> tuple:
 
     # 1. Schulden: Häuser verkaufen / Hypotheken, sonst Bankrott
     if curr.money < 0:
-        room.auto_resolve_bot_debt(curr)
+        bot_ai.resolve_debt(room, curr)
         if curr.money < 0:
             res = room.declare_bankruptcy(curr.id)
             await send("BANKRUPTCY", res)
@@ -835,7 +837,8 @@ async def _bot_step(room_id: str, room: GameRoom, curr) -> tuple:
     # 4. Kaufen oder versteigern
     if pa_type == "BUY_OR_AUCTION":
         sq = pa["square"]
-        if curr.money >= sq["price"] + 120:
+        wants = bot_ai.should_buy(room, curr, sq["index"]) if curr.is_bot else curr.money >= sq["price"] + 120
+        if wants:
             res = room.buy_property(curr.id, sq["index"])
             await send("PROPERTY_BOUGHT", res)
             return 1.0, not res.get("error")
@@ -848,11 +851,15 @@ async def _bot_step(room_id: str, room: GameRoom, curr) -> tuple:
 
     # 5. Gefängnis vor dem ersten Wurf: Karte oder Kaution
     if curr.in_jail and not room.rolled and curr.jail_rolls_this_turn == 0:
-        if curr.jail_cards > 0:
+        if curr.is_bot:
+            choice = bot_ai.jail_decision(room, curr)
+        else:  # abwesender Mensch: vorsichtig wie bisher
+            choice = "card" if curr.jail_cards > 0 else ("bail" if curr.jail_turns >= 2 and curr.money >= 250 else "roll")
+        if choice == "card" and curr.jail_cards > 0:
             room.use_jail_card(curr.id)
             await send("JAIL_CARD_USED")
             return 0.6, True
-        if curr.jail_turns >= 2 and curr.money >= 250:
+        if choice == "bail" and curr.money >= 50:
             room.pay_bail(curr.id)
             await send("BAIL_PAID")
             return 0.6, True
@@ -866,7 +873,39 @@ async def _bot_step(room_id: str, room: GameRoom, curr) -> tuple:
         wait = _calc_anim_wait_seconds(room, res.get("old_pos"), res.get("new_pos"), include_dice=True)
         return wait + card_delay(), True
 
-    # 7. Zug beenden (bei Pasch setzt end_turn rolled zurück → nächster Schritt würfelt erneut)
+    # 7. Vor dem Zugende investieren – je Schritt eine Aktion, damit der Client jede animiert
+    invested = getattr(room, "_bot_invest_count", 0)
+    if curr.is_bot and not room.pending_trade and invested < MAX_BOT_INVESTS_PER_TURN:
+        room._bot_invest_count = invested + 1
+        # Einmal pro Zug: Handel mit einem anderen Bot, der eine Farbgruppe komplettiert
+        if invested == 0:
+            offer = bot_ai.find_bot_trade(room, curr)
+            if offer:
+                res = room.propose_trade(curr.id, offer["target_id"], offer["offer_money"], offer["offer_props"],
+                                         offer["req_money"], offer["req_props"], 0, 0)
+                if res.get("success"):
+                    await broadcast_room(room_id, {"type": "TRADE_PROPOSED", "actor_id": curr.id,
+                                                   "result": res, "state": room.to_dict()})
+                    acc = room.accept_trade(offer["target_id"])
+                    await broadcast_room(room_id, {"type": "TRADE_ACCEPTED", "result": acc, "state": room.to_dict()})
+                    return 1.5, True
+        idx = bot_ai.choose_unmortgage(room, curr)
+        if idx is not None:
+            res = room.toggle_mortgage(curr.id, idx)
+            if res.get("success"):
+                await broadcast_room(room_id, {"type": "MORTGAGE_TOGGLED", "actor_id": curr.id, "sq_idx": idx,
+                                               "result": res, "state": room.to_dict()})
+                return 0.7, True
+        idx = bot_ai.choose_build(room, curr)
+        if idx is not None:
+            res = room.build_house(curr.id, idx)
+            if res.get("success"):
+                await broadcast_room(room_id, {"type": "HOUSE_BUILT", "actor_id": curr.id, "sq_idx": idx,
+                                               "result": res, "state": room.to_dict()})
+                return 0.7, True
+
+    # 8. Zug beenden (bei Pasch setzt end_turn rolled zurück → nächster Schritt würfelt erneut)
+    room._bot_invest_count = 0
     res = room.end_turn(curr.id)
     await send("TURN_ENDED", res)
     return 1.2, not res.get("error")
@@ -884,9 +923,7 @@ async def bot_answer_trade(room_id: str, trade_id: str):
         target_p = next((p for p in room.players if p.id == trade["target_id"]), None)
         if not target_p or not target_p.is_bot:
             return
-        offer_val = trade["offer_money"] + trade["offer_jail_cards"] * 50 + sum(SQUARES[i]["price"] for i in trade["offer_props"])
-        req_val = trade["req_money"] + trade["req_jail_cards"] * 50 + sum(SQUARES[i]["price"] for i in trade["req_props"])
-        if offer_val >= req_val and target_p.money >= trade["req_money"]:
+        if bot_ai.evaluate_trade(room, target_p, trade) and target_p.money >= trade["req_money"]:
             res = room.accept_trade(target_p.id)
             await broadcast_room(room_id, {"type": "TRADE_ACCEPTED", "result": res, "state": room.to_dict()})
         else:

@@ -65,6 +65,44 @@ COLOR_GROUPS = {
     "utility": [12, 28]
 }
 
+# Lesbare deutsche Kartentexte mit DM (die JSON-Assets enthalten GROSSBUCHSTABEN und "£").
+# Wortlaut bleibt gleich, damit die Bildzuordnung im Client (Stichwortsuche) weiter passt.
+CARD_TEXTS_DE = {
+    ("Ereignis", 1): "Die Bank zahlt dir eine Dividende von 50 DM.",
+    ("Ereignis", 2): "Dein Bausparvertrag wird fällig. Du erhältst 150 DM.",
+    ("Ereignis", 3): "Strafzettel! Zahle 15 DM.",
+    ("Ereignis", 4): "Du lässt deine Häuser renovieren: Zahle 25 DM pro Haus und 100 DM pro Hotel.",
+    ("Ereignis", 5): "Du bist zum Vorstand gewählt worden. Zahle jedem Spieler 50 DM.",
+    ("Ereignis", 6): "Rücke vor bis auf Los. (Ziehe 200 DM ein.)",
+    ("Ereignis", 7): "Mache einen Ausflug zum Südbahnhof. Wenn du über Los kommst, ziehe 200 DM ein.",
+    ("Ereignis", 8): "Rücke vor bis zur Seestraße. Wenn du über Los kommst, ziehe 200 DM ein.",
+    ("Ereignis", 9): "Rücke vor bis zum Opernplatz. Wenn du über Los kommst, ziehe 200 DM ein.",
+    ("Ereignis", 10): "Rücke vor bis zur Schlossallee.",
+    ("Ereignis", 11): "Rücke vor bis zum nächsten Bahnhof. Der Eigentümer erhält das Doppelte der normalen Miete. Wenn der Bahnhof noch niemandem gehört, kannst du ihn von der Bank kaufen.",
+    ("Ereignis", 12): "Rücke vor bis zum nächsten Bahnhof. Der Eigentümer erhält das Doppelte der normalen Miete. Wenn der Bahnhof noch niemandem gehört, kannst du ihn von der Bank kaufen.",
+    ("Ereignis", 13): "Rücke vor bis zum nächsten Werk. Würfle und zahle dem Eigentümer den zehnfachen Betrag deines Wurfergebnisses. Wenn das Werk noch niemandem gehört, kannst du es von der Bank kaufen.",
+    ("Ereignis", 14): "Gehe 3 Felder zurück.",
+    ("Ereignis", 15): "Gehe in das Gefängnis! Begib dich direkt dorthin. Gehe nicht über Los. Ziehe nicht 200 DM ein.",
+    ("Ereignis", 16): "Du kommst aus dem Gefängnis frei. Behalte diese Karte, bis du sie benötigst oder verkaufst.",
+    ("Gemeinschaft", 1): "Du erhältst eine Beratungsgebühr von 25 DM.",
+    ("Gemeinschaft", 2): "Aus Lagerverkäufen erhältst du 50 DM.",
+    ("Gemeinschaft", 3): "Bankfehler zu deinen Gunsten. Ziehe 200 DM ein.",
+    ("Gemeinschaft", 4): "Deine Lebensversicherung wird fällig. Du erhältst 100 DM.",
+    ("Gemeinschaft", 5): "Zweiter Preis im Schönheitswettbewerb. Du erhältst 10 DM.",
+    ("Gemeinschaft", 6): "Du erbst 100 DM.",
+    ("Gemeinschaft", 7): "Einkommensteuer-Rückzahlung. Du erhältst 20 DM.",
+    ("Gemeinschaft", 8): "Urlaubsgeld! Du erhältst 100 DM.",
+    ("Gemeinschaft", 9): "Du hast Geburtstag! Jeder Spieler schenkt dir 10 DM.",
+    ("Gemeinschaft", 10): "Zahle Schulgeld: 50 DM.",
+    ("Gemeinschaft", 11): "Arztkosten. Zahle 50 DM.",
+    ("Gemeinschaft", 12): "Krankenhausgebühr: Du zahlst 100 DM.",
+    ("Gemeinschaft", 13): "Kosten für Straßenausbesserungen. Zahle 40 DM pro Haus und 115 DM pro Hotel.",
+    ("Gemeinschaft", 14): "Rücke vor bis auf Los. (Ziehe 200 DM ein.)",
+    ("Gemeinschaft", 15): "Gehe in das Gefängnis! Begib dich direkt dorthin. Gehe nicht über Los. Ziehe nicht 200 DM ein.",
+    ("Gemeinschaft", 16): "Du kommst aus dem Gefängnis frei. Behalte diese Karte, bis du sie benötigst oder verkaufst.",
+}
+
+
 def _load_cards(filename: str, deck_name: str, fallback_cards: list) -> list:
     filepath = ASSETS_DIR / "chance_chest" / filename
     if filepath.exists():
@@ -76,7 +114,7 @@ def _load_cards(filename: str, deck_name: str, fallback_cards: list) -> list:
                 cards.append({
                     "id": item.get("id"),
                     "deck": deck_name,
-                    "text": item.get("text_de", ""),
+                    "text": CARD_TEXTS_DE.get((deck_name, item.get("id")), item.get("text_de", "")),
                     "image": item.get("card_image_filename", ""),
                     "action": item.get("action", ""),
                     "value": item.get("value", 0),
@@ -88,7 +126,7 @@ def _load_cards(filename: str, deck_name: str, fallback_cards: list) -> list:
                 return cards
         except Exception as e:
             print(f"Warning: Failed to load {filename}: {e}")
-    return fallback_cards
+    return [{**c, "text": CARD_TEXTS_DE.get((deck_name, c["id"]), c["text"])} for c in fallback_cards]
 
 FALLBACK_COMMUNITY_CHEST_CARDS = [
     {"id": 1, "deck": "Gemeinschaft", "text": "Du erhältst eine Beratungsgebühr von £25.", "image": "gemeinschaft_01.png", "action": "RECEIVE_MONEY", "value": 25},
@@ -1139,7 +1177,8 @@ class GameRoom:
             if self.auction_state["high_bidder_id"] == bot.id:
                 continue
 
-            max_willing = min(bot.money - 100, int(base_price * 0.85))
+            from bot_ai import auction_limit  # lokal importiert (bot_ai importiert game_state)
+            max_willing = auction_limit(self, bot, self.auction_state["sq_idx"])
             next_bid = self.auction_state["high_bid"] + 10
             if next_bid <= max_willing and next_bid <= bot.money:
                 return self.place_auction_bid(bot.id, next_bid)
@@ -1480,35 +1519,9 @@ class GameRoom:
         return {"success": True, "player": player.to_dict()}
 
     def auto_resolve_bot_debt(self, bot: Player):
-        """Verkauft automatisch Häuser und nimmt Hypotheken auf, falls ein Bot im Minus ist."""
-        while bot.money < 0:
-            # 1. Versuche das teuerste abbaubare Haus/Hotel zu verkaufen
-            built_squares = [
-                sq_idx for sq_idx, st in self.board_state.items()
-                if st["owner"] == bot.id and st.get("houses", 0) > 0
-            ]
-            sold_any = False
-            for sq_idx in built_squares:
-                res = self.sell_house(bot.id, sq_idx)
-                if res.get("success"):
-                    sold_any = True
-                    break
-            if sold_any:
-                continue
-
-            # 2. Versuche ein unbelastetes Grundstück mit Hypothek zu beleihen
-            unmortgaged = [
-                sq_idx for sq_idx, st in self.board_state.items()
-                if st["owner"] == bot.id and not st.get("mortgaged", False) and st.get("houses", 0) == 0
-            ]
-            mortgaged_any = False
-            for sq_idx in unmortgaged:
-                res = self.toggle_mortgage(bot.id, sq_idx)
-                if res.get("success"):
-                    mortgaged_any = True
-                    break
-            if not mortgaged_any:
-                break
+        """Verkauft Häuser/nimmt Hypotheken auf, falls ein Bot im Minus ist (Logik in bot_ai)."""
+        from bot_ai import resolve_debt
+        resolve_debt(self, bot)
 
     def end_turn(self, player_id: str) -> dict:
         player = self.current_player()
