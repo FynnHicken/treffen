@@ -10,6 +10,13 @@
     let socket = null;
     let roomId = null;
     let playerId = null;
+
+    // Spielernamen, Chat und Log kommen von anderen Clients → vor innerHTML escapen
+    function esc(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
     let playerName = 'Spieler';
     let selectedToken = 'dog';
     let selectedColor = '#e74c3c';
@@ -590,7 +597,7 @@
 
         // Room ID from URL query ?room=XYZ or ?lobby=XYZ or ?party=XYZ (null if none -> show Room Selector!)
         const urlRoom = window.__INITIAL_ROOM_ID__ || getQueryParam('room') || getQueryParam('lobby') || getQueryParam('party') || getQueryParam('roomId');
-        roomId = urlRoom ? urlRoom.trim().toUpperCase() : null;
+        roomId = urlRoom ? (urlRoom.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '') || null) : null;
         window.__INITIAL_ROOM_ID__ = roomId;
 
         const headerRoomCode = document.getElementById('header-room-code');
@@ -677,16 +684,16 @@
                         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
                             <div style="display:flex; flex-direction:column; gap:2px;">
                                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                                    <strong style="color:var(--accent-gold); font-size:14px; letter-spacing:1px;">#${r.room_id}</strong>
+                                    <strong style="color:var(--accent-gold); font-size:14px; letter-spacing:1px;">#${esc(r.room_id)}</strong>
                                     ${statusBadge}
-                                    <span style="font-size:12px; color:#cbd5e1;">Host: <strong>${r.host_name}</strong></span>
+                                    <span style="font-size:12px; color:#cbd5e1;">Host: <strong>${esc(r.host_name)}</strong></span>
                                     ${expiryBadge}
                                 </div>
                                 <div style="font-size:11px; color:var(--text-muted);">
-                                    👥 ${r.player_count}/${maxP} Spieler (${(r.players || []).join(', ')})
+                                    👥 ${r.player_count}/${maxP} Spieler (${(r.players || []).map(esc).join(', ')})
                                 </div>
                             </div>
-                            <button class="btn-action btn-buy" style="font-size:12px; padding:6px 12px;" ${isFull ? 'disabled' : ''} onclick="window.MonopolyGame.connectToRoom('${r.room_id}')">
+                            <button class="btn-action btn-buy" style="font-size:12px; padding:6px 12px;" ${isFull ? 'disabled' : ''} data-room-id="${esc(r.room_id)}" onclick="window.MonopolyGame.connectToRoom(this.dataset.roomId)">
                                 ${isFull ? `Voll (${maxP}/${maxP})` : 'Beitreten →'}
                             </button>
                         </div>
@@ -1457,7 +1464,7 @@
                     <div class="lobby-player-row">
                         <div style="display:flex; align-items:center; gap:8px;">
                             <div class="player-dot" style="background:${p.color};"></div>
-                            <span style="font-weight:700;">${p.name} ${p.id === playerId ? '(Du)' : ''}</span>
+                            <span style="font-weight:700;">${esc(p.name)} ${p.id === playerId ? '(Du)' : ''}</span>
                             <span style="font-size:12px; color:var(--text-muted); display:inline-flex; align-items:center; gap:4px;">${tokenGraphic} ${tObj.name}</span>
                         </div>
                         <div>
@@ -1504,13 +1511,13 @@
                 return `
                     <div class="hud-player-pod ${isActive ? 'active-turn' : ''} ${isMe ? 'is-me' : ''} ${p.is_bankrupt ? 'bankrupt' : ''}" 
                          onclick="window.MonopolyGame.focusPlayerSeat('${p.id}')"
-                         title="${p.name}: Klicke für Tisch-Karten Nahansicht">
+                         title="${esc(p.name)}: Klicke für Tisch-Karten Nahansicht">
                         <div class="hud-pod-avatar" style="border-color:${p.color};">
                             ${tokenGraphic}
                             ${p.in_jail ? '<span class="hud-jail-tag">⛓️</span>' : ''}
                         </div>
                         <div class="hud-pod-details">
-                            <div class="hud-pod-name">${p.name} ${isMe ? '(Du)' : ''}</div>
+                            <div class="hud-pod-name">${esc(p.name)} ${isMe ? '(Du)' : ''}</div>
                             <div class="hud-pod-money">${p.money} DM</div>
                         </div>
                         <button class="hud-pod-inspect-btn" onclick="event.stopPropagation(); window.MonopolyGame.showPlayerPortfolio('${p.id}');" title="Besitzliste öffnen">📋</button>
@@ -1536,7 +1543,7 @@
                         <div class="player-header">
                             <div class="player-identity">
                                 <div class="player-dot" style="background:${p.color};"></div>
-                                <span class="player-name">${p.name} ${isMe ? '(Du)' : ''}</span>
+                                <span class="player-name">${esc(p.name)} ${isMe ? '(Du)' : ''}</span>
                             </div>
                             ${tokenGraphic}
                         </div>
@@ -1564,7 +1571,7 @@
                 return `
                     <div class="mobile-player-chip ${isActive ? 'active' : ''}" onclick="window.MonopolyGame.showPlayerPortfolio('${p.id}')">
                         <div class="player-dot" style="background:${p.color}; width:10px; height:10px;"></div>
-                        <span>${p.name}${isMe ? '*' : ''}</span>
+                        <span>${esc(p.name)}${isMe ? '*' : ''}</span>
                         <span style="color:var(--accent-gold); font-weight:700;">${p.money} DM</span>
                     </div>
                 `;
@@ -1604,7 +1611,7 @@
             if (isViewingMe) {
                 tableRackTitle.innerHTML = `🗂️ Tisch-Ablage (Deine Straßen)`;
             } else {
-                tableRackTitle.innerHTML = `🗂️ Tisch-Ablage (${targetViewPlayer ? targetViewPlayer.name : 'Mitspieler'}) <button onclick="window.MonopolyGame.viewMyTableCards()" style="margin-left:8px; font-size:10px; padding:2px 8px; background:var(--primary); color:#fff; border:none; border-radius:4px; cursor:pointer;">Zurück zu mir</button>`;
+                tableRackTitle.innerHTML = `🗂️ Tisch-Ablage (${targetViewPlayer ? esc(targetViewPlayer.name) : 'Mitspieler'}) <button onclick="window.MonopolyGame.viewMyTableCards()" style="margin-left:8px; font-size:10px; padding:2px 8px; background:var(--primary); color:#fff; border:none; border-radius:4px; cursor:pointer;">Zurück zu mir</button>`;
             }
         }
 
@@ -1672,7 +1679,7 @@
                 else if (log.includes('kauft')) cls = 'log-buy';
                 else if (log.includes('Miete')) cls = 'log-rent';
                 else if (log.includes('Karte')) cls = 'log-card';
-                return `<div class="log-entry ${cls}">${log}</div>`;
+                return `<div class="log-entry ${cls}">${esc(log)}</div>`;
             }).join('');
             logsListEl.scrollTop = logsListEl.scrollHeight;
 
@@ -1961,7 +1968,7 @@
             <div style="font-size:13px; color:#cbd5e1; margin-bottom:18px; line-height:1.45;">
                 ${didIWin
                     ? 'Alle Mitspieler sind bankrott – du bist als Letzter übrig und beherrschst das Monopoly-Imperium!'
-                    : `Alle anderen Mitspieler sind bankrott – <strong>${winner.name}</strong> ist als Letzter übrig geblieben!`}
+                    : `Alle anderen Mitspieler sind bankrott – <strong>${esc(winner.name)}</strong> ist als Letzter übrig geblieben!`}
             </div>
             <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(241,196,15,0.35); border-radius:14px; padding:14px 16px; margin-bottom:18px; display:flex; align-items:center; gap:14px; text-align:left;">
                 <div style="width:64px; height:64px; border-radius:50%; border:3px solid ${winner.color || '#f1c40f'}; background:rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
@@ -1969,7 +1976,7 @@
                 </div>
                 <div style="flex:1;">
                     <div style="font-size:17px; font-weight:800; color:#fff; margin-bottom:4px;">
-                        ${winner.name} ${didIWin ? '(Du)' : ''}
+                        ${esc(winner.name)} ${didIWin ? '(Du)' : ''}
                     </div>
                     <div style="font-size:12px; color:#94a3b8; display:flex; flex-direction:column; gap:2px;">
                         <span>💵 Bargeld: <strong style="color:#2ecc71;">${(winner.money || 0).toLocaleString('de-DE')} DM</strong></span>
@@ -2519,7 +2526,7 @@
         }
 
         const partnerSelect = document.getElementById('trade-partner-select');
-        partnerSelect.innerHTML = otherPlayers.map(p => `<option value="${p.id}">${p.name} (${p.money} DM)</option>`).join('');
+        partnerSelect.innerHTML = otherPlayers.map(p => `<option value="${esc(p.id)}">${esc(p.name)} (${p.money} DM)</option>`).join('');
 
         partnerSelect.onchange = updateTradeBuilderProps;
         updateTradeBuilderProps();
@@ -3125,7 +3132,7 @@
                 const meTag = (p.id === playerId) ? ' (Du)' : '';
                 const jailTag = p.in_jail ? ' 🔒' : '';
                 const bankTag = p.is_bankrupt ? ' 💀' : '';
-                return `<option value="${p.id}">${p.name}${meTag} — ${p.money} DM${jailTag}${bankTag}</option>`;
+                return `<option value="${esc(p.id)}">${esc(p.name)}${meTag} — ${p.money} DM${jailTag}${bankTag}</option>`;
             }).join('');
             if (prevVal && gameState.players.some(p => p.id === prevVal)) {
                 targetSel.value = prevVal;

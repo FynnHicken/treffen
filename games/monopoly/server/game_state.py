@@ -153,6 +153,14 @@ PLAYER_COLORS = [
     {"name": "Pink", "hex": "#fd79a8"}
 ]
 
+def clean_text(value, max_len: int) -> str:
+    """Entfernt HTML-relevante Zeichen und Steuerzeichen (Namen/Chat landen im DOM aller Spieler)."""
+    if not isinstance(value, str):
+        return ""
+    cleaned = "".join(ch for ch in value if ch not in "<>\"'`&" and (ch >= " " or ch == "\t"))
+    return cleaned.strip()[:max_len]
+
+
 MAX_BANK_HOUSES = 32
 MAX_BANK_HOTELS = 12
 MAX_PLAYERS = 8
@@ -174,6 +182,9 @@ class Player:
         self.is_bot = is_bot
         self.doubles_count = 0
         self.creditor_id: Optional[str] = None
+        # Noch nicht bezahlte Beträge an Mitspieler (player_id -> DM). Wird automatisch
+        # beglichen, sobald der Spieler wieder Geld bekommt (Häuser verkaufen, Hypothek …).
+        self.debts: Dict[str, int] = {}
 
     def to_dict(self):
         return {
@@ -189,7 +200,8 @@ class Player:
             "jail_cards": self.jail_cards,
             "is_bankrupt": self.is_bankrupt,
             "is_bot": self.is_bot,
-            "creditor_id": self.creditor_id
+            "creditor_id": self.creditor_id,
+            "debts": dict(self.debts)
         }
 
 
@@ -198,6 +210,7 @@ class GameRoom:
         self.room_id = room_id
         self.host_id = host_id
         self.party_id = party_id
+        self.host_claimed = False  # Host-Übernahme per is_host-Flag (Hub) nur einmal pro Raum
         self.status = "LOBBY"  # LOBBY, PLAYING, GAME_OVER
         self.players: List[Player] = []
         self.current_player_idx = 0
@@ -291,10 +304,48 @@ class GameRoom:
 
     def _credit_money(self, player: Player, amount: int):
         player.money += amount
+        self._settle_debts(player)
         if player.money >= 0:
             player.creditor_id = None
 
+    def _transfer(self, payer: Player, payee: Player, amount: int):
+        """Zahlung an einen Mitspieler. Der Empfänger erhält nur das vorhandene Bargeld;
+        der Rest wird als Schuld vermerkt und nachgezahlt, sobald der Zahler wieder flüssig ist.
+        (Vorher wurde immer der volle Betrag gutgeschrieben – bei Bankrott entstand Geld aus dem Nichts.)"""
+        if amount <= 0:
+            return
+        paid_now = min(max(0, payer.money), amount)
+        owed = amount - paid_now
+        self._record_payment(payer, amount, payee.id)
+        if owed > 0:
+            payer.debts[payee.id] = payer.debts.get(payee.id, 0) + owed
+        if paid_now > 0:
+            self._credit_money(payee, paid_now)
+
+    def _settle_debts(self, player: Player):
+        """Zahlt offene Mitspieler-Schulden aus neu eingegangenem Geld (FIFO)."""
+        if not player.debts:
+            return
+        outstanding = max(0, -player.money)  # Gesamtschulden laut Kontostand
+        excess = sum(player.debts.values()) - outstanding
+        for cred_id in list(player.debts.keys()):
+            if excess <= 0:
+                break
+            pay = min(excess, player.debts[cred_id])
+            player.debts[cred_id] -= pay
+            if player.debts[cred_id] <= 0:
+                del player.debts[cred_id]
+            excess -= pay
+            cred = next((p for p in self.players if p.id == cred_id), None)
+            if cred and not cred.is_bankrupt and pay > 0:
+                self._credit_money(cred, pay)
+
     def add_player(self, player_id: str, name: str, token: str, color: str, is_bot: bool = False) -> Player:
+        name = clean_text(name, 24) or "Spieler"
+        if not any(t["id"] == token for t in TOKEN_OPTIONS):
+            token = TOKEN_OPTIONS[0]["id"]
+        if not any(c["hex"] == color for c in PLAYER_COLORS):
+            color = PLAYER_COLORS[0]["hex"]
         for p in self.players:
             if p.id == player_id:
                 p.name = name
@@ -611,8 +662,7 @@ class GameRoom:
                 else:
                     rent = self.calculate_rent(idx, roll_sum) * rent_multiplier
 
-                self._record_payment(player, rent, owner.id)
-                self._credit_money(owner, rent)
+                self._transfer(player, owner, rent)
                 if rent_multiplier > 1:
                     self.log(f"🚂 {player.name} zahlt doppelte Miete ({rent} DM) an {owner.name}!")
                 elif force_utility_ten_x:
@@ -905,16 +955,14 @@ class GameRoom:
             others = [p for p in self.players if p.id != player.id and not p.is_bankrupt]
             total = amt * len(others)
             for p in others:
-                self._credit_money(p, amt)
-            self._record_payment(player, total, "BANK")
+                self._transfer(player, p, amt)
             self.log(f"👥 {player.name} zahlt jedem Mitspieler {amt} DM (Gesamt: {total} DM).")
 
         elif act in ["RECEIVE_FROM_PLAYERS", "birthday"]:
             amt = card.get("value") if "value" in card else card.get("amount", 10)
             for p in self.players:
                 if p.id != player.id and not p.is_bankrupt:
-                    self._record_payment(p, amt, player.id)
-                    self._credit_money(player, amt)
+                    self._transfer(p, player, amt)
             self.log(f"🎁 Jeder Mitspieler schenkt {player.name} {amt} DM!")
 
         elif act in ["GO_TO_JAIL", "gotojail"]:
@@ -924,10 +972,41 @@ class GameRoom:
             player.jail_cards += 1
             self.log(f"🎟️ {player.name} erhält eine 'Gefängnis frei'-Karte.")
 
-    def buy_property(self, player_id: str, sq_idx: int) -> dict:
+    def _pending_buy_index(self) -> Optional[int]:
+        if self.pending_action and self.pending_action.get("type") == "BUY_OR_AUCTION":
+            return self.pending_action["square"]["index"]
+        return None
+
+    @staticmethod
+    def _as_index(value) -> Optional[int]:
+        try:
+            idx = int(value)
+        except (TypeError, ValueError):
+            return None
+        return idx if 0 <= idx < 40 else None
+
+    def _owned_square(self, player_id: str, sq_idx) -> tuple:
+        """Validiert Spieler + Grundstücksindex. Gibt (player, idx, error) zurück."""
         player = next((p for p in self.players if p.id == player_id), None)
-        if not player:
-            return {"error": "Spieler nicht gefunden."}
+        if not player or player.is_bankrupt:
+            return None, None, "Spieler nicht gefunden."
+        if self.status != "PLAYING":
+            return None, None, "Das Spiel läuft nicht."
+        idx = self._as_index(sq_idx)
+        if idx is None or idx not in self.board_state:
+            return None, None, "Ungültiges Grundstück."
+        return player, idx, None
+
+    def buy_property(self, player_id: str, sq_idx=None) -> dict:
+        player = self.current_player()
+        if self.status != "PLAYING" or not player or player.id != player_id:
+            return {"error": "Du bist nicht am Zug."}
+        pending_idx = self._pending_buy_index()
+        if pending_idx is None:
+            return {"error": "Gerade steht kein Grundstück zum Kauf an."}
+        if sq_idx is not None and self._as_index(sq_idx) != pending_idx:
+            return {"error": "Du kannst nur das Grundstück kaufen, auf dem du stehst."}
+        sq_idx = pending_idx
         square = SQUARES[sq_idx]
         price = square["price"]
         state = self.board_state[sq_idx]
@@ -951,11 +1030,14 @@ class GameRoom:
         curr = self.current_player()
         if not curr or curr.id != player_id:
             return {"error": "Nur der aktive Spieler kann den Kauf ablehnen und die Versteigerung starten."}
-        if sq_idx is None:
-            if self.pending_action and self.pending_action.get("type") == "BUY_OR_AUCTION":
-                sq_idx = self.pending_action["square"]["index"]
-            else:
-                return {"error": "Kein Grundstück zur Versteigerung verfügbar."}
+        if self.status != "PLAYING" or self.auction_state:
+            return {"error": "Gerade ist keine Versteigerung möglich."}
+        pending_idx = self._pending_buy_index()
+        if pending_idx is None:
+            return {"error": "Kein Grundstück zur Versteigerung verfügbar."}
+        if sq_idx is not None and self._as_index(sq_idx) != pending_idx:
+            return {"error": "Nur das Grundstück, auf dem du stehst, kann versteigert werden."}
+        sq_idx = pending_idx
 
         square = SQUARES[sq_idx]
         state = self.board_state.get(sq_idx)
@@ -1022,13 +1104,14 @@ class GameRoom:
     def pass_auction(self, player_id: str) -> dict:
         if not self.auction_state:
             return {"error": "Keine aktive Versteigerung."}
-        if player_id in self.auction_state["active_bidders"]:
-            self.auction_state["active_bidders"].remove(player_id)
-            if player_id not in self.auction_state["passed_bidders"]:
-                self.auction_state["passed_bidders"].append(player_id)
-            player = next((p for p in self.players if p.id == player_id), None)
-            if player:
-                self.log(f"🏳️ {player.name} steigt aus der Versteigerung aus.")
+        if player_id not in self.auction_state["active_bidders"]:
+            return {"error": "Du bist bereits aus der Versteigerung ausgestiegen."}
+        self.auction_state["active_bidders"].remove(player_id)
+        if player_id not in self.auction_state["passed_bidders"]:
+            self.auction_state["passed_bidders"].append(player_id)
+        player = next((p for p in self.players if p.id == player_id), None)
+        if player:
+            self.log(f"🏳️ {player.name} steigt aus der Versteigerung aus.")
 
         # Wenn noch kein Gebot vorliegt und niemand mehr aktiv ist, sofort beenden
         if not self.auction_state["high_bidder_id"] and len(self.auction_state["active_bidders"]) == 0:
@@ -1080,6 +1163,8 @@ class GameRoom:
                 self.board_state[sq_idx]["owner"] = winner.id
                 self.log(f"🔨 Zum Ersten, zum Zweiten, zum Dritten – VERKAUFT! 🎉 {winner.name} ersteigert {square['name']} für {high_bid} DM!")
                 winner_info = {"id": winner.id, "name": winner.name, "color": winner.color}
+            else:
+                self.log(f"🔨 {winner.name if winner else 'Der Höchstbietende'} kann {high_bid} DM nicht mehr bezahlen – {square['name']} bleibt bei der Bank.")
         else:
             self.log(f"🔨 Zum Ersten, zum Zweiten, zum Dritten – Keine Gebote für {square['name']}. Das Grundstück bleibt bei der Bank.")
 
@@ -1103,10 +1188,10 @@ class GameRoom:
     # =========================================================================
     # Häuser & Hotels mit Gebäudelimit (32 Häuser / 12 Hotels, Seite 3)
     # =========================================================================
-    def build_house(self, player_id: str, sq_idx: int) -> dict:
-        player = next((p for p in self.players if p.id == player_id), None)
-        if not player:
-            return {"error": "Spieler nicht gefunden."}
+    def build_house(self, player_id: str, sq_idx) -> dict:
+        player, sq_idx, err = self._owned_square(player_id, sq_idx)
+        if err:
+            return {"error": err}
         square = SQUARES[sq_idx]
         if square["type"] != "property":
             return {"error": "Nur Straßen können bebaut werden."}
@@ -1150,10 +1235,10 @@ class GameRoom:
         self.log(f"{player.name} baut {name} auf {square['name']} ({cost} DM)!")
         return {"success": True, "houses": state["houses"], "money": player.money}
 
-    def sell_house(self, player_id: str, sq_idx: int) -> dict:
-        player = next((p for p in self.players if p.id == player_id), None)
-        if not player:
-            return {"error": "Spieler nicht gefunden."}
+    def sell_house(self, player_id: str, sq_idx) -> dict:
+        player, sq_idx, err = self._owned_square(player_id, sq_idx)
+        if err:
+            return {"error": err}
         square = SQUARES[sq_idx]
         if square["type"] != "property":
             return {"error": "Nur Straßen haben Häuser."}
@@ -1202,6 +1287,17 @@ class GameRoom:
             return {"error": "Spieler ungültig."}
         if sender.is_bankrupt or target.is_bankrupt:
             return {"error": "Spieler ist bankrott."}
+        if sender.id == target.id:
+            return {"error": "Du kannst nicht mit dir selbst handeln."}
+        if self.status != "PLAYING":
+            return {"error": "Das Spiel läuft nicht."}
+        offer_props = list(dict.fromkeys(offer_props))
+        req_props = list(dict.fromkeys(req_props))
+        if not (offer_money or offer_props or offer_jail_cards or req_money or req_props or req_jail_cards):
+            return {"error": "Leeres Angebot."}
+        if (self.pending_trade and self.pending_trade["sender_id"] != sender_id
+                and time.time() - self.pending_trade.get("created_at", 0) < 60):
+            return {"error": "Es läuft bereits ein anderes Handelsangebot (max. 60 s)."}
         if sender.money < offer_money or offer_money < 0:
             return {"error": "Ungültiges Geldangebot."}
         if req_money < 0:
@@ -1229,6 +1325,7 @@ class GameRoom:
 
         trade = {
             "id": f"trade_{int(time.time()*1000)}",
+            "created_at": time.time(),
             "sender_id": sender_id,
             "sender_name": sender.name,
             "target_id": target_id,
@@ -1308,10 +1405,10 @@ class GameRoom:
             return {"success": True}
         return {"error": "Nicht berechtigt."}
 
-    def toggle_mortgage(self, player_id: str, sq_idx: int) -> dict:
-        player = next((p for p in self.players if p.id == player_id), None)
-        if not player:
-            return {"error": "Spieler nicht gefunden."}
+    def toggle_mortgage(self, player_id: str, sq_idx) -> dict:
+        player, sq_idx, err = self._owned_square(player_id, sq_idx)
+        if err:
+            return {"error": err}
         square = SQUARES[sq_idx]
         state = self.board_state[sq_idx]
         if state["owner"] != player.id:
@@ -1487,7 +1584,7 @@ class GameRoom:
                 house_liquidation += st["houses"] * (sq.get("house_cost", 0) // 2)
                 st["houses"] = 0
         if house_liquidation > 0:
-            player.money += house_liquidation
+            self._credit_money(player, house_liquidation)  # begleicht offene Schulden zuerst
             self.log(f"🏚️ Alle Gebäude von {player.name} wurden für {house_liquidation} DM an die Bank zwangsverkauft.")
 
         if creditor:
@@ -1517,6 +1614,7 @@ class GameRoom:
         player.jail_cards = 0
         player.is_bankrupt = True
         player.creditor_id = None
+        player.debts = {}  # Restschulden verfallen
 
         game_over_res = self._check_game_over(player)
         if game_over_res:

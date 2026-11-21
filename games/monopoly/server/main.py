@@ -3,6 +3,7 @@ import sys
 import json
 import uuid
 import time
+import re
 import random
 import asyncio
 from pathlib import Path
@@ -19,7 +20,7 @@ if str(SERVER_DIR) not in sys.path:
 STATIC_DIR = BASE_DIR / "static"
 INDEX_HTML = STATIC_DIR / "index.html"
 
-from game_state import GameRoom, TOKEN_OPTIONS, PLAYER_COLORS, SQUARES, MAX_PLAYERS
+from game_state import GameRoom, TOKEN_OPTIONS, PLAYER_COLORS, SQUARES, MAX_PLAYERS, clean_text
 
 app = FastAPI(title="Monopoly 3D Web Edition")
 
@@ -39,6 +40,7 @@ async def cache_static_assets(request, call_next):
     return response
 
 SOLO_ROOM_TTL_SEC = 60.0
+SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")  # Raum-/Spieler-IDs landen im DOM anderer Spieler
 
 # In-memory rooms and WebSocket connections
 rooms: Dict[str, GameRoom] = {}
@@ -136,10 +138,17 @@ async def list_rooms():
 
 @app.post("/api/create_room")
 async def create_room(data: dict):
-    room_id = data.get("room_id") or uuid.uuid4().hex[:6].upper()
-    host_id = data.get("player_id") or uuid.uuid4().hex[:8]
+    room_id = str(data.get("room_id") or uuid.uuid4().hex[:6].upper())
+    host_id = str(data.get("player_id") or uuid.uuid4().hex[:8])
+    if not SAFE_ID_RE.match(room_id) or not SAFE_ID_RE.match(host_id):
+        return JSONResponse({"error": "Ungültige Raum- oder Spieler-ID."}, status_code=400)
     party_id = data.get("party_id")
-    
+
+    # Bestehenden Raum nie überschreiben (sonst ist ein laufendes Spiel weg)
+    existing = rooms.get(room_id)
+    if existing:
+        return {"room_id": room_id, "host_id": existing.host_id, "existing": True}
+
     room = GameRoom(room_id, host_id, party_id)
     rooms[room_id] = room
     connections[room_id] = {}
@@ -148,6 +157,9 @@ async def create_room(data: dict):
 
 @app.websocket("/ws/{room_id}/{player_id}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str):
+    if not SAFE_ID_RE.match(room_id) or not SAFE_ID_RE.match(player_id):
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
 
     # Create room on the fly if not exists
@@ -162,346 +174,20 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
     try:
         while True:
             text = await websocket.receive_text()
-            data = json.loads(text)
-            action = data.get("action")
-
-            if action == "JOIN":
-                already_in_room = any(p.id == player_id for p in room.players)
-                if not already_in_room and len(room.players) >= MAX_PLAYERS:
-                    await websocket.send_text(json.dumps({
-                        "type": "ERROR",
-                        "code": "ROOM_FULL",
-                        "message": f"Dieser Raum ist bereits voll (maximal {MAX_PLAYERS} Spieler & Bots)!"
-                    }))
+            try:
+                data = json.loads(text)
+                if not isinstance(data, dict):
                     continue
-                name = data.get("name", f"Spieler {len(room.players)+1}")
-                token = data.get("token", "dog")
-                color = data.get("color", "#e74c3c")
-                if data.get("is_host") is True:
-                    room.host_id = player_id
-                room.add_player(player_id, name, token, color)
-                update_room_expiry(room_id, False)
-                await broadcast_room(room_id, {
-                    "type": "STATE_UPDATE",
-                    "state": room.to_dict(),
-                    "remaining_ms": max(0, int((room_expiry[room_id] - time.time()) * 1000)) if room_id in room_expiry else None
-                })
-
-            elif action == "START_GAME":
-                if room.host_id == player_id or len(room.players) >= 2:
-                    try:
-                        room.start_game()
-                        await broadcast_room(room_id, {
-                            "type": "GAME_STARTED",
-                            "state": room.to_dict()
-                        })
-                        await handle_bot_turn_if_needed(room_id)
-                    except Exception as e:
-                        await websocket.send_text(json.dumps({"type": "ERROR", "message": str(e)}))
-
-            elif action == "ADD_BOT":
-                if room.status == "LOBBY":
-                    if len(room.players) >= MAX_PLAYERS:
-                        await websocket.send_text(json.dumps({
-                            "type": "ERROR",
-                            "code": "MAX_PLAYERS",
-                            "message": f"Maximale Anzahl von {MAX_PLAYERS} Spielern & Bots erreicht!"
-                        }))
-                        continue
-                    bot_num = sum(1 for p in room.players if p.is_bot) + 1
-                    bot_id = f"bot_{uuid.uuid4().hex[:6]}"
-                    bot_name = f"Computer {bot_num}"
-                    bot_token = TOKEN_OPTIONS[bot_num % len(TOKEN_OPTIONS)]["id"]
-                    bot_color = PLAYER_COLORS[bot_num % len(PLAYER_COLORS)]["hex"]
-                    room.add_player(bot_id, bot_name, bot_token, bot_color, is_bot=True)
-                    await broadcast_room(room_id, {
-                        "type": "STATE_UPDATE",
-                        "state": room.to_dict()
-                    })
-
-            elif action == "ROLL_DICE":
-                curr = room.current_player()
-                if curr and curr.id == player_id:
-                    res = room.roll_dice()
-                    await broadcast_room(room_id, {
-                        "type": "DICE_ROLLED",
-                        "result": res,
-                        "state": room.to_dict()
-                    })
-
-            elif action == "BUY_PROPERTY":
-                sq_idx = data.get("sq_idx")
-                res = room.buy_property(player_id, sq_idx)
-                await broadcast_room(room_id, {
-                    "type": "PROPERTY_BOUGHT",
-                    "result": res,
-                    "state": room.to_dict()
-                })
-
-            elif action == "START_AUCTION":
-                sq_idx = data.get("sq_idx")
-                res = room.start_auction(player_id, sq_idx)
-                await broadcast_room(room_id, {
-                    "type": "AUCTION_UPDATED",
-                    "result": res,
-                    "state": room.to_dict()
-                })
-                if res.get("auction_ended"):
-                    await finish_bot_turn_after_auction_if_needed(room_id)
-                elif room.auction_state:
-                    schedule_auction_flow(room_id)
-
-            elif action == "AUCTION_BID":
-                amount = int(data.get("amount", 0))
-                res = room.place_auction_bid(player_id, amount)
-                await broadcast_room(room_id, {
-                    "type": "AUCTION_UPDATED",
-                    "result": res,
-                    "state": room.to_dict()
-                })
-                if res.get("auction_ended"):
-                    await finish_bot_turn_after_auction_if_needed(room_id)
-                elif room.auction_state:
-                    schedule_auction_flow(room_id)
-
-            elif action == "AUCTION_PASS":
-                res = room.pass_auction(player_id)
-                await broadcast_room(room_id, {
-                    "type": "AUCTION_UPDATED",
-                    "result": res,
-                    "state": room.to_dict()
-                })
-                if res.get("auction_ended"):
-                    cancel_auction_flow(room_id)
-                    await finish_bot_turn_after_auction_if_needed(room_id)
-                elif room.auction_state:
-                    schedule_auction_flow(room_id)
-
-            elif action == "AUCTION_TIMEOUT":
-                if room.auction_state:
-                    cancel_auction_flow(room_id)
-                    res = room.finalize_auction_timeout()
-                    await broadcast_room(room_id, {
-                        "type": "AUCTION_UPDATED",
-                        "result": res,
-                        "state": room.to_dict()
-                    })
-                    await finish_bot_turn_after_auction_if_needed(room_id)
-
-            elif action == "CONFIRM_CARD":
-                res = room.confirm_card(player_id)
-                await broadcast_room(room_id, {
-                    "type": "CARD_APPLIED",
-                    "result": res,
-                    "state": room.to_dict()
-                })
-
-            elif action == "PAY_INCOME_TAX":
-                mode = data.get("mode", "flat")
-                res = room.pay_income_tax(player_id, mode)
-                await broadcast_room(room_id, {
-                    "type": "TAX_PAID",
-                    "result": res,
-                    "state": room.to_dict()
-                })
-
-            elif action == "BUILD_HOUSE":
-                sq_idx = data.get("sq_idx")
-                res = room.build_house(player_id, sq_idx)
-                await broadcast_room(room_id, {
-                    "type": "HOUSE_BUILT",
-                    "actor_id": player_id,
-                    "sq_idx": sq_idx,
-                    "result": res,
-                    "state": room.to_dict()
-                })
-
-            elif action == "SELL_HOUSE":
-                sq_idx = data.get("sq_idx")
-                res = room.sell_house(player_id, sq_idx)
-                await broadcast_room(room_id, {
-                    "type": "HOUSE_SOLD",
-                    "actor_id": player_id,
-                    "sq_idx": sq_idx,
-                    "result": res,
-                    "state": room.to_dict()
-                })
-
-            elif action == "PROPOSE_TRADE":
-                target_id = data.get("target_id")
-                offer_money = int(data.get("offer_money", 0))
-                offer_props = [int(x) for x in data.get("offer_props", [])]
-                req_money = int(data.get("req_money", 0))
-                req_props = [int(x) for x in data.get("req_props", [])]
-                offer_jail_cards = int(data.get("offer_jail_cards", 0))
-                req_jail_cards = int(data.get("req_jail_cards", 0))
-                res = room.propose_trade(
-                    player_id, target_id, offer_money, offer_props,
-                    req_money, req_props, offer_jail_cards, req_jail_cards
-                )
-                await broadcast_room(room_id, {
-                    "type": "TRADE_PROPOSED",
-                    "actor_id": player_id,
-                    "result": res,
-                    "state": room.to_dict()
-                })
-                # Auto-evaluate if target is a Bot
-                target_p = next((p for p in room.players if p.id == target_id), None)
-                if res.get("success") and target_p and target_p.is_bot:
-                    await asyncio.sleep(1.0)
-                    offer_val = offer_money + offer_jail_cards * 50 + sum(SQUARES[i]["price"] for i in offer_props)
-                    req_val = req_money + req_jail_cards * 50 + sum(SQUARES[i]["price"] for i in req_props)
-                    if offer_val >= req_val and target_p.money >= req_money:
-                        acc_res = room.accept_trade(target_p.id)
-                        await broadcast_room(room_id, {
-                            "type": "TRADE_ACCEPTED",
-                            "result": acc_res,
-                            "state": room.to_dict()
-                        })
-                    else:
-                        rej_res = room.reject_trade(target_p.id)
-                        await broadcast_room(room_id, {
-                            "type": "TRADE_REJECTED",
-                            "result": rej_res,
-                            "state": room.to_dict()
-                        })
-
-            elif action == "ACCEPT_TRADE":
-                res = room.accept_trade(player_id)
-                await broadcast_room(room_id, {
-                    "type": "TRADE_ACCEPTED",
-                    "result": res,
-                    "state": room.to_dict()
-                })
-
-            elif action == "REJECT_TRADE":
-                res = room.reject_trade(player_id)
-                await broadcast_room(room_id, {
-                    "type": "TRADE_REJECTED",
-                    "result": res,
-                    "state": room.to_dict()
-                })
-
-            elif action == "TOGGLE_MORTGAGE":
-                sq_idx = data.get("sq_idx")
-                res = room.toggle_mortgage(player_id, sq_idx)
-                await broadcast_room(room_id, {
-                    "type": "MORTGAGE_TOGGLED",
-                    "actor_id": player_id,
-                    "sq_idx": sq_idx,
-                    "result": res,
-                    "state": room.to_dict()
-                })
-
-            elif action == "PAY_BAIL":
-                res = room.pay_bail(player_id)
-                await broadcast_room(room_id, {
-                    "type": "BAIL_PAID",
-                    "actor_id": player_id,
-                    "result": res,
-                    "state": room.to_dict()
-                })
-
-            elif action == "USE_JAIL_CARD":
-                res = room.use_jail_card(player_id)
-                await broadcast_room(room_id, {
-                    "type": "JAIL_CARD_USED",
-                    "actor_id": player_id,
-                    "result": res,
-                    "state": room.to_dict()
-                })
-
-            elif action == "END_TURN":
-                res = room.end_turn(player_id)
-                await broadcast_room(room_id, {
-                    "type": "TURN_ENDED",
-                    "result": res,
-                    "state": room.to_dict()
-                })
-                await handle_bot_turn_if_needed(room_id)
-
-            elif action == "BANKRUPTCY":
-                res = room.declare_bankruptcy(player_id)
-                await broadcast_room(room_id, {
-                    "type": "BANKRUPTCY",
-                    "result": res,
-                    "state": room.to_dict()
-                })
-                await handle_bot_turn_if_needed(room_id)
-
-            elif action == "RESET_LOBBY":
-                cancel_auction_flow(room_id)
-                room.reset_to_lobby()
-                await broadcast_room(room_id, {
-                    "type": "LOBBY_RESET",
-                    "state": room.to_dict()
-                })
-
-            elif action == "CHAT":
-                msg = data.get("message", "").strip()
-                if msg:
-                    p = next((pl for pl in room.players if pl.id == player_id), None)
-                    p_name = p.name if p else "Gast"
-                    room.log(f"💬 {p_name}: {msg}")
-                    await broadcast_room(room_id, {
-                        "type": "CHAT",
-                        "sender": p_name,
-                        "message": msg,
-                        "state": room.to_dict()
-                    })
-
-            elif action == "UPDATE_ANIM_CONFIG":
-                pwd = str(data.get("password", "")).strip()
-                if pwd == "admin123":
-                    room.update_anim_config(data.get("config", {}))
-                    room.log("🛠️ Debug-Einstellungen für Bewegungs- & Animations-Timings aktualisiert.")
-                    await broadcast_room(room_id, {
-                        "type": "ANIM_CONFIG_UPDATED",
-                        "anim_config": room.anim_config,
-                        "state": room.to_dict()
-                    })
-
-            elif action == "DEBUG_ACTION":
-                pwd = str(data.get("password", "")).strip()
-                if pwd == "admin123":
-                    cmd = str(data.get("cmd", "")).strip()
-                    target_id = data.get("target_id") or player_id
-                    val = data.get("value")
-                    if cmd == "FORCE_DOUBLES_ROLL":
-                        d_val = random.randint(1, 6)
-                        if val is not None:
-                            try:
-                                d_val = max(1, min(6, int(val)))
-                            except ValueError:
-                                pass
-                        res = room.roll_dice(forced_dice=[d_val, d_val], ignore_already_rolled=True)
-                        await broadcast_room(room_id, {
-                            "type": "DICE_ROLLED",
-                            "result": res,
-                            "state": room.to_dict()
-                        })
-                    else:
-                        res = room.execute_debug_action(cmd, target_id, val)
-                        if res.get("teleport_roll"):
-                            await broadcast_room(room_id, {
-                                "type": "DICE_ROLLED",
-                                "result": res["teleport_roll"],
-                                "state": room.to_dict()
-                            })
-                        elif cmd == "FORCE_BANKRUPTCY":
-                            await broadcast_room(room_id, {
-                                "type": "BANKRUPTCY",
-                                "result": res.get("bankruptcy", res),
-                                "state": room.to_dict()
-                            })
-                            await handle_bot_turn_if_needed(room_id)
-                        else:
-                            await broadcast_room(room_id, {
-                                "type": "DEBUG_ACTION_APPLIED",
-                                "actor_id": player_id,
-                                "result": res,
-                                "state": room.to_dict()
-                            })
+                await handle_message(websocket, room_id, player_id, data)
+            except WebSocketDisconnect:
+                raise
+            except Exception as e:
+                # Eine fehlerhafte Nachricht darf die Verbindung nicht beenden
+                print(f"[Room {room_id}] Fehler bei Aktion von {player_id}: {e!r}")
+                try:
+                    await websocket.send_text(json.dumps({"type": "ERROR", "message": "Aktion konnte nicht ausgeführt werden."}))
+                except Exception:
+                    pass
 
     except WebSocketDisconnect:
         if room_id in connections:
@@ -511,6 +197,383 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 "player_id": player_id,
                 "state": room.to_dict()
             })
+
+
+def is_room_member(room: GameRoom, player_id: str) -> bool:
+    return any(p.id == player_id and not p.is_bot for p in room.players)
+
+
+def host_is_present(room: GameRoom, room_id: str) -> bool:
+    return any(p.id == room.host_id for p in room.players) and room.host_id in connections.get(room_id, {})
+
+
+async def handle_message(websocket: WebSocket, room_id: str, player_id: str, data: dict):
+    room = rooms.get(room_id)
+    if not room:
+        return
+    action = data.get("action")
+
+    if action == "JOIN":
+        already_in_room = any(p.id == player_id for p in room.players)
+        if not already_in_room and len(room.players) >= MAX_PLAYERS:
+            await websocket.send_text(json.dumps({
+                "type": "ERROR",
+                "code": "ROOM_FULL",
+                "message": f"Dieser Raum ist bereits voll (maximal {MAX_PLAYERS} Spieler & Bots)!"
+            }))
+            return
+        name = data.get("name", f"Spieler {len(room.players)+1}")
+        token = data.get("token", "dog")
+        color = data.get("color", "#e74c3c")
+        # Host-Flag vom Hub nur einmal pro Raum akzeptieren (sonst kann sich jeder zum Host machen)
+        if data.get("is_host") is True and not room.host_claimed and room.status == "LOBBY":
+            room.host_id = player_id
+            room.host_claimed = True
+        room.add_player(player_id, name, token, color)
+        update_room_expiry(room_id, False)
+        await broadcast_room(room_id, {
+            "type": "STATE_UPDATE",
+            "state": room.to_dict(),
+            "remaining_ms": max(0, int((room_expiry[room_id] - time.time()) * 1000)) if room_id in room_expiry else None
+        })
+
+    elif action == "START_GAME":
+        if room.status != "LOBBY" or not is_room_member(room, player_id):
+            return
+        # Nur der Host startet – ist er nicht (mehr) da, übernimmt der startende Spieler
+        if room.host_id != player_id:
+            if host_is_present(room, room_id):
+                await websocket.send_text(json.dumps({"type": "ERROR", "message": "Nur der Host kann das Spiel starten."}))
+                return
+            room.host_id = player_id
+        try:
+            room.start_game()
+            await broadcast_room(room_id, {
+                "type": "GAME_STARTED",
+                "state": room.to_dict()
+            })
+            await handle_bot_turn_if_needed(room_id)
+        except Exception as e:
+            await websocket.send_text(json.dumps({"type": "ERROR", "message": str(e)}))
+
+    elif action == "ADD_BOT":
+        if room.status == "LOBBY" and is_room_member(room, player_id):
+            if len(room.players) >= MAX_PLAYERS:
+                await websocket.send_text(json.dumps({
+                    "type": "ERROR",
+                    "code": "MAX_PLAYERS",
+                    "message": f"Maximale Anzahl von {MAX_PLAYERS} Spielern & Bots erreicht!"
+                }))
+                return
+            bot_num = sum(1 for p in room.players if p.is_bot) + 1
+            bot_id = f"bot_{uuid.uuid4().hex[:6]}"
+            bot_name = f"Computer {bot_num}"
+            bot_token = TOKEN_OPTIONS[bot_num % len(TOKEN_OPTIONS)]["id"]
+            bot_color = PLAYER_COLORS[bot_num % len(PLAYER_COLORS)]["hex"]
+            room.add_player(bot_id, bot_name, bot_token, bot_color, is_bot=True)
+            await broadcast_room(room_id, {
+                "type": "STATE_UPDATE",
+                "state": room.to_dict()
+            })
+
+    elif action == "ROLL_DICE":
+        curr = room.current_player()
+        if curr and curr.id == player_id:
+            res = room.roll_dice()
+            await broadcast_room(room_id, {
+                "type": "DICE_ROLLED",
+                "result": res,
+                "state": room.to_dict()
+            })
+
+    elif action == "BUY_PROPERTY":
+        sq_idx = data.get("sq_idx")
+        res = room.buy_property(player_id, sq_idx)
+        await broadcast_room(room_id, {
+            "type": "PROPERTY_BOUGHT",
+            "result": res,
+            "state": room.to_dict()
+        })
+
+    elif action == "START_AUCTION":
+        sq_idx = data.get("sq_idx")
+        res = room.start_auction(player_id, sq_idx)
+        await broadcast_room(room_id, {
+            "type": "AUCTION_UPDATED",
+            "result": res,
+            "state": room.to_dict()
+        })
+        if res.get("auction_ended"):
+            await finish_bot_turn_after_auction_if_needed(room_id)
+        elif room.auction_state:
+            schedule_auction_flow(room_id)
+
+    elif action == "AUCTION_BID":
+        amount = int(data.get("amount", 0))
+        res = room.place_auction_bid(player_id, amount)
+        if res.get("error"):
+            # Ungültige Aktion nur dem Absender melden – Timer NICHT neu starten
+            await websocket.send_text(json.dumps({"type": "ERROR", "message": res["error"]}))
+            return
+        await broadcast_room(room_id, {
+            "type": "AUCTION_UPDATED",
+            "result": res,
+            "state": room.to_dict()
+        })
+        if res.get("auction_ended"):
+            await finish_bot_turn_after_auction_if_needed(room_id)
+        elif room.auction_state:
+            schedule_auction_flow(room_id)
+
+    elif action == "AUCTION_PASS":
+        res = room.pass_auction(player_id)
+        if res.get("error"):
+            # Ungültige Aktion nur dem Absender melden – Timer NICHT neu starten
+            await websocket.send_text(json.dumps({"type": "ERROR", "message": res["error"]}))
+            return
+        await broadcast_room(room_id, {
+            "type": "AUCTION_UPDATED",
+            "result": res,
+            "state": room.to_dict()
+        })
+        if res.get("auction_ended"):
+            cancel_auction_flow(room_id)
+            await finish_bot_turn_after_auction_if_needed(room_id)
+        elif room.auction_state:
+            schedule_auction_flow(room_id)
+
+    elif action == "AUCTION_TIMEOUT":
+        if room.auction_state:
+            cancel_auction_flow(room_id)
+            res = room.finalize_auction_timeout()
+            await broadcast_room(room_id, {
+                "type": "AUCTION_UPDATED",
+                "result": res,
+                "state": room.to_dict()
+            })
+            await finish_bot_turn_after_auction_if_needed(room_id)
+
+    elif action == "CONFIRM_CARD":
+        res = room.confirm_card(player_id)
+        await broadcast_room(room_id, {
+            "type": "CARD_APPLIED",
+            "result": res,
+            "state": room.to_dict()
+        })
+
+    elif action == "PAY_INCOME_TAX":
+        mode = data.get("mode", "flat")
+        res = room.pay_income_tax(player_id, mode)
+        await broadcast_room(room_id, {
+            "type": "TAX_PAID",
+            "result": res,
+            "state": room.to_dict()
+        })
+
+    elif action == "BUILD_HOUSE":
+        sq_idx = data.get("sq_idx")
+        res = room.build_house(player_id, sq_idx)
+        await broadcast_room(room_id, {
+            "type": "HOUSE_BUILT",
+            "actor_id": player_id,
+            "sq_idx": sq_idx,
+            "result": res,
+            "state": room.to_dict()
+        })
+
+    elif action == "SELL_HOUSE":
+        sq_idx = data.get("sq_idx")
+        res = room.sell_house(player_id, sq_idx)
+        await broadcast_room(room_id, {
+            "type": "HOUSE_SOLD",
+            "actor_id": player_id,
+            "sq_idx": sq_idx,
+            "result": res,
+            "state": room.to_dict()
+        })
+
+    elif action == "PROPOSE_TRADE":
+        target_id = data.get("target_id")
+        offer_money = int(data.get("offer_money", 0))
+        offer_props = [int(x) for x in data.get("offer_props", [])]
+        req_money = int(data.get("req_money", 0))
+        req_props = [int(x) for x in data.get("req_props", [])]
+        offer_jail_cards = int(data.get("offer_jail_cards", 0))
+        req_jail_cards = int(data.get("req_jail_cards", 0))
+        res = room.propose_trade(
+            player_id, target_id, offer_money, offer_props,
+            req_money, req_props, offer_jail_cards, req_jail_cards
+        )
+        await broadcast_room(room_id, {
+            "type": "TRADE_PROPOSED",
+            "actor_id": player_id,
+            "result": res,
+            "state": room.to_dict()
+        })
+        # Auto-evaluate if target is a Bot
+        target_p = next((p for p in room.players if p.id == target_id), None)
+        if res.get("success") and target_p and target_p.is_bot:
+            await asyncio.sleep(1.0)
+            offer_val = offer_money + offer_jail_cards * 50 + sum(SQUARES[i]["price"] for i in offer_props)
+            req_val = req_money + req_jail_cards * 50 + sum(SQUARES[i]["price"] for i in req_props)
+            if offer_val >= req_val and target_p.money >= req_money:
+                acc_res = room.accept_trade(target_p.id)
+                await broadcast_room(room_id, {
+                    "type": "TRADE_ACCEPTED",
+                    "result": acc_res,
+                    "state": room.to_dict()
+                })
+            else:
+                rej_res = room.reject_trade(target_p.id)
+                await broadcast_room(room_id, {
+                    "type": "TRADE_REJECTED",
+                    "result": rej_res,
+                    "state": room.to_dict()
+                })
+
+    elif action == "ACCEPT_TRADE":
+        res = room.accept_trade(player_id)
+        await broadcast_room(room_id, {
+            "type": "TRADE_ACCEPTED",
+            "result": res,
+            "state": room.to_dict()
+        })
+
+    elif action == "REJECT_TRADE":
+        res = room.reject_trade(player_id)
+        await broadcast_room(room_id, {
+            "type": "TRADE_REJECTED",
+            "result": res,
+            "state": room.to_dict()
+        })
+
+    elif action == "TOGGLE_MORTGAGE":
+        sq_idx = data.get("sq_idx")
+        res = room.toggle_mortgage(player_id, sq_idx)
+        await broadcast_room(room_id, {
+            "type": "MORTGAGE_TOGGLED",
+            "actor_id": player_id,
+            "sq_idx": sq_idx,
+            "result": res,
+            "state": room.to_dict()
+        })
+
+    elif action == "PAY_BAIL":
+        res = room.pay_bail(player_id)
+        await broadcast_room(room_id, {
+            "type": "BAIL_PAID",
+            "actor_id": player_id,
+            "result": res,
+            "state": room.to_dict()
+        })
+
+    elif action == "USE_JAIL_CARD":
+        res = room.use_jail_card(player_id)
+        await broadcast_room(room_id, {
+            "type": "JAIL_CARD_USED",
+            "actor_id": player_id,
+            "result": res,
+            "state": room.to_dict()
+        })
+
+    elif action == "END_TURN":
+        res = room.end_turn(player_id)
+        await broadcast_room(room_id, {
+            "type": "TURN_ENDED",
+            "result": res,
+            "state": room.to_dict()
+        })
+        await handle_bot_turn_if_needed(room_id)
+
+    elif action == "BANKRUPTCY":
+        res = room.declare_bankruptcy(player_id)
+        await broadcast_room(room_id, {
+            "type": "BANKRUPTCY",
+            "result": res,
+            "state": room.to_dict()
+        })
+        await handle_bot_turn_if_needed(room_id)
+
+    elif action == "RESET_LOBBY":
+        # Host jederzeit, alle Mitspieler erst nach Spielende
+        if not is_room_member(room, player_id):
+            return
+        if room.host_id != player_id and room.status != "GAME_OVER" and host_is_present(room, room_id):
+            await websocket.send_text(json.dumps({"type": "ERROR", "message": "Nur der Host kann ein laufendes Spiel abbrechen."}))
+            return
+        cancel_auction_flow(room_id)
+        room.reset_to_lobby()
+        await broadcast_room(room_id, {
+            "type": "LOBBY_RESET",
+            "state": room.to_dict()
+        })
+
+    elif action == "CHAT":
+        msg = clean_text(data.get("message", ""), 200)
+        if msg and is_room_member(room, player_id):
+            p = next((pl for pl in room.players if pl.id == player_id), None)
+            p_name = p.name if p else "Gast"
+            room.log(f"💬 {p_name}: {msg}")
+            await broadcast_room(room_id, {
+                "type": "CHAT",
+                "sender": p_name,
+                "message": msg,
+                "state": room.to_dict()
+            })
+
+    elif action == "UPDATE_ANIM_CONFIG":
+        pwd = str(data.get("password", "")).strip()
+        if pwd == "admin123":
+            room.update_anim_config(data.get("config", {}))
+            room.log("🛠️ Debug-Einstellungen für Bewegungs- & Animations-Timings aktualisiert.")
+            await broadcast_room(room_id, {
+                "type": "ANIM_CONFIG_UPDATED",
+                "anim_config": room.anim_config,
+                "state": room.to_dict()
+            })
+
+    elif action == "DEBUG_ACTION":
+        pwd = str(data.get("password", "")).strip()
+        if pwd == "admin123":
+            cmd = str(data.get("cmd", "")).strip()
+            target_id = data.get("target_id") or player_id
+            val = data.get("value")
+            if cmd == "FORCE_DOUBLES_ROLL":
+                d_val = random.randint(1, 6)
+                if val is not None:
+                    try:
+                        d_val = max(1, min(6, int(val)))
+                    except ValueError:
+                        pass
+                res = room.roll_dice(forced_dice=[d_val, d_val], ignore_already_rolled=True)
+                await broadcast_room(room_id, {
+                    "type": "DICE_ROLLED",
+                    "result": res,
+                    "state": room.to_dict()
+                })
+            else:
+                res = room.execute_debug_action(cmd, target_id, val)
+                if res.get("teleport_roll"):
+                    await broadcast_room(room_id, {
+                        "type": "DICE_ROLLED",
+                        "result": res["teleport_roll"],
+                        "state": room.to_dict()
+                    })
+                elif cmd == "FORCE_BANKRUPTCY":
+                    await broadcast_room(room_id, {
+                        "type": "BANKRUPTCY",
+                        "result": res.get("bankruptcy", res),
+                        "state": room.to_dict()
+                    })
+                    await handle_bot_turn_if_needed(room_id)
+                else:
+                    await broadcast_room(room_id, {
+                        "type": "DEBUG_ACTION_APPLIED",
+                        "actor_id": player_id,
+                        "result": res,
+                        "state": room.to_dict()
+                    })
+
 
 
 def cancel_auction_flow(room_id: str):
