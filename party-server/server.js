@@ -477,6 +477,27 @@ wss.on('connection', (ws, req) => {
                     room.broadcastRoster();
                     break;
                 }
+
+                case 'SLOT_MODAL_SYNC': {
+                    if (room.isSenderHost(ws, data)) {
+                        room.broadcast({
+                            type: 'SLOT_MODAL_SYNC',
+                            action: data.action
+                        }, ws);
+                    }
+                    break;
+                }
+
+                case 'SLOT_SPIN_START': {
+                    if (room.isSenderHost(ws, data)) {
+                        room.broadcast({
+                            type: 'SLOT_SPIN_START',
+                            winningGameId: data.winningGameId,
+                            spinId: data.spinId
+                        }, ws);
+                    }
+                    break;
+                }
             }
         } catch (err) {
             console.error('Error handling WebSocket message:', err);

@@ -34,7 +34,7 @@ export class RandomService {
 			const randomProduct = await this.prisma.product.findMany({
 				orderBy: { id: 'desc' },
 				where: { id: { notIn: ignore }, categoryId: category },
-				skip: Math.random() * productCount,
+				skip: Math.floor(Math.random() * productCount),
 				take: 1,
 				select: this.productSelectProperties,
 			});
@@ -88,7 +88,7 @@ export class RandomService {
 					id: { notIn: [...ignore, products[0].id] },
 					price: { lte: Number(products[0].price) + MAX_PRICE_DIFF, gte: Number(products[0].price) - MAX_PRICE_DIFF },
 				},
-				skip: Math.random() * limitedProductCount,
+				skip: Math.floor(Math.random() * limitedProductCount),
 
 				select: this.productSelectProperties,
 			});

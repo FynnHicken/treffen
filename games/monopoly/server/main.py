@@ -3,6 +3,7 @@ import sys
 import json
 import uuid
 import time
+import random
 import asyncio
 from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -18,7 +19,7 @@ if str(SERVER_DIR) not in sys.path:
 STATIC_DIR = BASE_DIR / "static"
 INDEX_HTML = STATIC_DIR / "index.html"
 
-from game_state import GameRoom, TOKEN_OPTIONS, PLAYER_COLORS, SQUARES
+from game_state import GameRoom, TOKEN_OPTIONS, PLAYER_COLORS, SQUARES, MAX_PLAYERS
 
 app = FastAPI(title="Monopoly 3D Web Edition")
 
@@ -124,6 +125,7 @@ async def list_rooms():
             "room_id": r_id,
             "host_name": host_name,
             "player_count": len(room.players),
+            "max_players": MAX_PLAYERS,
             "connected_count": active_conns,
             "status": room.status,
             "players": [p.name for p in room.players],
@@ -164,6 +166,14 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
             action = data.get("action")
 
             if action == "JOIN":
+                already_in_room = any(p.id == player_id for p in room.players)
+                if not already_in_room and len(room.players) >= MAX_PLAYERS:
+                    await websocket.send_text(json.dumps({
+                        "type": "ERROR",
+                        "code": "ROOM_FULL",
+                        "message": f"Dieser Raum ist bereits voll (maximal {MAX_PLAYERS} Spieler & Bots)!"
+                    }))
+                    continue
                 name = data.get("name", f"Spieler {len(room.players)+1}")
                 token = data.get("token", "dog")
                 color = data.get("color", "#e74c3c")
@@ -191,6 +201,13 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
 
             elif action == "ADD_BOT":
                 if room.status == "LOBBY":
+                    if len(room.players) >= MAX_PLAYERS:
+                        await websocket.send_text(json.dumps({
+                            "type": "ERROR",
+                            "code": "MAX_PLAYERS",
+                            "message": f"Maximale Anzahl von {MAX_PLAYERS} Spielern & Bots erreicht!"
+                        }))
+                        continue
                     bot_num = sum(1 for p in room.players if p.is_bot) + 1
                     bot_id = f"bot_{uuid.uuid4().hex[:6]}"
                     bot_name = f"Computer {bot_num}"
@@ -293,6 +310,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 res = room.build_house(player_id, sq_idx)
                 await broadcast_room(room_id, {
                     "type": "HOUSE_BUILT",
+                    "actor_id": player_id,
+                    "sq_idx": sq_idx,
                     "result": res,
                     "state": room.to_dict()
                 })
@@ -302,6 +321,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 res = room.sell_house(player_id, sq_idx)
                 await broadcast_room(room_id, {
                     "type": "HOUSE_SOLD",
+                    "actor_id": player_id,
+                    "sq_idx": sq_idx,
                     "result": res,
                     "state": room.to_dict()
                 })
@@ -320,6 +341,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 )
                 await broadcast_room(room_id, {
                     "type": "TRADE_PROPOSED",
+                    "actor_id": player_id,
                     "result": res,
                     "state": room.to_dict()
                 })
@@ -365,6 +387,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 res = room.toggle_mortgage(player_id, sq_idx)
                 await broadcast_room(room_id, {
                     "type": "MORTGAGE_TOGGLED",
+                    "actor_id": player_id,
+                    "sq_idx": sq_idx,
                     "result": res,
                     "state": room.to_dict()
                 })
@@ -373,6 +397,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 res = room.pay_bail(player_id)
                 await broadcast_room(room_id, {
                     "type": "BAIL_PAID",
+                    "actor_id": player_id,
                     "result": res,
                     "state": room.to_dict()
                 })
@@ -381,6 +406,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 res = room.use_jail_card(player_id)
                 await broadcast_room(room_id, {
                     "type": "JAIL_CARD_USED",
+                    "actor_id": player_id,
                     "result": res,
                     "state": room.to_dict()
                 })
@@ -423,6 +449,59 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                         "message": msg,
                         "state": room.to_dict()
                     })
+
+            elif action == "UPDATE_ANIM_CONFIG":
+                pwd = str(data.get("password", "")).strip()
+                if pwd == "admin123":
+                    room.update_anim_config(data.get("config", {}))
+                    room.log("🛠️ Debug-Einstellungen für Bewegungs- & Animations-Timings aktualisiert.")
+                    await broadcast_room(room_id, {
+                        "type": "ANIM_CONFIG_UPDATED",
+                        "anim_config": room.anim_config,
+                        "state": room.to_dict()
+                    })
+
+            elif action == "DEBUG_ACTION":
+                pwd = str(data.get("password", "")).strip()
+                if pwd == "admin123":
+                    cmd = str(data.get("cmd", "")).strip()
+                    target_id = data.get("target_id") or player_id
+                    val = data.get("value")
+                    if cmd == "FORCE_DOUBLES_ROLL":
+                        d_val = random.randint(1, 6)
+                        if val is not None:
+                            try:
+                                d_val = max(1, min(6, int(val)))
+                            except ValueError:
+                                pass
+                        res = room.roll_dice(forced_dice=[d_val, d_val], ignore_already_rolled=True)
+                        await broadcast_room(room_id, {
+                            "type": "DICE_ROLLED",
+                            "result": res,
+                            "state": room.to_dict()
+                        })
+                    else:
+                        res = room.execute_debug_action(cmd, target_id, val)
+                        if res.get("teleport_roll"):
+                            await broadcast_room(room_id, {
+                                "type": "DICE_ROLLED",
+                                "result": res["teleport_roll"],
+                                "state": room.to_dict()
+                            })
+                        elif cmd == "FORCE_BANKRUPTCY":
+                            await broadcast_room(room_id, {
+                                "type": "BANKRUPTCY",
+                                "result": res.get("bankruptcy", res),
+                                "state": room.to_dict()
+                            })
+                            await handle_bot_turn_if_needed(room_id)
+                        else:
+                            await broadcast_room(room_id, {
+                                "type": "DEBUG_ACTION_APPLIED",
+                                "actor_id": player_id,
+                                "result": res,
+                                "state": room.to_dict()
+                            })
 
     except WebSocketDisconnect:
         if room_id in connections:
@@ -539,6 +618,21 @@ async def finish_bot_turn_after_auction_if_needed(room_id: str):
         await handle_bot_turn_if_needed(room_id)
 
 
+def _calc_anim_wait_seconds(room, old_pos: int, new_pos: int, include_dice: bool = True) -> float:
+    cfg = getattr(room, "anim_config", {}) or {}
+    step_ms = cfg.get("stepDuration", 280) + cfg.get("stepPause", 75)
+    hold_ms = cfg.get("landingHold", 900) if cfg.get("cinematicFollow", True) else 200
+    dice_ms = (cfg.get("diceDuration", 1350) + cfg.get("dicePostPause", 550)) if include_dice else 0
+    if old_pos is not None and new_pos is not None and old_pos != new_pos:
+        fwd = (new_pos - old_pos + 40) % 40
+        bwd = (old_pos - new_pos + 40) % 40
+        steps = bwd if (0 < bwd <= 3) else fwd
+    else:
+        steps = 0
+    total_ms = dice_ms + (steps * step_ms) + hold_ms + 350
+    return max(1.5, min(20.0, total_ms / 1000.0))
+
+
 async def handle_bot_turn_if_needed(room_id: str):
     room = rooms.get(room_id)
     if not room or room.status != "PLAYING" or room.auction_state:
@@ -547,8 +641,8 @@ async def handle_bot_turn_if_needed(room_id: str):
     curr = room.current_player()
     if curr and curr.is_bot and not curr.is_bankrupt:
         await asyncio.sleep(1.2)
-        # Bot jail handling before rolling
-        if curr.in_jail and not room.rolled:
+        # Bot jail handling before first roll of the turn
+        if curr.in_jail and not room.rolled and getattr(curr, "jail_rolls_this_turn", 0) == 0:
             if curr.jail_cards > 0:
                 room.use_jail_card(curr.id)
                 await broadcast_room(room_id, {
@@ -556,7 +650,7 @@ async def handle_bot_turn_if_needed(room_id: str):
                     "state": room.to_dict()
                 })
                 await asyncio.sleep(0.6)
-            elif curr.money >= 250:
+            elif curr.jail_turns >= 2 and curr.money >= 250:
                 room.pay_bail(curr.id)
                 await broadcast_room(room_id, {
                     "type": "BAIL_PAID",
@@ -571,17 +665,32 @@ async def handle_bot_turn_if_needed(room_id: str):
             "result": roll_res,
             "state": room.to_dict()
         })
-        await asyncio.sleep(2.4)
+        roll_wait = _calc_anim_wait_seconds(
+            room,
+            roll_res.get("old_pos"),
+            roll_res.get("new_pos"),
+            include_dice=True
+        )
+        await asyncio.sleep(roll_wait)
 
         while room.pending_action and room.pending_action.get("type") == "CARD_DRAWN":
-            await asyncio.sleep(3.2)
+            await asyncio.sleep(2.4)
             card_res = room.confirm_card(curr.id)
             await broadcast_room(room_id, {
                 "type": "CARD_APPLIED",
                 "result": card_res,
                 "state": room.to_dict()
             })
-            await asyncio.sleep(2.2 if card_res.get("moved") else 1.2)
+            if card_res.get("moved") and not (curr and curr.in_jail):
+                card_wait = _calc_anim_wait_seconds(
+                    room,
+                    card_res.get("old_pos"),
+                    card_res.get("new_pos"),
+                    include_dice=False
+                )
+                await asyncio.sleep(card_wait)
+            else:
+                await asyncio.sleep(1.2)
 
         # Bot decision on pending action
         if room.pending_action and room.pending_action.get("type") == "BUY_OR_AUCTION":

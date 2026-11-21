@@ -16,6 +16,8 @@ async function main() {
 		console.log('Seed procedure completed successfully!');
 	} catch (error) {
 		console.error('Seed procedure failed:\n' + error);
+	} finally {
+		await prisma.$disconnect();
 	}
 }
 

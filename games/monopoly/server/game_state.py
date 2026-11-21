@@ -155,6 +155,7 @@ PLAYER_COLORS = [
 
 MAX_BANK_HOUSES = 32
 MAX_BANK_HOTELS = 12
+MAX_PLAYERS = 8
 
 
 class Player:
@@ -167,6 +168,7 @@ class Player:
         self.position = 0
         self.in_jail = False
         self.jail_turns = 0
+        self.jail_rolls_this_turn = 0
         self.jail_cards = 0
         self.is_bankrupt = False
         self.is_bot = is_bot
@@ -183,6 +185,7 @@ class Player:
             "position": self.position,
             "in_jail": self.in_jail,
             "jail_turns": self.jail_turns,
+            "jail_rolls_this_turn": self.jail_rolls_this_turn,
             "jail_cards": self.jail_cards,
             "is_bankrupt": self.is_bankrupt,
             "is_bot": self.is_bot,
@@ -217,8 +220,41 @@ class GameRoom:
         self.pending_trade: Optional[dict] = None
         self.auction_state: Optional[dict] = None
         self.winner: Optional[dict] = None
+        self.anim_config: dict = {
+            "stepDuration": 280,
+            "stepPause": 75,
+            "hopHeight": 0.38,
+            "landingHold": 900,
+            "diceDuration": 1350,
+            "dicePostPause": 550,
+            "camFollowLerp": 0.10,
+            "camTransitionMs": 650,
+            "cinematicFollow": True
+        }
         self.created_at = time.time()
         self.log(f"Raum {room_id} erstellt.")
+
+    def update_anim_config(self, cfg: dict):
+        if not isinstance(cfg, dict):
+            return
+        if "stepDuration" in cfg:
+            self.anim_config["stepDuration"] = max(40, min(1200, int(cfg["stepDuration"])))
+        if "stepPause" in cfg:
+            self.anim_config["stepPause"] = max(0, min(800, int(cfg["stepPause"])))
+        if "hopHeight" in cfg:
+            self.anim_config["hopHeight"] = max(0.05, min(1.5, float(cfg["hopHeight"])))
+        if "landingHold" in cfg:
+            self.anim_config["landingHold"] = max(0, min(3500, int(cfg["landingHold"])))
+        if "diceDuration" in cfg:
+            self.anim_config["diceDuration"] = max(200, min(4000, int(cfg["diceDuration"])))
+        if "dicePostPause" in cfg:
+            self.anim_config["dicePostPause"] = max(0, min(3000, int(cfg["dicePostPause"])))
+        if "camFollowLerp" in cfg:
+            self.anim_config["camFollowLerp"] = max(0.02, min(0.60, float(cfg["camFollowLerp"])))
+        if "camTransitionMs" in cfg:
+            self.anim_config["camTransitionMs"] = max(100, min(2500, int(cfg["camTransitionMs"])))
+        if "cinematicFollow" in cfg:
+            self.anim_config["cinematicFollow"] = bool(cfg["cinematicFollow"])
 
     def log(self, message: str):
         self.logs.append(message)
@@ -279,6 +315,9 @@ class GameRoom:
                                     other.color = c["hex"]
                                     break
                 return p
+
+        if len(self.players) >= MAX_PLAYERS:
+            return None
 
         if is_bot:
             used_tokens = {p.token for p in self.players}
@@ -342,6 +381,7 @@ class GameRoom:
             p.position = 0
             p.in_jail = False
             p.jail_turns = 0
+            p.jail_rolls_this_turn = 0
             p.jail_cards = 0
             p.is_bankrupt = False
             p.doubles_count = 0
@@ -395,17 +435,21 @@ class GameRoom:
             return None
         return self.players[self.current_player_idx % len(self.players)]
 
-    def roll_dice(self) -> dict:
+    def roll_dice(self, forced_dice: Optional[List[int]] = None, ignore_already_rolled: bool = False) -> dict:
         player = self.current_player()
         if not player or self.status != "PLAYING":
             return {"error": "Nicht im Spiel."}
         if self.auction_state:
             return {"error": "Bitte zuerst die laufende Versteigerung abschließen."}
-        if self.rolled:
+        if self.rolled and not ignore_already_rolled:
             return {"error": "Bereits gewürfelt."}
 
-        d1 = random.randint(1, 6)
-        d2 = random.randint(1, 6)
+        if forced_dice and len(forced_dice) == 2:
+            d1 = max(1, min(6, int(forced_dice[0])))
+            d2 = max(1, min(6, int(forced_dice[1])))
+        else:
+            d1 = random.randint(1, 6)
+            d2 = random.randint(1, 6)
         self.dice = [d1, d2]
         self.rolled = True
         self.last_card = None
@@ -414,31 +458,55 @@ class GameRoom:
         steps = d1 + d2
         self.log(f"{player.name} würfelt eine {d1} und {d2} (Gesamt: {steps})!")
 
-        # Handle Jail
+        # Handle Jail (3x Würfeln pro Runde im Gefängnis, um einen Pasch zu würfeln)
         if player.in_jail:
+            player.jail_rolls_this_turn += 1
+            attempt = player.jail_rolls_this_turn
             if is_double:
                 player.in_jail = False
                 player.jail_turns = 0
+                player.jail_rolls_this_turn = 0
                 player.doubles_count = 0
-                self.log(f"Pasch! {player.name} kommt frei aus dem Gefängnis (kein Zusatzwurf nach Gefängnis-Pasch)!")
+                self.log(f"🔓 Pasch ({d1} & {d2}) im {attempt}. Versuch! {player.name} kommt frei aus dem Gefängnis und zieht {steps} Felder weiter!")
                 return self.move_player(player, steps, False)
             else:
-                player.jail_turns += 1
-                if player.jail_turns >= 3:
-                    self._record_payment(player, 50, "BANK")
-                    player.in_jail = False
-                    player.jail_turns = 0
-                    self.log(f"{player.name} muss nach dem 3. Versuch 50 DM Bußgeld zahlen und zieht {steps} Felder weiter!")
-                    return self.move_player(player, steps, False)
-                else:
-                    self.log(f"{player.name} bleibt im Gefängnis (Versuch {player.jail_turns}/3).")
-                    self.pending_action = {"type": "END_TURN"}
+                if attempt < 3:
+                    # Spieler darf im Gefängnis bis zu 3x würfeln, um einen Pasch zu schaffen
+                    self.rolled = False
+                    self.pending_action = None
+                    rem = 3 - attempt
+                    self.log(f"🔒 Kein Pasch im {attempt}. Versuch ({d1} & {d2}) – {player.name} darf noch {rem}x würfeln!")
                     return {
                         "dice": self.dice,
-                        "double": is_double,
+                        "double": False,
+                        "jail_reroll": True,
+                        "jail_attempt": attempt,
+                        "jail_max_attempts": 3,
                         "player": player.to_dict(),
-                        "action": self.pending_action
+                        "action": None
                     }
+                else:
+                    # Alle 3 Versuche in dieser Runde verbraucht
+                    player.jail_rolls_this_turn = 0
+                    player.jail_turns += 1
+                    if player.jail_turns >= 3:
+                        self._record_payment(player, 50, "BANK")
+                        player.in_jail = False
+                        player.jail_turns = 0
+                        self.log(f"🔒 Auch im 3. Versuch kein Pasch! Nach der 3. Gefängnis-Runde zahlt {player.name} 50 DM Bußgeld und zieht {steps} Felder weiter!")
+                        return self.move_player(player, steps, False)
+                    else:
+                        self.log(f"🔒 Auch im 3. Versuch kein Pasch! {player.name} bleibt im Gefängnis (Runde {player.jail_turns}/3).")
+                        self.pending_action = {"type": "END_TURN"}
+                        return {
+                            "dice": self.dice,
+                            "double": False,
+                            "jail_reroll": False,
+                            "jail_attempt": 3,
+                            "jail_max_attempts": 3,
+                            "player": player.to_dict(),
+                            "action": self.pending_action
+                        }
 
         # Doubles counter
         if is_double:
@@ -733,6 +801,7 @@ class GameRoom:
         player.position = 10
         player.in_jail = True
         player.jail_turns = 0
+        player.jail_rolls_this_turn = 0
         player.doubles_count = 0
         self.log(f"🚔 {player.name} wurde ins Gefängnis gesteckt!")
 
@@ -1278,13 +1347,14 @@ class GameRoom:
         player = next((p for p in self.players if p.id == player_id), None)
         if not player or not player.in_jail:
             return {"error": "Nicht im Gefängnis."}
-        if self.rolled:
-            return {"error": "Freikaufen ist laut Regel nur VOR dem Würfeln möglich."}
+        if self.rolled or player.jail_rolls_this_turn > 0:
+            return {"error": "Freikaufen ist nur vor dem ersten Würfelversuch der Runde möglich."}
         if player.money < 50:
             return {"error": "Nicht genug Geld für Kaution (50 DM)."}
         player.money -= 50
         player.in_jail = False
         player.jail_turns = 0
+        player.jail_rolls_this_turn = 0
         self.log(f"{player.name} zahlt 50 DM Bußgeld vor dem Wurf und ist frei!")
         return {"success": True, "player": player.to_dict()}
 
@@ -1292,11 +1362,12 @@ class GameRoom:
         player = next((p for p in self.players if p.id == player_id), None)
         if not player or not player.in_jail or player.jail_cards <= 0:
             return {"error": "Keine Gefängnisfrei-Karte vorhanden."}
-        if self.rolled:
-            return {"error": "Gefängnisfrei-Karte muss VOR dem Würfeln eingesetzt werden."}
+        if self.rolled or player.jail_rolls_this_turn > 0:
+            return {"error": "Gefängnisfrei-Karte muss vor dem ersten Würfelversuch der Runde eingesetzt werden."}
         player.jail_cards -= 1
         player.in_jail = False
         player.jail_turns = 0
+        player.jail_rolls_this_turn = 0
         # Karte zurück unter den Stapel legen
         if len(self.chance_deck) < len(CHANCE_CARDS):
             self.chance_deck.append(15)
@@ -1363,6 +1434,7 @@ class GameRoom:
 
         # Advance to next non-bankrupt player
         player.doubles_count = 0
+        player.jail_rolls_this_turn = 0
         game_over_res = self._check_game_over(player)
         if game_over_res:
             return game_over_res
@@ -1456,6 +1528,103 @@ class GameRoom:
             return self.end_turn(player_id)
         return {"success": True, "bankrupt_player": player.to_dict()}
 
+    def execute_debug_action(self, cmd: str, target_id: Optional[str] = None, value: Optional[str] = None) -> dict:
+        target = next((p for p in self.players if p.id == target_id), None) if target_id else None
+        if not target:
+            target = self.current_player() or (self.players[0] if self.players else None)
+        if not target:
+            return {"error": "Kein Spieler vorhanden."}
+
+        if cmd == "SEND_TO_JAIL":
+            self.send_to_jail(target)
+            if self.current_player() and self.current_player().id == target.id:
+                self.rolled = False
+                self.pending_action = None
+                target.jail_rolls_this_turn = 0
+            self.log(f"🛠️ [Debug] {target.name} wurde ins Gefängnis versetzt (3x Würfeln bereit).")
+            return {"success": True, "cmd": cmd, "message": f"{target.name} ins Gefängnis geschickt!"}
+
+        elif cmd == "FREE_FROM_JAIL":
+            target.in_jail = False
+            target.jail_turns = 0
+            target.jail_rolls_this_turn = 0
+            self.log(f"🛠️ [Debug] {target.name} wurde aus dem Gefängnis befreit.")
+            return {"success": True, "cmd": cmd, "message": f"{target.name} aus dem Gefängnis befreit!"}
+
+        elif cmd == "GIVE_JAIL_CARD":
+            target.jail_cards = min(2, target.jail_cards + 1)
+            self.log(f"🛠️ [Debug] {target.name} erhält eine 'Du kommst aus dem Gefängnis frei'-Karte ({target.jail_cards}x).")
+            return {"success": True, "cmd": cmd, "message": f"Gefängnisfrei-Karte an {target.name} vergeben!"}
+
+        elif cmd == "ADD_MONEY":
+            try:
+                amt = int(value or 0)
+            except ValueError:
+                amt = 0
+            target.money += amt
+            if target.money < 0:
+                target.creditor_id = "BANK"
+            else:
+                target.creditor_id = None
+            sign = "+" if amt >= 0 else ""
+            self.log(f"🛠️ [Debug] Kontostand von {target.name}: {sign}{amt} DM → {target.money} DM.")
+            return {"success": True, "cmd": cmd, "message": f"Kontostand von {target.name}: {target.money} DM"}
+
+        elif cmd == "SET_DEBT":
+            target.money = -200
+            target.creditor_id = "BANK"
+            self.log(f"🛠️ [Debug] {target.name} auf -200 DM Schulden gesetzt (Konkurs-/Hypothek-Test).")
+            return {"success": True, "cmd": cmd, "message": f"{target.name} hat jetzt -200 DM Schulden!"}
+
+        elif cmd == "FORCE_BANKRUPTCY":
+            res = self.declare_bankruptcy(target.id)
+            return {"success": True, "cmd": cmd, "bankruptcy": res, "message": f"Konkurs für {target.name} ausgelöst!"}
+
+        elif cmd == "GIVE_COLOR_GROUP":
+            grp = str(value or "brown")
+            if grp not in COLOR_GROUPS:
+                return {"error": f"Unbekannte Gruppe: {grp}"}
+            for sq_idx in COLOR_GROUPS[grp]:
+                self.board_state[sq_idx]["owner"] = target.id
+                self.board_state[sq_idx]["mortgaged"] = False
+            self.log(f"🛠️ [Debug] Komplette Gruppe '{grp}' an {target.name} übertragen!")
+            return {"success": True, "cmd": cmd, "message": f"Farbgruppe '{grp}' gehört jetzt {target.name}!"}
+
+        elif cmd == "TELEPORT":
+            try:
+                sq_idx = int(value or 0) % 40
+            except ValueError:
+                sq_idx = 0
+            old_pos = target.position
+            target.in_jail = False
+            target.jail_turns = 0
+            target.jail_rolls_this_turn = 0
+            target.position = sq_idx
+            sq = SQUARES[sq_idx]
+            self.log(f"🛠️ [Debug] {target.name} teleportiert auf {sq['name']} (Feld {sq_idx}).")
+            if self.current_player() and self.current_player().id == target.id and self.status == "PLAYING":
+                self.rolled = True
+                act = self.evaluate_square(target, sq, sum(self.dice))
+                self.pending_action = act
+                return {
+                    "success": True,
+                    "cmd": cmd,
+                    "teleport_roll": {
+                        "dice": self.dice,
+                        "double": False,
+                        "old_pos": old_pos,
+                        "new_pos": sq_idx,
+                        "final_pos": target.position,
+                        "passed_go": False,
+                        "player": target.to_dict(),
+                        "action": act
+                    },
+                    "message": f"Teleportiert auf {sq['name']}!"
+                }
+            return {"success": True, "cmd": cmd, "message": f"Teleportiert auf {sq['name']}!"}
+
+        return {"error": f"Unbekannter Debug-Befehl: {cmd}"}
+
     def to_dict(self) -> dict:
         return {
             "room_id": self.room_id,
@@ -1463,6 +1632,7 @@ class GameRoom:
             "party_id": self.party_id,
             "status": self.status,
             "winner": self.winner,
+            "max_players": MAX_PLAYERS,
             "players": [p.to_dict() for p in self.players],
             "current_player_idx": self.current_player_idx,
             "current_player": self.current_player().to_dict() if self.players else None,
@@ -1475,6 +1645,7 @@ class GameRoom:
             "pending_trade": self.pending_trade,
             "auction_state": self.auction_state,
             "last_card": self.last_card,
+            "anim_config": self.anim_config,
             "logs": self.logs[-25:],
             "squares": SQUARES
         }

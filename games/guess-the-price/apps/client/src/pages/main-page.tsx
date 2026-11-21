@@ -20,6 +20,7 @@ const itemVariant = {
 
 export const MainPage = () => {
 	const { theme } = useTheme();
+	const base = import.meta.env.BASE_URL || '/';
 
 	return (
 		<div>
@@ -40,7 +41,7 @@ export const MainPage = () => {
 					<GameModeCard
 						title='Classic mode'
 						description='Get a product and guess the price.'
-						imageSrc={`/images/${theme == 'dark' ? 'd-' : ''}classic-mode-image.svg`}
+						imageSrc={`${base}images/${theme == 'dark' ? 'd-' : ''}classic-mode-image.svg`}
 						link='/classic-mode'
 					/>
 				</motion.div>
@@ -48,7 +49,7 @@ export const MainPage = () => {
 					<GameModeCard
 						title='This or that'
 						description='Guess which product is more expensive.'
-						imageSrc={`/images/${theme == 'dark' ? 'd-' : ''}this-or-that-mode-image.svg`}
+						imageSrc={`${base}images/${theme == 'dark' ? 'd-' : ''}this-or-that-mode-image.svg`}
 						link='/this-that'
 					/>
 				</motion.div>
@@ -56,7 +57,7 @@ export const MainPage = () => {
 					<GameModeCard
 						title='Multiplayer mode'
 						description='Play the classic mode with your friends.'
-						imageSrc={`/images/${theme == 'dark' ? 'd-' : ''}multiplayer-mode-image.svg`}
+						imageSrc={`${base}images/${theme == 'dark' ? 'd-' : ''}multiplayer-mode-image.svg`}
 						link='/multiplayer'
 					/>
 				</motion.div>

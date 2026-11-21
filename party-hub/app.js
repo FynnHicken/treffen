@@ -310,12 +310,161 @@ function showWelcomeOverlay(opts = {}) {
     }
 
     overlay.style.display = "flex";
+    refreshOpenRooms();
+    startOpenRoomsPolling();
 }
 
 function hideWelcomeOverlay() {
     const overlay = document.getElementById("welcomeOverlay");
     if (overlay) overlay.style.display = "none";
+    stopOpenRoomsPolling();
 }
+
+let openRoomsPollTimer = null;
+let expiryAnimTimer = null;
+let currentRoomExpiresAt = null;
+let currentRoomTtlMs = 60000;
+
+function startOpenRoomsPolling() {
+    stopOpenRoomsPolling();
+    openRoomsPollTimer = setInterval(refreshOpenRooms, 3000);
+    ensureExpiryAnimTimer();
+}
+
+function stopOpenRoomsPolling() {
+    if (openRoomsPollTimer) {
+        clearInterval(openRoomsPollTimer);
+        openRoomsPollTimer = null;
+    }
+}
+
+function ensureExpiryAnimTimer() {
+    if (!expiryAnimTimer) {
+        expiryAnimTimer = setInterval(updateExpiryAnimations, 150);
+    }
+}
+
+function updateExpiryAnimations() {
+    const now = Date.now();
+    // 1. Update open room cards in modals
+    document.querySelectorAll(".room-expiry-bar").forEach(bar => {
+        const expAt = parseInt(bar.getAttribute("data-expires-at") || "0", 10);
+        const ttl = parseInt(bar.getAttribute("data-ttl") || "60000", 10);
+        if (!expAt) return;
+        const remMs = Math.max(0, expAt - now);
+        const pct = Math.max(0, Math.min(100, (remMs / ttl) * 100));
+        bar.style.width = `${pct}%`;
+        bar.style.background = remMs <= 15000 ? "#ef4444" : (remMs <= 30000 ? "#f59e0b" : "#22c55e");
+        const secEl = bar.closest(".open-room-card")?.querySelector(".room-expiry-sec");
+        if (secEl) {
+            secEl.innerText = `⏳ ${Math.ceil(remMs / 1000)}s`;
+            secEl.style.color = remMs <= 15000 ? "#ef4444" : "#f59e0b";
+        }
+    });
+
+    // 2. Update active room solo banner
+    const banner = document.getElementById("soloRoomExpiryBanner");
+    if (banner) {
+        if (currentRoomExpiresAt && partyState.players.length <= 1) {
+            const remMs = Math.max(0, currentRoomExpiresAt - now);
+            const pct = Math.max(0, Math.min(100, (remMs / currentRoomTtlMs) * 100));
+            banner.style.display = "flex";
+            const secSpan = document.getElementById("soloRoomExpirySec");
+            if (secSpan) secSpan.innerText = `${Math.ceil(remMs / 1000)}s`;
+            const barEl = document.getElementById("soloRoomExpiryBar");
+            if (barEl) barEl.style.width = `${pct}%`;
+        } else {
+            banner.style.display = "none";
+        }
+    }
+}
+
+window.extendRoomTtl = function() {
+    currentRoomExpiresAt = Date.now() + 60000;
+    sendSocketMessage({ type: "EXTEND_ROOM_TTL", room: ROOM_CODE });
+    updateExpiryAnimations();
+    showToast("🔄 Raum-Timer auf 60 Sekunden zurückgesetzt!");
+};
+
+window.refreshOpenRooms = async function() {
+    const containers = [
+        document.getElementById("welcomeOpenRoomsList"),
+        document.getElementById("codeModalOpenRoomsList")
+    ].filter(Boolean);
+    if (containers.length === 0) return;
+
+    try {
+        const res = await fetch("/party-ws/rooms", { cache: "no-store" });
+        const data = await res.json();
+        const rooms = Array.isArray(data.rooms) ? data.rooms : [];
+        const now = Date.now();
+
+        const html = rooms.length === 0
+            ? `<div style="font-size: 0.84rem; color: var(--ink-light); text-align: center; padding: 10px; border: 1px dashed rgba(148,163,184,0.35); border-radius: 10px;">Aktuell keine offenen Räume – erstelle einfach eine neue Party!</div>`
+            : rooms.map(r => {
+                const hasExpiry = typeof r.remainingMs === "number" && r.remainingMs > 0;
+                const ttl = r.ttlMs || 60000;
+                const targetTs = hasExpiry ? (now + r.remainingMs) : 0;
+                const remSec = hasExpiry ? Math.ceil(r.remainingMs / 1000) : 0;
+                const pct = hasExpiry ? Math.max(0, Math.min(100, (r.remainingMs / ttl) * 100)) : 100;
+                const playersText = (r.players || []).map(p => `${p.avatar || '🎮'} ${p.name}`).join(", ");
+                const expiryBadge = hasExpiry
+                    ? `<span class="room-expiry-sec" style="font-size: 0.74rem; font-weight: 800; color: #f59e0b; background: rgba(245,158,11,0.14); padding: 2px 6px; border-radius: 6px;">⏳ ${remSec}s</span>`
+                    : "";
+                const expiryBar = hasExpiry
+                    ? `<div style="width: 100%; height: 4px; background: rgba(0,0,0,0.12); border-radius: 2px; overflow: hidden; margin-top: 4px;">
+                           <div class="room-expiry-bar" data-expires-at="${targetTs}" data-ttl="${ttl}" style="width: ${pct}%; height: 100%; background: #22c55e; transition: width 0.15s linear;"></div>
+                       </div>`
+                    : "";
+                return `
+                    <div class="open-room-card" style="display: flex; flex-direction: column; padding: 8px 10px; border-radius: 10px; border: var(--ink-border); background: var(--bg-surface);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                            <div style="display: flex; flex-direction: column; gap: 2px;">
+                                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                    <strong style="font-family: monospace; font-size: 0.95rem; letter-spacing: 0.08em;">#${r.code}</strong>
+                                    <span style="font-size: 0.78rem; color: var(--ink-light);">👑 ${r.hostAvatar || '🐶'} ${r.hostName || 'Host'}</span>
+                                    ${expiryBadge}
+                                </div>
+                                <span style="font-size: 0.75rem; color: var(--ink-light);">👥 ${r.playerCount} Spieler (${playersText})</span>
+                            </div>
+                            <button type="button" class="action-btn-sm" onclick="quickJoinOpenRoom('${r.code}')" style="padding: 6px 12px; font-size: 0.82rem;">Beitreten →</button>
+                        </div>
+                        ${expiryBar}
+                    </div>
+                `;
+            }).join("");
+
+        containers.forEach(c => { c.innerHTML = html; });
+        ensureExpiryAnimTimer();
+    } catch (e) {
+        // Ignore transient network errors
+    }
+};
+
+window.quickJoinOpenRoom = function(code) {
+    if (!code) return;
+    const codeInput = document.getElementById("welcomeCodeInput");
+    if (codeInput) codeInput.value = code;
+    const joinInput = document.getElementById("joinCodeInput");
+    if (joinInput) joinInput.value = code;
+
+    const welcomeOverlay = document.getElementById("welcomeOverlay");
+    if (welcomeOverlay && welcomeOverlay.style.display !== "none") {
+        handleWelcomeJoinParty();
+    } else {
+        handleCodeSubmit();
+    }
+};
+
+window.handleQuickViewCatalog = function() {
+    if (ROOM_CODE) {
+        hideWelcomeOverlay();
+        const grid = document.getElementById("gamesGrid");
+        if (grid) grid.scrollIntoView({ behavior: "smooth" });
+        return;
+    }
+    handleWelcomeCreateParty();
+};
 
 window.switchToWelcomeChoiceMode = function() {
     showWelcomeOverlay({ mode: "choice" });
@@ -339,6 +488,7 @@ window.handleWelcomeCreateParty = function() {
         avatar: avatar,
         color: color,
         isHost: true,
+        isCreator: true,
         status: "Bereit",
         isReady: true,
         joinedAt: Date.now(),
@@ -384,6 +534,7 @@ window.handleWelcomeJoinParty = function(e) {
         avatar: avatar,
         color: color,
         isHost: false,
+        isCreator: false,
         status: "Bereit",
         isReady: true,
         joinedAt: Date.now(),
@@ -417,17 +568,15 @@ window.handleWelcomeDirectJoin = function() {
     const profile = { name: nickname, avatar, color };
     saveGlobalProfile(profile);
 
-    const hasServerHost = partyState.players && partyState.players.some(p => p.isHost);
-    let roster = getRosterFromStorage();
-    const hasActiveHost = hasServerHost || Object.values(roster).some(p => p.isHost);
-    const isHost = !hasActiveHost && Object.keys(roster).length === 0 && (!partyState.players || partyState.players.length === 0);
+    const asHost = sessionStorage.getItem("partyhub_as_host") === "true";
 
     const newUser = {
         id: "p_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 6),
         name: nickname,
         avatar: avatar,
         color: color,
-        isHost: isHost,
+        isHost: asHost,
+        isCreator: asHost,
         status: "Bereit",
         isReady: true,
         joinedAt: Date.now(),
@@ -522,18 +671,15 @@ function initUserSession() {
     if (!savedUser && (isJoined || autoJoin)) {
         const globalProfile = getGlobalProfile();
         if (globalProfile && globalProfile.name) {
-            let roster = getRosterFromStorage();
-            const hasServerHost = partyState.players && partyState.players.some(p => p.isHost);
-            const hasActiveHost = hasServerHost || Object.values(roster).some(p => p.isHost);
             const asHost = sessionStorage.getItem("partyhub_as_host") === "true";
-            const isHost = asHost || (!hasActiveHost && Object.keys(roster).length === 0 && (!partyState.players || partyState.players.length === 0));
 
             savedUser = {
                 id: "p_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 6),
                 name: globalProfile.name,
                 avatar: globalProfile.avatar || "🐶",
                 color: globalProfile.color || "#6366f1",
-                isHost: isHost,
+                isHost: asHost,
+                isCreator: asHost,
                 status: "Bereit",
                 isReady: true,
                 joinedAt: Date.now(),
@@ -602,20 +748,9 @@ function syncPresence() {
             localStorage.setItem(STORAGE_KEY_PLAYERS, JSON.stringify(roster));
         } catch (e) {}
 
-        // Fallback local host election when offline / not connected to server
-        if (!socketConnected) {
-            const otherPlayers = Object.values(roster).filter(p => p.id !== partyState.currentUser.id);
-            const otherHost = otherPlayers.find(p => p.isHost);
-            if (!otherHost && !partyState.currentUser.isHost) {
-                const all = [...otherPlayers, partyState.currentUser].sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
-                if (all.length > 0 && all[0].id === partyState.currentUser.id) {
-                    partyState.currentUser.isHost = true;
-                    try {
-                        sessionStorage.setItem(STORAGE_KEY_USER, JSON.stringify(partyState.currentUser));
-                    } catch (e) {}
-                }
-            }
-            partyState.isHost = partyState.currentUser.isHost;
+        // Never promote a guest to isHost locally before WebSocket connects;
+        // party-server is authoritative for host assignment via ROSTER_SYNC.
+        if (!socketConnected && (!partyState.players || partyState.players.length === 0)) {
             partyState.players = Object.values(roster).sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
         }
 
@@ -991,6 +1126,15 @@ function handleServerMessage(data) {
 
     switch (data.type) {
         case "ROSTER_SYNC":
+            if (typeof data.remainingMs === "number" && data.remainingMs > 0) {
+                currentRoomExpiresAt = Date.now() + data.remainingMs;
+                currentRoomTtlMs = data.ttlMs || 60000;
+                ensureExpiryAnimTimer();
+            } else {
+                currentRoomExpiresAt = null;
+            }
+            updateExpiryAnimations();
+
             if (Array.isArray(data.players)) {
                 // Update players from real-time server
                 partyState.players = data.players;
@@ -1001,6 +1145,9 @@ function handleServerMessage(data) {
                     if (serverMe) {
                         partyState.currentUser.isHost = !!serverMe.isHost;
                         partyState.isHost = partyState.currentUser.isHost;
+                        try {
+                            sessionStorage.setItem(STORAGE_KEY_USER, JSON.stringify(partyState.currentUser));
+                        } catch (e) {}
                     } else if (sessionStorage.getItem(STORAGE_KEY_JOINED) === "true") {
                         // Resend join if server restarted
                         sendSocketMessage({
@@ -1062,6 +1209,22 @@ function handleServerMessage(data) {
             }
             break;
 
+        case "ROOM_EXPIRED":
+            currentRoomExpiresAt = null;
+            showToast(data.message || "⏳ Raum wurde nach 60s Inaktivität geschlossen.");
+            try {
+                sessionStorage.removeItem(STORAGE_KEY_JOINED);
+                sessionStorage.removeItem(STORAGE_KEY_USER);
+            } catch (e) {}
+            if (socket) {
+                try { socket.onclose = null; socket.close(); } catch (e) {}
+                socket = null;
+            }
+            setTimeout(() => {
+                window.location.href = window.location.origin + window.location.pathname;
+            }, 900);
+            break;
+
         case "GAME_SETTINGS_SYNC":
         case "GAME_SETTINGS_UPDATE":
             if (data.gameId === "skribbol" && data.settings) {
@@ -1099,6 +1262,18 @@ function handleServerMessage(data) {
             const modal = document.getElementById("gameModal");
             if (modal) modal.style.display = "none";
             partyState.activeModalGameId = null;
+            break;
+
+        case "SLOT_SPIN_START":
+            handleServerSlotSpin(data);
+            break;
+
+        case "SLOT_MODAL_SYNC":
+            if (data.action === "open") {
+                openSlotMachineModal(false);
+            } else if (data.action === "close") {
+                closeSlotMachineModal(false);
+            }
             break;
 
         case "READY_STATE_CHANGED":
@@ -1792,7 +1967,7 @@ function getGameUrl(game, lobbyId) {
     } else if (game.id === "codenames") {
         return `/codenames/g/${encodeURIComponent(ROOM_CODE)}?name=${encodeURIComponent(userName)}`;
     } else if (game.id === "monopoly") {
-        return `/monopoly/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}`;
+        return `/monopoly/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}`;
     } else if (game.id === "price_guess") {
         return `/price-guess/`;
     }
@@ -1991,27 +2166,303 @@ function castVote(gameId) {
 // Roulette (Random Game Picker)
 // ==========================================================================
 
-window.spinRoulette = function() {
+// ==========================================================================
+// Slot Machine Engine (Einarmiger Bandit - Synced Game Picker)
+// ==========================================================================
+
+const SLOT_GAMES = [
+    { id: "uno",         title: "UNO",             icon: "🃏" },
+    { id: "skribbol",    title: "skribbl",         icon: "🎨" },
+    { id: "codenames",   title: "Codenames",       icon: "🕵️‍♂️" },
+    { id: "price_guess", title: "Guess The Price", icon: "🏷️" },
+    { id: "monopoly",    title: "Monopoly 3D",     icon: "🎩" }
+];
+
+let isSlotSpinning = false;
+let slotCountdownTimer = null;
+let slotAudioCtx = null;
+
+function getSlotAudioContext() {
+    try {
+        if (!slotAudioCtx) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtx) slotAudioCtx = new AudioCtx();
+        }
+        if (slotAudioCtx && slotAudioCtx.state === "suspended") {
+            slotAudioCtx.resume();
+        }
+    } catch (e) {}
+    return slotAudioCtx;
+}
+
+function playSlotSound(type) {
+    const ctx = getSlotAudioContext();
+    if (!ctx) return;
+    try {
+        const now = ctx.currentTime;
+        if (type === "lever") {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(140, now);
+            osc.frequency.exponentialRampToValueAtTime(70, now + 0.22);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.23);
+        } else if (type === "tick") {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "triangle";
+            osc.frequency.setValueAtTime(480 + Math.random() * 120, now);
+            gain.gain.setValueAtTime(0.12, now);
+            gain.gain.exponentialRampToValueAtTime(0.005, now + 0.05);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.06);
+        } else if (type === "stop") {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "square";
+            osc.frequency.setValueAtTime(260, now);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.13);
+        } else if (type === "jackpot") {
+            const notes = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99];
+            notes.forEach((freq, idx) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = "triangle";
+                osc.frequency.setValueAtTime(freq, now + idx * 0.09);
+                gain.gain.setValueAtTime(0.25, now + idx * 0.09);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + idx * 0.09 + 0.28);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now + idx * 0.09);
+                osc.stop(now + idx * 0.09 + 0.3);
+            });
+        }
+    } catch (e) {}
+}
+
+function initSlotReels() {
+    for (let r = 0; r < 3; r++) {
+        const strip = document.getElementById(`slotReelStrip${r}`);
+        if (!strip) continue;
+        strip.innerHTML = "";
+        strip.style.transition = "none";
+        strip.style.transform = "translateY(0px)";
+
+        // Build a continuous strip of 8 cycles (40 items) so every reel has plenty of items
+        for (let cycle = 0; cycle < 8; cycle++) {
+            SLOT_GAMES.forEach(game => {
+                const item = document.createElement("div");
+                item.className = "slot-item";
+                item.dataset.gameId = game.id;
+                item.innerHTML = `
+                    <span class="slot-item-icon">${game.icon}</span>
+                    <span class="slot-item-title">${game.title}</span>
+                `;
+                strip.appendChild(item);
+            });
+        }
+    }
+}
+
+window.openSlotMachineModal = function(broadcastIt = true) {
+    const modal = document.getElementById("slotModal");
+    if (!modal) return;
+    initSlotReels();
+
+    const banner = document.getElementById("slotResultBanner");
+    if (banner) banner.style.display = "none";
+
+    const spinBtn = document.getElementById("slotSpinActionBtn");
+    const subTitle = document.getElementById("slotStatusSubtitle");
+
+    if (spinBtn) {
+        if (partyState.isHost) {
+            spinBtn.disabled = false;
+            spinBtn.innerText = "🕹️ JETZT DREHEN!";
+        } else {
+            spinBtn.disabled = true;
+            spinBtn.innerText = "⏳ Warten auf Host...";
+        }
+    }
+
+    if (subTitle) {
+        subTitle.innerText = partyState.isHost
+            ? "Ziehe am Hebel, um das Schicksal des Spieleabends zu entscheiden!"
+            : "Der Party-Host zieht am Hebel der Slot Machine...";
+    }
+
+    modal.style.display = "flex";
+
+    if (broadcastIt && partyState.isHost) {
+        broadcast({
+            type: "SLOT_MODAL_SYNC",
+            action: "open"
+        });
+    }
+};
+
+window.closeSlotMachineModal = function(broadcastIt = true) {
+    if (isSlotSpinning) return;
+    const modal = document.getElementById("slotModal");
+    if (modal) modal.style.display = "none";
+    if (slotCountdownTimer) {
+        clearInterval(slotCountdownTimer);
+        slotCountdownTimer = null;
+    }
+    if (broadcastIt && partyState.isHost) {
+        broadcast({
+            type: "SLOT_MODAL_SYNC",
+            action: "close"
+        });
+    }
+};
+
+window.triggerSlotLeverPull = function() {
     if (!partyState.isHost) {
-        showToast("⚠️ Nur der Party-Leader kann das Roulette drehen!");
+        showToast("⚠️ Nur der Party-Leader kann den Hebel ziehen!");
         return;
     }
-    const available = ["skribbol", "uno", "codenames", "price_guess", "monopoly"];
-    const pick = available[Math.floor(Math.random() * available.length)];
-    const chosenGame = partyState.games[pick];
+    if (isSlotSpinning) return;
 
-    const card = document.querySelector(`[data-game-id="${pick}"]`);
-    if (card) {
-        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        card.style.transform = "scale(1.06)";
-        card.style.borderColor = "#ec4899";
-        setTimeout(() => {
-            card.style.transform = "";
-            card.style.borderColor = "";
-            openGameModal(pick);
-        }, 600);
+    // Pick random target game
+    const winningGame = SLOT_GAMES[Math.floor(Math.random() * SLOT_GAMES.length)];
+    const spinData = {
+        type: "SLOT_SPIN_START",
+        winningGameId: winningGame.id,
+        spinId: Date.now()
+    };
+
+    broadcast(spinData);
+    handleServerSlotSpin(spinData);
+};
+
+function handleServerSlotSpin(data) {
+    if (!data || !data.winningGameId) return;
+
+    const modal = document.getElementById("slotModal");
+    if (modal && modal.style.display === "none") {
+        modal.style.display = "flex";
     }
-    showToast(`🎰 Das Schicksal hat entschieden: ${chosenGame.title}!`);
+
+    const lever = document.getElementById("slotLeverContainer");
+    if (lever) {
+        lever.classList.add("pulled");
+        playSlotSound("lever");
+        setTimeout(() => lever.classList.remove("pulled"), 400);
+    }
+
+    const spinBtn = document.getElementById("slotSpinActionBtn");
+    if (spinBtn) spinBtn.disabled = true;
+
+    const banner = document.getElementById("slotResultBanner");
+    if (banner) banner.style.display = "none";
+
+    isSlotSpinning = true;
+
+    const targetGameId = data.winningGameId;
+    const targetIdx = SLOT_GAMES.findIndex(g => g.id === targetGameId);
+    const itemHeight = 140;
+
+    // Slot reels timing: Reel 0 stops first, Reel 1 stops next, Reel 2 creates the jackpot!
+    const spinDurations = [2000, 2600, 3200];
+
+    // Sound tick interval during spinning
+    let tickCount = 0;
+    const tickInterval = setInterval(() => {
+        if (!isSlotSpinning) {
+            clearInterval(tickInterval);
+            return;
+        }
+        playSlotSound("tick");
+        tickCount++;
+        if (tickCount > 35) clearInterval(tickInterval);
+    }, 120);
+
+    for (let r = 0; r < 3; r++) {
+        const strip = document.getElementById(`slotReelStrip${r}`);
+        if (!strip) continue;
+
+        // Number of full rotations
+        const rounds = 2 + r;
+        const totalItemsInCycle = SLOT_GAMES.length;
+        const stopIndex = (rounds * totalItemsInCycle) + (targetIdx >= 0 ? targetIdx : 0);
+        const finalTranslateY = -(stopIndex * itemHeight);
+
+        strip.style.transition = `transform ${spinDurations[r]}ms cubic-bezier(0.2, 0.9, 0.3, 1.02)`;
+        strip.style.transform = `translateY(${finalTranslateY}px)`;
+
+        setTimeout(() => {
+            playSlotSound("stop");
+        }, spinDurations[r]);
+    }
+
+    // When the last reel finishes: JACKPOT!
+    setTimeout(() => {
+        clearInterval(tickInterval);
+        isSlotSpinning = false;
+        playSlotSound("jackpot");
+
+        const winningGame = SLOT_GAMES.find(g => g.id === targetGameId) || SLOT_GAMES[0];
+        const winnerTitleEl = document.getElementById("slotWinnerTitle");
+        const countdownEl = document.getElementById("slotWinnerCountdown");
+
+        // Flash/glow all 3 matching reels
+        for (let r = 0; r < 3; r++) {
+            const strip = document.getElementById(`slotReelStrip${r}`);
+            if (strip && strip.children) {
+                const rounds = 3 + r;
+                const stopIndex = (rounds * SLOT_GAMES.length) + (targetIdx >= 0 ? targetIdx : 0);
+                const winningEl = strip.children[stopIndex];
+                if (winningEl) {
+                    winningEl.style.animation = "pulse 0.8s infinite alternate";
+                    winningEl.style.color = "#FF007F";
+                }
+            }
+        }
+
+        if (winnerTitleEl) winnerTitleEl.innerText = `3x MATCH: ${winningGame.icon} ${winningGame.title}!`;
+        if (banner) banner.style.display = "block";
+
+        let countdown = 3;
+        if (countdownEl) countdownEl.innerText = `Alle 3 Walzen gleich! Spiel startet in ${countdown}...`;
+
+        if (slotCountdownTimer) clearInterval(slotCountdownTimer);
+        slotCountdownTimer = setInterval(() => {
+            countdown--;
+            if (countdown > 0) {
+                if (countdownEl) countdownEl.innerText = `Alle 3 Walzen gleich! Spiel startet in ${countdown}...`;
+            } else {
+                clearInterval(slotCountdownTimer);
+                slotCountdownTimer = null;
+                const modal = document.getElementById("slotModal");
+                if (modal) modal.style.display = "none";
+
+                // Open the picked game modal for all players
+                if (partyState.isHost) {
+                    openGameModal(targetGameId);
+                }
+            }
+        }, 1000);
+
+        showToast(`🎰 3/3 MATCH! JACKPOT: ${winningGame.title}!`);
+    }, spinDurations[2] + 150);
+}
+
+// Fallback for legacy calls
+window.spinRoulette = function() {
+    window.openSlotMachineModal();
 };
 
 // ==========================================================================
@@ -2032,6 +2483,8 @@ window.openCodeModal = function() {
     const modal = document.getElementById("codeModal");
     if (modal) {
         modal.style.display = "flex";
+        refreshOpenRooms();
+        startOpenRoomsPolling();
         const input = document.getElementById("joinCodeInput");
         if (input) {
             input.value = "";
@@ -2043,6 +2496,7 @@ window.openCodeModal = function() {
 window.closeCodeModal = function() {
     const modal = document.getElementById("codeModal");
     if (modal) modal.style.display = "none";
+    stopOpenRoomsPolling();
 };
 
 window.handleCodeSubmit = function(e) {

@@ -52,9 +52,10 @@
         popup.classList.remove('hiding');
         popup.style.display = 'block';
 
+        const durationMs = (titleText && titleText.includes('⚠️')) ? 4200 : 2600;
         yourTurnPopupTimeout = setTimeout(() => {
             hideYourTurnPopup();
-        }, 2600);
+        }, durationMs);
     }
 
     function hideYourTurnPopup() {
@@ -296,11 +297,17 @@
         const isActivelyInteracting = isManagementModalOpen() || ((Date.now() - lastUserActivityAt) < 1200);
 
         if (btnRoll && rollLabelEl) {
+            const myPlayer = (gameState && gameState.players) ? gameState.players.find(p => p.id === playerId) : null;
+            const isMyTurn = (gameState && gameState.current_player && gameState.current_player.id === playerId);
+            const inJailRolling = (isMyTurn && myPlayer && myPlayer.in_jail && !gameState.rolled);
+            const attemptNum = inJailRolling ? Math.min(3, (myPlayer.jail_rolls_this_turn || 0) + 1) : 0;
+            const baseRollText = inJailRolling ? `Würfeln (${attemptNum}/3)` : 'Würfeln';
+
             if (endTurnTimerInterval && endTurnTimerMode === 'ROLL' && endTurnSecondsLeft > 0 && !isActivelyInteracting) {
-                rollLabelEl.textContent = `Würfeln (${endTurnSecondsLeft}s)`;
+                rollLabelEl.textContent = `${baseRollText} (${endTurnSecondsLeft}s)`;
                 btnRoll.classList.add('countdown-active');
             } else {
-                rollLabelEl.textContent = 'Würfeln';
+                rollLabelEl.textContent = baseRollText;
                 btnRoll.classList.remove('countdown-active');
             }
         }
@@ -663,6 +670,8 @@
                            <div class="mono-room-expiry-bar" data-expires-at="${targetTs}" data-ttl="${ttl}" style="width:${pct}%; height:100%; background:#2ecc71; transition:width 0.2s linear, background-color 0.3s ease;"></div>
                        </div>`
                     : '';
+                const maxP = r.max_players || 8;
+                const isFull = (r.player_count >= maxP);
                 return `
                     <div class="lobby-player-row" style="padding:8px 10px; flex-direction:column; align-items:stretch; gap:4px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
@@ -674,11 +683,11 @@
                                     ${expiryBadge}
                                 </div>
                                 <div style="font-size:11px; color:var(--text-muted);">
-                                    👥 ${r.player_count} Spieler (${(r.players || []).join(', ')})
+                                    👥 ${r.player_count}/${maxP} Spieler (${(r.players || []).join(', ')})
                                 </div>
                             </div>
-                            <button class="btn-action btn-buy" style="font-size:12px; padding:6px 12px;" onclick="window.MonopolyGame.connectToRoom('${r.room_id}')">
-                                Beitreten →
+                            <button class="btn-action btn-buy" style="font-size:12px; padding:6px 12px;" ${isFull ? 'disabled' : ''} onclick="window.MonopolyGame.connectToRoom('${r.room_id}')">
+                                ${isFull ? `Voll (${maxP}/${maxP})` : 'Beitreten →'}
                             </button>
                         </div>
                         ${expiryBar}
@@ -854,8 +863,16 @@
         console.log('Server message:', msg.type, msg);
 
         if (msg.type === 'ROOM_EXPIRED') {
-            showToast(msg.message || 'Raum wurde nach 60s Inaktivität automatisch geschlossen.', 'warning');
+            showYourTurnPopup('⚠️ RAUM ABGELAUFEN', msg.message || 'Raum wurde nach 60s Inaktivität automatisch geschlossen.');
             showRoomSelector();
+            return;
+        }
+
+        if (msg.type === 'ERROR') {
+            showYourTurnPopup('⚠️ HINWEIS', msg.message || 'Aktion nicht möglich.');
+            if (msg.code === 'ROOM_FULL') {
+                showRoomSelector();
+            }
             return;
         }
 
@@ -1014,17 +1031,60 @@
                 break;
 
             case 'HOUSE_BUILT':
-                if (Sound) Sound.playBuild();
-                resetEndTurnTimer();
+                if (msg.result && msg.result.error) {
+                    if (!msg.result.actor_id || msg.result.actor_id === playerId) {
+                        showDeedErrorBanner(msg.result.error, '⚠️ HAUSBAU NICHT MÖGLICH');
+                    }
+                } else {
+                    if (Sound) Sound.playBuild();
+                    closeModal('modal-deed');
+                    resetEndTurnTimer();
+                }
                 break;
 
             case 'HOUSE_SOLD':
-                if (Sound) Sound.playMoney();
-                resetEndTurnTimer();
+                if (msg.result && msg.result.error) {
+                    if (!msg.result.actor_id || msg.result.actor_id === playerId) {
+                        showDeedErrorBanner(msg.result.error, '⚠️ VERKAUF NICHT MÖGLICH');
+                    }
+                } else {
+                    if (Sound) Sound.playMoney();
+                    closeModal('modal-deed');
+                    resetEndTurnTimer();
+                }
+                break;
+
+            case 'MORTGAGE_TOGGLED':
+                if (msg.result && msg.result.error) {
+                    if (!msg.result.actor_id || msg.result.actor_id === playerId) {
+                        showDeedErrorBanner(msg.result.error, '⚠️ HYPOTHEK NICHT MÖGLICH');
+                    }
+                } else {
+                    if (Sound) Sound.playMoney();
+                    closeModal('modal-deed');
+                    resetEndTurnTimer();
+                }
                 break;
 
             case 'BAIL_PAID':
-                if (Sound) Sound.playMoney();
+                if (msg.result && msg.result.error) {
+                    if (!msg.result.actor_id || msg.result.actor_id === playerId) {
+                        showYourTurnPopup('⚠️ KAUTION NICHT MÖGLICH', msg.result.error);
+                    }
+                } else {
+                    if (Sound) Sound.playMoney();
+                }
+                break;
+
+            case 'JAIL_CARD_USED':
+                if (msg.result && msg.result.error) {
+                    if (!msg.result.actor_id || msg.result.actor_id === playerId) {
+                        showYourTurnPopup('⚠️ KARTE NICHT EINLÖSBAR', msg.result.error);
+                    }
+                } else {
+                    if (Sound) Sound.playCard();
+                    closeModal('modal-deed');
+                }
                 break;
 
             case 'WENT_TO_JAIL':
@@ -1034,7 +1094,7 @@
 
             case 'CARD':
                 if (!isTokenInTransit && msg.card) {
-                    const dDeck = msg.deck || 'Ereignis';
+                    const dDeck = msg.card || msg.deck ? (msg.deck || 'Ereignis') : 'Ereignis';
                     const dText = msg.card.text;
                     const dImg = msg.card.image || msg.card.card_image_filename;
                     const drawerName = msg.player || (gameState && gameState.current_player && gameState.current_player.name) || '';
@@ -1047,7 +1107,11 @@
                 break;
 
             case 'TRADE_PROPOSED':
-                if (msg.state && msg.state.pending_trade) {
+                if (msg.result && msg.result.error) {
+                    if (!msg.result.actor_id || msg.result.actor_id === playerId) {
+                        showYourTurnPopup('⚠️ HANDEL UNGÜLTIG', msg.result.error);
+                    }
+                } else if (msg.state && msg.state.pending_trade) {
                     const trade = msg.state.pending_trade;
                     if (trade.target_id === playerId) {
                         showIncomingTradeModal(trade);
@@ -1064,6 +1128,29 @@
             case 'TRADE_REJECTED':
                 closeModal('modal-incoming-trade');
                 resetEndTurnTimer();
+                break;
+
+            case 'ANIM_CONFIG_UPDATED':
+                if (msg.anim_config && window.MonopolyBoard3D && window.MonopolyBoard3D.setAnimConfig) {
+                    window.MonopolyBoard3D.setAnimConfig(msg.anim_config, true);
+                    syncDebugModalSliders();
+                }
+                break;
+
+            case 'DEBUG_ACTION_APPLIED':
+                if (msg.result && msg.result.message) {
+                    const fbEl = document.getElementById('debug-cheat-feedback');
+                    if (fbEl) {
+                        fbEl.textContent = `✅ ${msg.result.message}`;
+                        fbEl.style.display = 'block';
+                        setTimeout(() => { fbEl.style.display = 'none'; }, 2800);
+                    }
+                    if (!msg.actor_id || msg.actor_id === playerId) {
+                        showYourTurnPopup('🛠️ DEBUG-AKTION', msg.result.message);
+                    }
+                }
+                syncDebugModalSliders();
+                updateHUD();
                 break;
         }
 
@@ -1244,7 +1331,18 @@
                     window.MonopolyBoard3D.hideDrawnCards();
                 }
             }
-            if (isMyTurn && gameState && !gameState.rolled && d1 === d2 && !(res.player && res.player.in_jail) && (!res.action || res.action.type !== 'CARD_DRAWN')) {
+            if (isMyTurn && res.jail_reroll) {
+                const rem = 3 - (res.jail_attempt || 1);
+                showYourTurnPopup(
+                    `🔒 KEIN PASCH (VERSUCH ${res.jail_attempt}/3)`,
+                    `Würfle direkt noch einmal! Du hast noch ${rem} ${rem === 1 ? 'Versuch' : 'Versuche'}, um einen Pasch zu schaffen.`
+                );
+            } else if (isMyTurn && res.jail_attempt === 3 && !res.double && res.player && res.player.in_jail) {
+                showYourTurnPopup(
+                    '🔒 3x KEIN PASCH',
+                    'Alle 3 Versuche verbraucht – du bleibst diese Runde im Gefängnis.'
+                );
+            } else if (isMyTurn && gameState && !gameState.rolled && d1 === d2 && !(res.player && res.player.in_jail) && (!res.action || res.action.type !== 'CARD_DRAWN')) {
                 showYourTurnPopup('PASCH! NOCHMAL DRAN!', 'Du hast einen Pasch gewürfelt und darfst direkt nochmal!');
             }
             updateHUD();
@@ -1315,9 +1413,21 @@
             startBtn.disabled = (gameState.players.length < 2);
         }
 
+        const maxPlayers = gameState.max_players || 8;
+        const isRoomFull = (gameState.players.length >= maxPlayers);
+
+        const playersLabelEl = document.getElementById('lobby-players-label');
+        if (playersLabelEl) {
+            playersLabelEl.textContent = `MITSPIELER IM RAUM (${gameState.players.length} / ${maxPlayers})`;
+        }
+
         const addBotBtn = document.getElementById('btn-add-bot');
         if (addBotBtn) {
             addBotBtn.style.display = isHost ? 'inline-block' : 'none';
+            addBotBtn.disabled = isRoomFull;
+            addBotBtn.textContent = isRoomFull
+                ? `🤖 Max. ${maxPlayers} Spieler/Bots erreicht (${gameState.players.length}/${maxPlayers})`
+                : `🤖 Bot-Spieler hinzufügen (${gameState.players.length}/${maxPlayers})`;
         }
 
         const myPlayer = gameState.players.find(p => p.id === playerId);
@@ -1507,16 +1617,17 @@
                     if (sq) ownedList.push({ idx: sqIdx, state: st, sq: sq });
                 }
             }
+            const jailCardCount = (targetViewPlayer && targetViewPlayer.jail_cards) ? parseInt(targetViewPlayer.jail_cards) || 0 : 0;
 
             if (tableRackCount) {
-                tableRackCount.textContent = `${ownedList.length} Grundstücke`;
+                tableRackCount.textContent = `${ownedList.length} Grundstücke${jailCardCount > 0 ? ` + ${jailCardCount} 🗝️` : ''}`;
             }
 
-            if (ownedList.length === 0) {
+            if (ownedList.length === 0 && jailCardCount === 0) {
                 tableCardsScroll.innerHTML = `<div class="table-empty-hint">${isViewingMe ? 'Noch keine Straßen im Besitz. Ziehe über das Spielfeld, um Straßen zu erwerben!' : 'Dieser Spieler besitzt noch keine Straßen.'}</div>`;
             } else {
                 ownedList.sort((a, b) => a.idx - b.idx);
-                tableCardsScroll.innerHTML = ownedList.map(item => {
+                const streetCardsHtml = ownedList.map(item => {
                     const sq = item.sq;
                     const st = item.state;
                     const col = GROUP_COLORS[sq.group] || '#444';
@@ -1535,6 +1646,20 @@
                         </div>
                     `;
                 }).join('');
+
+                let jailCardsHtml = '';
+                for (let j = 0; j < jailCardCount; j++) {
+                    const barCol = (j % 2 === 0) ? '#f39c12' : '#3498db';
+                    jailCardsHtml += `
+                        <div class="table-mini-card" style="border-color:rgba(241,196,15,0.5); background:rgba(241,196,15,0.1);" onclick="window.MonopolyGame.showOwnedJailCardModal('${activeViewId}', ${j})" title="Du kommst aus dem Gefängnis frei! (Klicken zum Ansehen / Einlösen)">
+                            <div class="table-mini-card-bar" style="background:${barCol};"></div>
+                            <div class="table-mini-card-name">🗝️ Gefängnisfrei</div>
+                            <div class="table-mini-card-houses"><span style="font-size:9px; color:#f1c40f; font-weight:800;">KARTE</span></div>
+                        </div>
+                    `;
+                }
+
+                tableCardsScroll.innerHTML = streetCardsHtml + jailCardsHtml;
             }
         }
 
@@ -1609,13 +1734,13 @@
             btnEnd.disabled = !canEnd;
         }
 
-        // Jail actions (only BEFORE rolling dice, per Parker rules page 2)
+        // Jail actions (only BEFORE first roll attempt of the turn)
         if (btnBail && myPlayer) {
-            const canBail = isMyTurn && !gameState.rolled && myPlayer.in_jail && myPlayer.money >= 50;
+            const canBail = isMyTurn && !gameState.rolled && !(myPlayer.jail_rolls_this_turn > 0) && myPlayer.in_jail && myPlayer.money >= 50;
             btnBail.style.display = canBail ? 'inline-flex' : 'none';
         }
         if (btnJailCard && myPlayer) {
-            const canCard = isMyTurn && !gameState.rolled && myPlayer.in_jail && myPlayer.jail_cards > 0;
+            const canCard = isMyTurn && !gameState.rolled && !(myPlayer.jail_rolls_this_turn > 0) && myPlayer.in_jail && myPlayer.jail_cards > 0;
             btnJailCard.style.display = canCard ? 'inline-flex' : 'none';
         }
 
@@ -1957,6 +2082,190 @@
         }, 1000);
     }
 
+    function getBuildHouseRestriction(sqIdx) {
+        if (!gameState || !squaresData || !squaresData[sqIdx]) return 'Spielfeld-Daten noch nicht geladen.';
+        const sq = squaresData[sqIdx];
+        if (sq.type !== 'property') return 'Auf Bahnhöfen und Werken können keine Häuser gebaut werden.';
+        const st = gameState.board_state ? gameState.board_state[sqIdx] : null;
+        if (!st || st.owner !== playerId) return 'Dieses Grundstück gehört dir nicht.';
+        if (st.mortgaged) return 'Auf einem mit Hypothek belasteten Grundstück kann nicht gebaut werden!';
+
+        const groupSquares = squaresData.filter(s => s && s.group === sq.group);
+        const missingStreets = groupSquares.filter(s => {
+            const gst = gameState.board_state ? gameState.board_state[s.index] : null;
+            return !gst || gst.owner !== playerId;
+        });
+        if (missingStreets.length > 0) {
+            const missingNames = missingStreets.map(s => s.name).join(', ');
+            return `Du musst erst alle Straßen dieser Farbgruppe besitzen! Dir fehlt noch: ${missingNames}.`;
+        }
+
+        const mortgagedInGroup = groupSquares.filter(s => {
+            const gst = gameState.board_state ? gameState.board_state[s.index] : null;
+            return gst && gst.mortgaged;
+        });
+        if (mortgagedInGroup.length > 0) {
+            return `Hausbau nicht möglich, solange eine Straße dieser Farbgruppe mit einer Hypothek belastet ist (${mortgagedInGroup.map(s => s.name).join(', ')})!`;
+        }
+
+        const houses = st.houses || 0;
+        if (houses >= 5) return 'Auf dieser Straße steht bereits ein Hotel (Maximalausbau)!';
+
+        const minHouses = Math.min(...groupSquares.map(s => {
+            const gst = gameState.board_state ? gameState.board_state[s.index] : null;
+            return (gst && gst.houses) ? gst.houses : 0;
+        }));
+        if (houses > minHouses) {
+            const laggingNames = groupSquares
+                .filter(s => {
+                    const gst = gameState.board_state ? gameState.board_state[s.index] : null;
+                    return ((gst && gst.houses) ? gst.houses : 0) === minHouses;
+                })
+                .map(s => s.name)
+                .join(', ');
+            return `Gleichmäßiges Bauen erforderlich! Baue zuerst auf: ${laggingNames}.`;
+        }
+
+        const bankHouses = (gameState.bank_houses !== undefined) ? gameState.bank_houses : 32;
+        const bankHotels = (gameState.bank_hotels !== undefined) ? gameState.bank_hotels : 12;
+        if (houses < 4 && bankHouses <= 0) {
+            return 'Die Bank hat aktuell keine Häuser mehr auf Vorrat (alle 32 Häuser sind verbaut)!';
+        }
+        if (houses === 4 && bankHotels <= 0) {
+            return 'Die Bank hat aktuell keine Hotels mehr auf Vorrat (alle 12 Hotels sind verbaut)!';
+        }
+
+        const myPlayer = gameState.players ? gameState.players.find(p => p.id === playerId) : null;
+        if (!myPlayer || myPlayer.money < sq.house_cost) {
+            return `Nicht genügend Bargeld! Ein ${houses === 4 ? 'Hotel' : 'Haus'} kostet ${sq.house_cost} DM (Du hast ${myPlayer ? myPlayer.money : 0} DM).`;
+        }
+
+        return null;
+    }
+
+    function getSellHouseRestriction(sqIdx) {
+        if (!gameState || !squaresData || !squaresData[sqIdx]) return 'Spielfeld-Daten noch nicht geladen.';
+        const sq = squaresData[sqIdx];
+        const st = gameState.board_state ? gameState.board_state[sqIdx] : null;
+        if (!st || st.owner !== playerId) return 'Dieses Grundstück gehört dir nicht.';
+        const houses = st.houses || 0;
+        if (houses <= 0) return 'Auf dieser Straße stehen keine Häuser zum Verkaufen.';
+
+        const groupSquares = squaresData.filter(s => s && s.group === sq.group);
+        const maxHouses = Math.max(...groupSquares.map(s => {
+            const gst = gameState.board_state ? gameState.board_state[s.index] : null;
+            return (gst && gst.houses) ? gst.houses : 0;
+        }));
+        if (houses < maxHouses) {
+            const higherNames = groupSquares
+                .filter(s => {
+                    const gst = gameState.board_state ? gameState.board_state[s.index] : null;
+                    return ((gst && gst.houses) ? gst.houses : 0) === maxHouses;
+                })
+                .map(s => s.name)
+                .join(', ');
+            return `Gleichmäßiger Abbau erforderlich! Verkaufe zuerst ein Gebäude von: ${higherNames}.`;
+        }
+
+        const bankHouses = (gameState.bank_houses !== undefined) ? gameState.bank_houses : 32;
+        if (houses === 5 && bankHouses < 4) {
+            return `In der Bank sind nur noch ${bankHouses} Häuser verfügbar (4 benötigt, um das Hotel abzubauen).`;
+        }
+
+        return null;
+    }
+
+    function getMortgageRestriction(sqIdx) {
+        if (!gameState || !squaresData || !squaresData[sqIdx]) return 'Spielfeld-Daten noch nicht geladen.';
+        const sq = squaresData[sqIdx];
+        const st = gameState.board_state ? gameState.board_state[sqIdx] : null;
+        if (!st || st.owner !== playerId) return 'Dieses Grundstück gehört dir nicht.';
+        const myPlayer = gameState.players ? gameState.players.find(p => p.id === playerId) : null;
+
+        if (!st.mortgaged) {
+            if ((st.houses || 0) > 0) {
+                return 'Vor einer Hypothek müssen erst alle Häuser auf dieser Straße verkauft werden!';
+            }
+            const groupSquares = squaresData.filter(s => s && s.group === sq.group);
+            const builtInGroup = groupSquares.filter(s => {
+                const gst = gameState.board_state ? gameState.board_state[s.index] : null;
+                return gst && (gst.houses || 0) > 0;
+            });
+            if (builtInGroup.length > 0) {
+                return `Alle Häuser dieser Farbgruppe müssen zuerst verkauft werden (${builtInGroup.map(s => s.name).join(', ')})!`;
+            }
+        } else {
+            const mortgageVal = sq.mortgage || (sq.price / 2);
+            const unmortgageCost = Math.round(mortgageVal * 1.1);
+            if (!myPlayer || myPlayer.money < unmortgageCost) {
+                return `Nicht genügend Bargeld zum Ablösen der Hypothek (${unmortgageCost} DM inkl. 10% Zinsen benötigt)!`;
+            }
+        }
+        return null;
+    }
+
+    function showDeedErrorBanner(message, popupTitle = '⚠️ AKTION NICHT MÖGLICH') {
+        const bannerEl = document.getElementById('deed-error-banner');
+        if (bannerEl) {
+            bannerEl.innerHTML = `<span style="font-size:15px; flex-shrink:0;">⚠️</span><span>${message}</span>`;
+            bannerEl.style.display = 'flex';
+            bannerEl.style.animation = 'none';
+            void bannerEl.offsetWidth;
+            bannerEl.style.animation = 'monoShakeError 0.38s ease';
+        }
+        showYourTurnPopup(popupTitle, message);
+    }
+
+    // Show Owned "Du kommst aus dem Gefängnis frei" Card Modal
+    function showOwnedJailCardModal(ownerId, jailIdx = 0) {
+        const owner = (gameState && gameState.players) ? gameState.players.find(p => p.id === ownerId) : null;
+        const isMe = (owner && owner.id === playerId);
+        const isMyTurn = (gameState && gameState.current_player && gameState.current_player.id === playerId);
+
+        const titleEl = document.getElementById('deed-modal-title');
+        if (titleEl) titleEl.textContent = '🗝️ Gefängnisfrei-Karte';
+
+        const modalBody = document.getElementById('deed-modal-body');
+        if (!modalBody) return;
+
+        const isSecond = ((jailIdx || 0) % 2 === 1);
+        const cardImgRel = isSecond
+            ? 'static/assets/chance_chest/cards/gemeinschaft_16.png'
+            : 'static/assets/chance_chest/cards/ereignis_16.png';
+        const deckLabel = isSecond ? 'GEMEINSCHAFTSKARTE' : 'EREIGNISKARTE';
+        preloadImageUrl(cardImgRel);
+
+        const canUseNow = isMe && owner && owner.in_jail && isMyTurn && (!gameState.pending_action);
+
+        modalBody.innerHTML = `
+            <div class="deed-image-wrap" style="display:block; text-align:center;">
+                <img class="deed-card-img" src="${resolveUrl(cardImgRel)}" alt="Du kommst aus dem Gefängnis frei" style="width:100%; max-width:340px; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,0.45);" />
+            </div>
+            <div style="background:rgba(255,255,255,0.06); padding:10px 14px; border-radius:8px; margin-top:10px; font-size:12px; display:flex; flex-direction:column; gap:5px;">
+                <div style="font-weight:800; color:#f1c40f; font-size:13px;">🗝️ Du kommst aus dem Gefängnis frei! (${deckLabel})</div>
+                <div style="color:#cbd5e1; line-height:1.4;">Diese Karte liegt offen bei deinen Straßen und darf aufbewahrt werden, bis du sie im Gefängnis einsetzt oder im Handel an einen Mitspieler verkaufst.</div>
+                <div style="margin-top:2px; font-weight:700; color:${owner ? owner.color : '#888'};">
+                    Besitzer: ${owner ? owner.name + (isMe ? ' (Du)' : '') : 'Spieler'}
+                </div>
+            </div>
+            <div id="deed-error-banner" style="display:none; align-items:center; gap:8px; background:rgba(231,76,60,0.18); border:1px solid rgba(231,76,60,0.55); color:#fecaca; padding:9px 12px; border-radius:8px; margin-top:10px; font-size:12px; font-weight:600; line-height:1.35;"></div>
+            <div class="deed-actions-row" style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+                ${canUseNow ? `
+                    <button class="btn-action btn-buy" style="font-size:13px; padding:8px 12px; flex:1;" onclick="window.MonopolyGame.useJailCardFromModal()">
+                        🗝️ Jetzt einlösen (Gefängnis verlassen)
+                    </button>
+                ` : `
+                    <div style="width:100%; font-size:11px; color:var(--text-muted); text-align:center; padding:4px 0;">
+                        ${isMe ? (owner && owner.in_jail ? 'Du kannst diese Karte einlösen, sobald du am Zug bist.' : 'Du befindest dich aktuell nicht im Gefängnis. Du kannst die Karte behalten oder über „Handel“ tauschen.') : ''}
+                    </div>
+                `}
+            </div>
+        `;
+
+        closeModal('modal-portfolio');
+        openModal('modal-deed');
+    }
+
     // Show Besitzurkunde (Property Deed Modal with Instant Text Fallback + Cached ROM Card Graphics)
     function showDeedModal(sqIdx) {
         if (!squaresData || squaresData.length === 0) return;
@@ -1967,6 +2276,9 @@
         if (!['property', 'station', 'utility'].includes(sq.type)) {
             return;
         }
+
+        const titleEl = document.getElementById('deed-modal-title');
+        if (titleEl) titleEl.textContent = 'Besitzrecht-Urkunde';
 
         const st = gameState ? gameState.board_state[sqIdx] : null;
         const owner = (st && st.owner && gameState) ? gameState.players.find(p => p.id === st.owner) : null;
@@ -2022,17 +2334,25 @@
 
             // Build / Sell buttons (allowed anytime per Parker rules page 3)
             if (sq.type === 'property' && !isMortgaged) {
-                const canBuild = houses < 5 && myPlayer && myPlayer.money >= sq.house_cost;
+                const buildRestriction = getBuildHouseRestriction(sqIdx);
                 const canSell = houses > 0;
-                actionsHtml += `
-                    <button class="btn-action btn-buy" style="font-size:12px; padding:6px 12px; flex:1;" ${canBuild ? '' : 'disabled'} onclick="window.MonopolyGame.buildHouse(${sqIdx})">
-                        🔨 ${houses === 4 ? 'Hotel' : 'Haus'} bauen (${sq.house_cost} DM)
-                    </button>
-                    ${canSell ? `
-                    <button class="btn-action" style="font-size:12px; padding:6px 12px; background:#e67e22; color:#fff;" onclick="window.MonopolyGame.sellHouse(${sqIdx})">
-                        Verkaufen (+${sq.house_cost / 2} DM)
-                    </button>` : ''}
-                `;
+                const buildBtnStyle = buildRestriction
+                    ? 'font-size:12px; padding:6px 12px; flex:1; background:rgba(46,204,113,0.22); border:1px solid rgba(46,204,113,0.45); color:#e2e8f0;'
+                    : 'font-size:12px; padding:6px 12px; flex:1;';
+                if (houses < 5) {
+                    actionsHtml += `
+                        <button class="btn-action btn-buy" style="${buildBtnStyle}" onclick="window.MonopolyGame.buildHouse(${sqIdx})">
+                            🔨 ${houses === 4 ? 'Hotel' : 'Haus'} bauen (${sq.house_cost} DM)
+                        </button>
+                    `;
+                }
+                if (canSell) {
+                    actionsHtml += `
+                        <button class="btn-action" style="font-size:12px; padding:6px 12px; background:#e67e22; color:#fff;" onclick="window.MonopolyGame.sellHouse(${sqIdx})">
+                            Verkaufen (+${sq.house_cost / 2} DM)
+                        </button>
+                    `;
+                }
             }
 
             // Mortgage button
@@ -2046,9 +2366,8 @@
                         </button>
                     `;
                 } else {
-                    const canUnmortgage = (myPlayer && myPlayer.money >= unmortgageCost);
                     actionsHtml += `
-                        <button class="btn-action" style="font-size:12px; padding:6px 12px; background:#27ae60; color:#fff;" ${canUnmortgage ? '' : 'disabled'} onclick="window.MonopolyGame.toggleMortgage(${sqIdx})">
+                        <button class="btn-action" style="font-size:12px; padding:6px 12px; background:#27ae60; color:#fff;" onclick="window.MonopolyGame.toggleMortgage(${sqIdx})">
                             Hypothek ablösen (-${unmortgageCost} DM)
                         </button>
                     `;
@@ -2100,6 +2419,7 @@
         modalBody.innerHTML = `
             ${textCardHtml}
             ${imageCardHtml}
+            <div id="deed-error-banner" style="display:none; align-items:center; gap:8px; background:rgba(231,76,60,0.18); border:1px solid rgba(231,76,60,0.55); color:#fecaca; padding:9px 12px; border-radius:8px; margin-top:10px; font-size:12px; font-weight:600; line-height:1.35;"></div>
             ${actionsHtml ? `<div class="deed-actions-row" style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">${actionsHtml}</div>` : ''}
         `;
 
@@ -2121,7 +2441,7 @@
         syncBuyOrAuctionTimer();
     }
 
-    // Show Player Portfolio (All owned streets)
+    // Show Player Portfolio (All owned streets + Gefängnisfrei cards)
     function showPlayerPortfolio(targetPlayerId) {
         if (!gameState) return;
         const target = gameState.players.find(p => p.id === targetPlayerId);
@@ -2138,11 +2458,12 @@
                 ownedSquares.push({ idx: parseInt(sqIdxStr), state: st, square: squaresData[parseInt(sqIdxStr)] });
             }
         }
+        const jailCardCount = parseInt(target.jail_cards) || 0;
 
-        if (ownedSquares.length === 0) {
-            gridEl.innerHTML = `<p style="grid-column:1/-1; text-align:center; color:var(--text-muted); padding:20px;">Keine Grundstücke im Besitz.</p>`;
+        if (ownedSquares.length === 0 && jailCardCount === 0) {
+            gridEl.innerHTML = `<p style="grid-column:1/-1; text-align:center; color:var(--text-muted); padding:20px;">Keine Grundstücke oder Karten im Besitz.</p>`;
         } else {
-            gridEl.innerHTML = ownedSquares.map(item => {
+            const streetsHtml = ownedSquares.map(item => {
                 const sq = item.square;
                 const st = item.state;
                 const col = GROUP_COLORS[sq.group] || '#444';
@@ -2165,6 +2486,24 @@
                     </div>
                 `;
             }).join('');
+
+            let jailCardsHtml = '';
+            for (let j = 0; j < jailCardCount; j++) {
+                const barCol = (j % 2 === 0) ? '#f39c12' : '#3498db';
+                const deckName = (j % 2 === 0) ? 'Ereigniskarte' : 'Gemeinschaftskarte';
+                jailCardsHtml += `
+                    <div class="portfolio-card-mini" style="border-color:rgba(241,196,15,0.55); background:rgba(241,196,15,0.08);" onclick="window.MonopolyGame.showOwnedJailCardModal('${target.id}', ${j})">
+                        <div class="portfolio-mini-header" style="background:${barCol};"></div>
+                        <div class="portfolio-mini-body">
+                            <div class="portfolio-mini-title">🗝️ Gefängnisfrei</div>
+                            <div style="font-size:10px; color:#f1c40f; margin-top:2px; font-weight:700;">${deckName}</div>
+                            <div style="font-size:9px; color:var(--text-muted); margin-top:2px;">Klicken zum Ansehen</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            gridEl.innerHTML = streetsHtml + jailCardsHtml;
         }
 
         openModal('modal-portfolio');
@@ -2610,7 +2949,12 @@
         },
 
         showDeedModal: showDeedModal,
+        showOwnedJailCardModal: showOwnedJailCardModal,
         showPlayerPortfolio: showPlayerPortfolio,
+
+        useJailCardFromModal: function() {
+            sendWsMessage({ action: 'USE_JAIL_CARD' });
+        },
 
         focusPlayerSeat: function(targetId) {
             if (!gameState || !gameState.players) return;
@@ -2666,18 +3010,30 @@
         },
 
         buildHouse: function(sqIdx) {
+            const restriction = getBuildHouseRestriction(sqIdx);
+            if (restriction) {
+                showDeedErrorBanner(restriction, '⚠️ HAUSBAU NICHT MÖGLICH');
+                return;
+            }
             sendWsMessage({ action: 'BUILD_HOUSE', sq_idx: sqIdx });
-            closeModal('modal-deed');
         },
 
         sellHouse: function(sqIdx) {
+            const restriction = getSellHouseRestriction(sqIdx);
+            if (restriction) {
+                showDeedErrorBanner(restriction, '⚠️ VERKAUF NICHT MÖGLICH');
+                return;
+            }
             sendWsMessage({ action: 'SELL_HOUSE', sq_idx: sqIdx });
-            closeModal('modal-deed');
         },
 
         toggleMortgage: function(sqIdx) {
+            const restriction = getMortgageRestriction(sqIdx);
+            if (restriction) {
+                showDeedErrorBanner(restriction, '⚠️ HYPOTHEK NICHT MÖGLICH');
+                return;
+            }
             sendWsMessage({ action: 'TOGGLE_MORTGAGE', sq_idx: sqIdx });
-            closeModal('modal-deed');
         },
 
         acceptTrade: function() {
@@ -2700,8 +3056,254 @@
         hideRentPopup: hideRentPopup,
         getMyPlayerId: function() { return playerId; },
         getCardIllustration: getCardIllustration,
-        closeModal: closeModal
+        closeModal: closeModal,
+        openDebugModal: openDebugModal,
+        unlockDebugModal: unlockDebugModal,
+        onDebugSliderInput: onDebugSliderInput,
+        applyDebugPreset: applyDebugPreset,
+        previewDebugMovement: previewDebugMovement,
+        saveAndSyncDebugConfig: saveAndSyncDebugConfig,
+        runDebugAction: runDebugAction,
+        runDebugColorGroup: runDebugColorGroup,
+        runDebugTeleport: runDebugTeleport
     };
+
+    let isDebugUnlocked = false;
+
+    const DEBUG_PRESETS = {
+        default: {
+            stepDuration: 280,
+            stepPause: 75,
+            hopHeight: 0.38,
+            landingHold: 900,
+            diceDuration: 1350,
+            dicePostPause: 550,
+            camFollowLerp: 0.10,
+            camTransitionMs: 650,
+            cinematicFollow: true
+        },
+        cinema: {
+            stepDuration: 420,
+            stepPause: 120,
+            hopHeight: 0.45,
+            landingHold: 1300,
+            diceDuration: 1700,
+            dicePostPause: 750,
+            camFollowLerp: 0.07,
+            camTransitionMs: 900,
+            cinematicFollow: true
+        },
+        classic: {
+            stepDuration: 120,
+            stepPause: 25,
+            hopHeight: 0.38,
+            landingHold: 650,
+            diceDuration: 1100,
+            dicePostPause: 400,
+            camFollowLerp: 0.18,
+            camTransitionMs: 450,
+            cinematicFollow: true
+        },
+        turbo: {
+            stepDuration: 65,
+            stepPause: 10,
+            hopHeight: 0.25,
+            landingHold: 250,
+            diceDuration: 600,
+            dicePostPause: 150,
+            camFollowLerp: 0.30,
+            camTransitionMs: 250,
+            cinematicFollow: false
+        }
+    };
+
+    function syncDebugModalSliders() {
+        const targetSel = document.getElementById('dbg-target-player');
+        if (targetSel && gameState && gameState.players) {
+            const prevVal = targetSel.value;
+            targetSel.innerHTML = gameState.players.map(p => {
+                const meTag = (p.id === playerId) ? ' (Du)' : '';
+                const jailTag = p.in_jail ? ' 🔒' : '';
+                const bankTag = p.is_bankrupt ? ' 💀' : '';
+                return `<option value="${p.id}">${p.name}${meTag} — ${p.money} DM${jailTag}${bankTag}</option>`;
+            }).join('');
+            if (prevVal && gameState.players.some(p => p.id === prevVal)) {
+                targetSel.value = prevVal;
+            } else if (playerId && gameState.players.some(p => p.id === playerId)) {
+                targetSel.value = playerId;
+            }
+        }
+
+        const engine = window.MonopolyBoard3D || Board3D;
+        if (!engine || !engine.getAnimConfig) return;
+        const cfg = engine.getAnimConfig();
+
+        const setEl = (id, val, labelId, suffix = '') => {
+            const el = document.getElementById(id);
+            if (el) el.value = val;
+            const lbl = document.getElementById(labelId);
+            if (lbl) lbl.textContent = val + suffix;
+        };
+
+        setEl('dbg-step-duration', cfg.stepDuration, 'val-dbg-step-duration', ' ms');
+        setEl('dbg-step-pause', cfg.stepPause, 'val-dbg-step-pause', ' ms');
+        setEl('dbg-hop-height', Number(cfg.hopHeight).toFixed(2), 'val-dbg-hop-height', '');
+        setEl('dbg-landing-hold', cfg.landingHold, 'val-dbg-landing-hold', ' ms');
+        setEl('dbg-dice-duration', cfg.diceDuration, 'val-dbg-dice-duration', ' ms');
+        setEl('dbg-dice-pause', cfg.dicePostPause, 'val-dbg-dice-pause', ' ms');
+        setEl('dbg-cam-lerp', Number(cfg.camFollowLerp).toFixed(2), 'val-dbg-cam-lerp', '');
+        setEl('dbg-cam-trans', cfg.camTransitionMs, 'val-dbg-cam-trans', ' ms');
+
+        const chk = document.getElementById('dbg-cinematic-follow');
+        if (chk) chk.checked = (cfg.cinematicFollow !== false);
+    }
+
+    function runDebugAction(cmd, value = null) {
+        if (!isDebugUnlocked) return;
+        const targetSel = document.getElementById('dbg-target-player');
+        const targetId = (targetSel && targetSel.value) ? targetSel.value : playerId;
+        sendWsMessage({
+            action: 'DEBUG_ACTION',
+            password: 'admin123',
+            cmd: cmd,
+            target_id: targetId,
+            value: value
+        });
+        if (cmd === 'FORCE_DOUBLES_ROLL' || cmd === 'TELEPORT' || cmd === 'FORCE_BANKRUPTCY') {
+            closeModal('modal-debug');
+        }
+    }
+
+    function runDebugColorGroup() {
+        const grpSel = document.getElementById('dbg-color-group');
+        const grp = grpSel ? grpSel.value : 'brown';
+        runDebugAction('GIVE_COLOR_GROUP', grp);
+    }
+
+    function runDebugTeleport() {
+        const sqSel = document.getElementById('dbg-teleport-sq');
+        const sqIdx = sqSel ? parseInt(sqSel.value, 10) : 0;
+        runDebugAction('TELEPORT', sqIdx);
+    }
+
+    function readDebugSlidersToConfig() {
+        return {
+            stepDuration: parseInt((document.getElementById('dbg-step-duration') || {}).value, 10) || 280,
+            stepPause: parseInt((document.getElementById('dbg-step-pause') || {}).value, 10) || 0,
+            hopHeight: parseFloat((document.getElementById('dbg-hop-height') || {}).value) || 0.38,
+            landingHold: parseInt((document.getElementById('dbg-landing-hold') || {}).value, 10) || 0,
+            diceDuration: parseInt((document.getElementById('dbg-dice-duration') || {}).value, 10) || 1350,
+            dicePostPause: parseInt((document.getElementById('dbg-dice-pause') || {}).value, 10) || 0,
+            camFollowLerp: parseFloat((document.getElementById('dbg-cam-lerp') || {}).value) || 0.10,
+            camTransitionMs: parseInt((document.getElementById('dbg-cam-trans') || {}).value, 10) || 650,
+            cinematicFollow: !!(document.getElementById('dbg-cinematic-follow') || {}).checked
+        };
+    }
+
+    function openDebugModal() {
+        const authStep = document.getElementById('debug-auth-step');
+        const settingsStep = document.getElementById('debug-settings-step');
+        const errEl = document.getElementById('debug-auth-error');
+        const pwdInput = document.getElementById('debug-password-input');
+        const fbEl = document.getElementById('debug-save-feedback');
+        if (fbEl) fbEl.style.display = 'none';
+        if (errEl) errEl.style.display = 'none';
+
+        if (isDebugUnlocked) {
+            if (authStep) authStep.style.display = 'none';
+            if (settingsStep) settingsStep.style.display = 'flex';
+            syncDebugModalSliders();
+        } else {
+            if (authStep) authStep.style.display = 'flex';
+            if (settingsStep) settingsStep.style.display = 'none';
+            if (pwdInput) {
+                pwdInput.value = '';
+                setTimeout(() => pwdInput.focus(), 80);
+            }
+        }
+        openModal('modal-debug');
+    }
+
+    function unlockDebugModal() {
+        const pwdInput = document.getElementById('debug-password-input');
+        const errEl = document.getElementById('debug-auth-error');
+        const val = pwdInput ? pwdInput.value.trim() : '';
+        if (val === 'admin123') {
+            isDebugUnlocked = true;
+            if (errEl) errEl.style.display = 'none';
+            const authStep = document.getElementById('debug-auth-step');
+            const settingsStep = document.getElementById('debug-settings-step');
+            if (authStep) authStep.style.display = 'none';
+            if (settingsStep) settingsStep.style.display = 'flex';
+            syncDebugModalSliders();
+            if (Sound && Sound.playClick) Sound.playClick();
+        } else {
+            if (errEl) errEl.style.display = 'block';
+        }
+    }
+
+    function onDebugSliderInput() {
+        const cfg = readDebugSlidersToConfig();
+        const engine = window.MonopolyBoard3D || Board3D;
+        if (engine && engine.setAnimConfig) {
+            engine.setAnimConfig(cfg, true);
+        }
+        syncDebugModalSliders();
+    }
+
+    function applyDebugPreset(presetKey) {
+        const preset = DEBUG_PRESETS[presetKey] || DEBUG_PRESETS.default;
+        const engine = window.MonopolyBoard3D || Board3D;
+        if (engine && engine.setAnimConfig) {
+            engine.setAnimConfig(preset, true);
+        }
+        syncDebugModalSliders();
+        if (Sound && Sound.playClick) Sound.playClick();
+    }
+
+    function saveAndSyncDebugConfig() {
+        const cfg = readDebugSlidersToConfig();
+        const engine = window.MonopolyBoard3D || Board3D;
+        if (engine && engine.setAnimConfig) {
+            engine.setAnimConfig(cfg, true);
+        }
+        sendWsMessage({
+            action: 'UPDATE_ANIM_CONFIG',
+            password: 'admin123',
+            config: cfg
+        });
+        const fbEl = document.getElementById('debug-save-feedback');
+        if (fbEl) {
+            fbEl.style.display = 'block';
+            setTimeout(() => { fbEl.style.display = 'none'; }, 2600);
+        }
+        if (Sound && Sound.playMoney) Sound.playMoney();
+    }
+
+    function previewDebugMovement() {
+        const engine = window.MonopolyBoard3D || Board3D;
+        if (!engine || !engine.animateMoveToken) return;
+        const cfg = readDebugSlidersToConfig();
+        engine.setAnimConfig(cfg, true);
+
+        let targetPid = playerId;
+        let startPos = 0;
+        if (gameState && gameState.players && gameState.players.length > 0) {
+            const me = gameState.players.find(p => p.id === playerId && !p.is_bankrupt) || gameState.players[0];
+            if (me) {
+                targetPid = me.id;
+                startPos = me.position || 0;
+            }
+        }
+        closeModal('modal-debug');
+        const midPos = (startPos + 4) % 40;
+        engine.animateMoveToken(targetPid, startPos, midPos, () => {
+            if (gameState && gameState.players) {
+                engine.syncPlayers(gameState.players);
+            }
+            openDebugModal();
+        }, true);
+    }
 
     window.getCardIllustration = getCardIllustration;
     window.MonopolyGame = GameClient;

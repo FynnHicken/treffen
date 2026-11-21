@@ -15,7 +15,7 @@ export class GuessService {
 				throw new ControllerError('Product not found', 404);
 			}
 
-			const productPrice = product.price as unknown as number;
+			const productPrice = Number(product.price);
 			const diffPercentage = Math.abs(Math.floor(guessedPrice / (productPrice / 100) - 100));
 			let points = 0;
 
