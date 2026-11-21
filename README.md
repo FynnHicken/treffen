@@ -1,10 +1,11 @@
 # Treffen – Der werbefreie Spieleabend
 
-Komplettes, orchestriertes Paket für deinen Spieleabend-Server mit synchroner Party-Lobby, Live-Präsenz und 4 fertigen Spielen:
+Komplettes, orchestriertes Paket für deinen Spieleabend-Server mit synchroner Party-Lobby, Live-Präsenz und 5 fertigen Spielen:
 -  **skribbl** (Go)
 -  **UNO** (Node.js)
 -  **Codenames** (Python)
--  **Guess The Price** (React / Express / PostgreSQL)
+-  **Guess The Price** (React / Express / SQLite)
+-  **Monopoly 3D** (FastAPI / Three.js)
 
 ---
 
@@ -15,7 +16,7 @@ Komplettes, orchestriertes Paket für deinen Spieleabend-Server mit synchroner P
 ./start.sh
 
 # 2. Im Browser öffnen
-http://localhost:3000
+http://localhost:8000
 ```
 
 ---

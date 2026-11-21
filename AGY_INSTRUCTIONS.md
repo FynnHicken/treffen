@@ -1,7 +1,7 @@
 # 🤖 Antigravity (AGY) Mac Mini M4 Setup & Deployment Guide
 
 > **Zweck dieses Dokuments:**  
-> Dieses Dokument dient als direkte Arbeitsanweisung für eine Antigravity-Instanz (oder den Administrator) auf einem Apple Silicon Mac mini (M4), um das gesamte **PartyHub**-Ökosystem in Betrieb zu nehmen, an eine No-IP Dynamic DNS Domain anzubinden und dauerhaft bereitzustellen.
+> Dieses Dokument dient als direkte Arbeitsanweisung für eine Antigravity-Instanz (oder den Administrator) auf einem Apple Silicon Mac mini (M4), um das gesamte **Treffen**-Ökosystem in Betrieb zu nehmen, an eine No-IP Dynamic DNS Domain anzubinden und dauerhaft bereitzustellen.
 
 ---
 
@@ -11,13 +11,14 @@ PartyHub ist eine integrierte Spieleabend-Plattform, die mehrere Open-Source Mul
 
 | Service | Sprache / Stack | Port (Host) | Beschreibung |
 | :--- | :--- | :--- | :--- |
-| **partyhub** | HTML5 / JS / Nginx | `3000` | Hauptportal, Spieler-Lobby, Couch-Präsenz, synchroner Start |
+| **party-server** | Node.js / WebSocket | `3001` | Live-Synchronisation der Lobby (Räume, Host, Abstimmung) |
+| **partyhub** | HTML5 / JS / Nginx | `8000` (HTTP), `3443` (HTTPS, nur mit Zertifikat) | Hauptportal, Spieler-Lobby, Couch-Präsenz, synchroner Start |
 | **skribbl** | Go (Scribble.rs) | `8080` | Zeichnen & Raten (komplett auf Deutsch übersetzt) |
-| **uno** | Node.js (SunoS) | `8085` | 8-Spieler UNO mit Raum-Synchronisation |
-| **codenames** | Python 3.13 / Flask | `5000` | Geheimdienst-Worträtsel mit Team-Auswahl |
+| **uno** | Node.js (SunoS) | `8086` | 8-Spieler UNO mit Raum-Synchronisation |
+| **codenames** | Python 3.13 / Flask | `5005` | Geheimdienst-Worträtsel mit Team-Auswahl |
 | **gtp-client** | React / Vite / Tailwind | `8088` | Guess The Price - Frontend (EUR-Preise) |
-| **gtp-server** | Express / Prisma / WS | `3005` | Guess The Price - Backend & WebSocket Engine |
-| **gtp-db** | PostgreSQL 15 | `5432` | Datenbank mit 23 realistischen Produkten & Bildern |
+| **gtp-server** | Express / Prisma (SQLite) / WS | `3005` | Guess The Price - Backend & WebSocket Engine, Produktkatalog wird bei jedem Start neu geseedet |
+| **monopoly** | Python / FastAPI / Three.js | `8090` | Monopoly 3D |
 | *(caddy)* | Caddy 2 | `80`, `443` | *Optional:* SSL Reverse-Proxy für No-IP Domain |
 
 ---
@@ -68,7 +69,8 @@ podman compose up -d --build
 
 ### Automatische Initialisierung:
 - Alle Images werden nativ für Apple Silicon (`linux/arm64`) gebaut bzw. gestartet.
-- `gtp-server` führt beim ersten Start automatisch `npx prisma migrate deploy` und `npm run seed` aus, wodurch der Kurskatalog (Elektronik, Lebensmittel, Lifestyle, Autos) automatisch in PostgreSQL angelegt wird.
+- `gtp-server` führt bei jedem Start `npx prisma db push` und `npm run seed` aus, wodurch der Produktkatalog (Elektronik, Lebensmittel, Lifestyle, Autos) in einer SQLite-Datei im Container angelegt wird.
+- `partyhub` aktiviert HTTPS auf Port 443 nur, wenn unter `./letsencrypt/live/<SSL_DOMAIN>/` Zertifikate liegen (Standard: `treffen.ddns.net`). Ohne Zertifikate läuft nur HTTP – im Caddy-Modus ist das so gewollt.
 
 ---
 
@@ -81,7 +83,7 @@ Leite im Router lediglich **zwei Ports** an die lokale IP-Adresse deines Mac min
 - **Port 80 (HTTP)** → Mac mini Port 80
 - **Port 443 (HTTPS)** → Mac mini Port 443
 
-*(Hinweis: Durch den Caddy Reverse Proxy müssen die internen Spiele-Ports 3000, 8080, 8085 etc. **nicht** im Router freigegeben werden!)*
+*(Hinweis: Durch den Caddy Reverse Proxy müssen die internen Spiele-Ports 8000, 8080, 8086 etc. **nicht** im Router freigegeben werden!)*
 
 ### Schritt B: Start mit Caddy Reverse Proxy & automatischem SSL
 Setze deine No-IP Domain und starte das Caddy-Overlay:
