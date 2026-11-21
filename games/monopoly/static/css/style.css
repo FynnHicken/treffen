@@ -1794,3 +1794,29 @@ body.spectator-mode #dock-wallet { display: none !important; }
 .gameover-ranking { width: 100%; margin: 0 0 16px; border-collapse: collapse; font-size: 13px; text-align: left; }
 .gameover-ranking td { padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #e2e8f0; }
 .gameover-ranking td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+
+/* ===== Handel mit Kartengrafiken ===== */
+.trade-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px;
+    max-height: 300px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 8px; }
+.trade-card { position: relative; display: block; cursor: pointer; border-radius: 7px; border: 2px solid transparent;
+    background: rgba(255,255,255,0.04); padding: 3px; transition: border-color .12s, transform .12s, opacity .12s; }
+.trade-card input { position: absolute; opacity: 0; pointer-events: none; }
+.trade-card img { width: 100%; display: block; border-radius: 5px; }
+.trade-card .trade-card-name { font-size: 10px; line-height: 1.15; text-align: center; color: #e2e8f0; margin-top: 3px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trade-card.selected { border-color: #f1c40f; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(241,196,15,0.35); }
+.trade-card.selected::after { content: "✓"; position: absolute; top: 4px; right: 4px; background: #f1c40f; color: #000;
+    font-weight: 900; font-size: 11px; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.trade-card.locked { cursor: not-allowed; opacity: 0.55; }
+.trade-card .trade-badge { position: absolute; left: 4px; top: 4px; font-size: 10px; font-weight: 800; padding: 1px 5px;
+    border-radius: 6px; background: rgba(0,0,0,0.75); color: #fff; }
+.trade-card .trade-badge.mortgaged { background: #c0392b; }
+.trade-card-grid .trade-empty { grid-column: 1 / -1; font-size: 11px; color: #888; padding: 6px; }
+.trade-partner-summary { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12px; color: #cbd5e1; margin-top: 6px; }
+.trade-partner-summary button { font-size: 11px; padding: 4px 10px; }
+.trade-card-grid.readonly .trade-card { cursor: default; }
+@media (max-width: 600px) { #modal-trade .modal-body > div[style*="grid-template-columns"] { grid-template-columns: 1fr !important; } }
+/* Besitzliste/Urkunde können aus dem Handel heraus geöffnet werden → darüber anzeigen */
+#modal-portfolio { z-index: 110; }
+#modal-deed { z-index: 120; }

@@ -315,7 +315,7 @@
 
     <!-- 5. Trade Builder Modal -->
     <div class="modal-overlay" id="modal-trade">
-        <div class="modal-box" style="max-width:520px;">
+        <div class="modal-box" style="max-width:720px;">
             <div class="modal-header">
                 <span class="modal-title">Handel vorschlagen</span>
                 <button class="modal-close" onclick="window.MonopolyGame.closeModal('modal-trade')">✕</button>
@@ -324,6 +324,7 @@
                 <div>
                     <label style="font-size:12px; font-weight:700; color:var(--text-muted); display:block; margin-bottom:4px;">HANDELSPARTNER</label>
                     <select id="trade-partner-select" class="chat-input" style="font-size:14px; padding:8px; width:100%;"></select>
+                    <div class="trade-partner-summary" id="trade-partner-summary"></div>
                 </div>
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-top:8px;">
                     <div>
@@ -332,12 +333,9 @@
                             <label style="font-size:11px; color:#aaa;">Geld (DM):</label>
                             <input type="number" id="trade-offer-money" class="chat-input" min="0" step="10" value="0" style="width:100%; padding:4px 6px;">
                         </div>
-                        <div style="margin:6px 0;">
-                            <label style="font-size:11px; color:#aaa;">Gefängnisfrei-Karten:</label>
-                            <input type="number" id="trade-offer-jail-cards" class="chat-input" min="0" max="2" step="1" value="0" style="width:100%; padding:4px 6px;">
-                        </div>
-                        <div style="font-size:11px; color:#aaa; margin-bottom:4px;">Grundstücke:</div>
-                        <div id="trade-my-props" style="max-height:140px; overflow-y:auto; background:rgba(0,0,0,0.2); padding:6px; border-radius:6px;"></div>
+                        <input type="hidden" id="trade-offer-jail-cards" value="0">
+                        <div style="font-size:11px; color:#aaa; margin-bottom:4px;">Deine Karten (antippen zum Anbieten):</div>
+                        <div id="trade-my-props" class="trade-card-grid"></div>
                     </div>
                     <div>
                         <strong style="font-size:13px; color:var(--accent-red);">Deine Forderung:</strong>
@@ -345,12 +343,9 @@
                             <label style="font-size:11px; color:#aaa;">Geld (DM):</label>
                             <input type="number" id="trade-req-money" class="chat-input" min="0" step="10" value="0" style="width:100%; padding:4px 6px;">
                         </div>
-                        <div style="margin:6px 0;">
-                            <label style="font-size:11px; color:#aaa;">Gefängnisfrei-Karten:</label>
-                            <input type="number" id="trade-req-jail-cards" class="chat-input" min="0" max="2" step="1" value="0" style="width:100%; padding:4px 6px;">
-                        </div>
-                        <div style="font-size:11px; color:#aaa; margin-bottom:4px;">Grundstücke:</div>
-                        <div id="trade-target-props" style="max-height:140px; overflow-y:auto; background:rgba(0,0,0,0.2); padding:6px; border-radius:6px;"></div>
+                        <input type="hidden" id="trade-req-jail-cards" value="0">
+                        <div style="font-size:11px; color:#aaa; margin-bottom:4px;">Karten des Partners (antippen zum Fordern):</div>
+                        <div id="trade-target-props" class="trade-card-grid"></div>
                     </div>
                 </div>
                 <button class="btn-action btn-trade" id="btn-submit-trade" style="width:100%; margin-top:12px;">

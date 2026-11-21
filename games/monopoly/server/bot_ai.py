@@ -173,6 +173,8 @@ def choose_build(room, player) -> Optional[int]:
         squares = COLOR_GROUPS[group]
         if not owns_group(room, player.id, group):
             continue
+        if room.build_location_error(player, group):   # Bauregel (z. B. nur auf der eigenen Farbe stehend)
+            continue
         if any(room.board_state[s]["mortgaged"] for s in squares):
             continue
         min_h = min(room.board_state[s]["houses"] for s in squares)

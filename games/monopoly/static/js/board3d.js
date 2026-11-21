@@ -700,10 +700,18 @@
     function showDrawnCard(deck, text, cardImage) {
         const isChest = (deck || '').toLowerCase().includes('gemein');
         const key = isChest ? 'Gemeinschaft' : 'Ereignis';
-        lastDrawnCards[key] = { text: text, image: cardImage };
 
         const mesh = drawnCardMeshes[key];
         if (!mesh) return;
+
+        // Immer nur EINE gezogene Karte zeigen – die des anderen Stapels ausblenden
+        for (const [otherKey, otherMesh] of Object.entries(drawnCardMeshes)) {
+            if (otherKey !== key && otherMesh) otherMesh.visible = false;
+        }
+        // Dieselbe Karte liegt schon da → nicht bei jedem State-Update neu einfliegen lassen
+        const prev = lastDrawnCards[key];
+        if (mesh.visible && prev && prev.text === text && prev.image === cardImage) return;
+        lastDrawnCards = { [key]: { text: text, image: cardImage } };
 
         function applyCardTexture(tex) {
             mesh.material.map = tex;

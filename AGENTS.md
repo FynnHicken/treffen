@@ -78,6 +78,9 @@ Erledigt und auf `main`:
    Zug-Timer, Bot-Schwierigkeit, Frei-Parken-Topf, 400 DM auf Los, Gefängnis-Würfe), Bot-Angebote an
    Menschen, Handelsablauf nach 60 s, Zuschauer-Ansicht, Header-Uhren, Zeitende mit Rangliste.
 
+8. Playtest-Feedback 1: fremde Züge ohne Zwangs-Popups, Kontostand in der Auktion, Handel mit Kartenbildern
+   und Partner-Übersicht, Kartenstapel-Bug, Gefängnis-Pasch befreit nur, Bauregel „nur auf der eigenen Farbe“.
+
 **Als Nächstes:** Browser-Playtest des Gameplay-Pakets durch den Nutzer (Server-Seite ist getestet,
 UI noch nicht von Hand). Weitere Ideen: [`games/monopoly/DEVELOPMENT.md` → Roadmap](games/monopoly/DEVELOPMENT.md#roadmap--status).
 

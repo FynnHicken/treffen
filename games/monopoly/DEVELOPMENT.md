@@ -114,8 +114,13 @@ nur einmal pro Raum (`room.host_claimed`); `RESET_LOBBY` Host jederzeit, Mitspie
 - Kartentexte: `CARD_TEXTS_DE` überschreibt die Asset-JSONs. Wortlaut beibehalten – der Client
   wählt Kartenbilder per Stichwortsuche (`getCardIllustration`).
 
-**Regelabweichungen / Hausregeln (aktueller Stand, bewusst):**
-- Gefängnis: 3 Würfelversuche **pro Runde** (offiziell 1), nach 3 Runden 50 DM und weiterziehen.
+**Regelabweichungen / Hausregeln (aktueller Stand, bewusst – vom Nutzer so gewünscht):**
+- Gefängnis: Würfelversuche pro Runde per Einstellung `jail_rolls` (Standard 3, offiziell 1), nach 3 Runden 50 DM und weiterziehen.
+- **Pasch im Gefängnis befreit nur** – die Figur bleibt stehen, der Spieler würfelt danach normal
+  (offiziell zieht man mit der Pasch-Summe). Ergebnis `{"jail_freed": true}`, `rolled = False`.
+- **Bauen** per Einstellung `build_rule`: Standard `on_group` = nur im eigenen Zug, wenn die Figur auf
+  einer Straße dieser Farbgruppe steht (`GameRoom.build_location_error`, gilt für Menschen und Bots);
+  `anytime` = offizielle Regel. Verkaufen von Häusern ist immer erlaubt (Schulden).
 - Einkommensteuer: Wahl 200 DM oder 10 % des Vermögens (alte Parker-Regel).
 - Miete auf unbebauter kompletter Gruppe doppelt, auch wenn Teile belastet sind.
 - Unbekaufte Straßen werden versteigert, alle (auch der Ablehnende) dürfen bieten.
@@ -177,7 +182,8 @@ nach einer laufenden Versteigerung); Zug-Timer abgelaufen → `turn_autoplay_id`
 `gameState`, dann `switch(msg.type)`) · `updateLobbyUI` · `updateHUD` (Spielerlisten, Dock,
 Buttons) · `handleDiceRollEvent` / `handleCardAppliedEvent` (Animationen) · Modals:
 `showDeedModal`, `showAuctionModal`, `showTradeModal`, `showIncomingTradeModal`,
-`showTaxChoiceModal`, `showGameOverModal`, `showCardModal` · `showYourTurnPopup` (generisches
+`showTaxChoiceModal`, `showGameOverModal`, `showCardModal` (nur für den Ziehenden – andere sehen die
+Karte auf dem Tisch) · `showYourTurnPopup` (generisches
 Hinweis-Popup, auch für `ERROR`) · `esc()` (HTML-Escaping – **für alles von anderen Spielern nutzen**).
 Es gibt bereits einen clientseitigen „Zug automatisch beenden“-Timer
 (`syncEndTurnTimer`, `getActiveTurnTimerMode`) und einen Kauf/Versteigern-Countdown
@@ -217,6 +223,21 @@ Neue Client-Aktion: `SET_SETTINGS {settings: {key: value}}` (nur Host, nur `LOBB
 Tests: `tests/test_settings.py` (siehe Abschnitt 3). Offene Punkte aus diesem Paket:
 im Browser noch nicht von Hand durchgespielt (Lobby-Einstellungen, Header-Uhren, Zuschauer-Banner,
 Game-Over-Rangliste) – bitte beim ersten echten Spiel prüfen.
+
+### ✅ Playtest-Feedback 1 (2026-11-21)
+- ✅ Fremde Züge erzwingen kein Zuschauen mehr: kein Kartendialog für fremde Karten, Miet-Popups nur für
+  Zahler/Empfänger, Gefängnis-/Pasch-Hinweise nur für den Betroffenen. (Eine echte Kamerafahrt gab es
+  nicht – falls der Nutzer etwas anderes meinte, nachfragen.)
+- ✅ Versteigerung zeigt eigenes Bargeld + „Du hast x/y Straßen dieser Farbe“.
+- ✅ Handel mit Urkundenbildern (Kacheln), Gefängnisfrei-Karten als Kacheln, Partner-Übersicht
+  (Bargeld, Anzahl, Link zur kompletten Besitzliste); eingehendes Angebot ebenfalls mit Bildern.
+- ✅ Gezogene Karte verschwindet nach dem Bestätigen/Zugwechsel (`last_card` wird geleert), nie zwei
+  Karten gleichzeitig, kein erneutes Einfliegen bei jedem State-Update.
+- 🔍 Gefängnisfrei-Karte „nicht in der Sammlung“: Server/Tisch-Ablage/Besitzliste/3D zeigen sie korrekt
+  (getestet); vermutlich Folge des Stapel-Bugs. Hinweis-Popup ergänzt. Bei erneutem Auftreten genaue
+  Stelle (HUD-Ablage, Besitz-Dialog, 3D-Tisch) erfragen.
+- ✅ Pasch im Gefängnis befreit nur, danach neu würfeln.
+- ✅ Bauregel `build_rule` (Standard: nur auf der eigenen Farbe stehend), auch für Bots.
 
 ### ⬜ Später / Ideen
 - Debug-Passwort aus dem Client entfernen (Server-ENV) – Nutzer: „später“.

@@ -137,7 +137,7 @@ async def main():
                  "req_props": [39], "offer_jail_cards": 0, "req_jail_cards": 0}
         ok(bot_ai.evaluate_trade(room, bot, trade) == should_accept,
            f"{diff}: Schlossallee für 450 DM an den Parkstraßen-Besitzer {'angenommen' if should_accept else 'abgelehnt'}")
-    room = make_room("S7b", settings={"bot_difficulty": "easy"})
+    room = make_room("S7b", settings={"bot_difficulty": "easy", "build_rule": "anytime"})
     bot = room.players[1]; bot.money = 5000
     for i in (16, 18, 19): room.board_state[i]["owner"] = "b"
     while (idx := bot_ai.choose_build(room, bot)) is not None:
@@ -175,13 +175,59 @@ async def main():
     room_e.board_state[19]["owner"] = "h"
     ok(bot_ai.find_human_offer(room_e, room_e.players[1]) is None, "easy macht keine Angebote")
 
+    print("== Playtest-Regeln: Gefängnis-Pasch und Bauen auf der eigenen Farbe ==")
+    room = make_room("P1")
+    p = room.current_player(); room.send_to_jail(p)
+    res = room.roll_dice(forced_dice=[4, 4])
+    ok(res.get("jail_freed") and not p.in_jail and p.position == 10 and not room.rolled,
+       "Pasch im Gefängnis befreit, Figur bleibt stehen, Spieler würfelt erneut")
+    res = room.roll_dice(forced_dice=[2, 3])
+    ok(p.position == 15 and res.get("new_pos") == 15, f"Erst der neue Wurf bewegt die Figur (Feld {p.position})")
+    ok(p.doubles_count == 0, "Der Befreiungs-Pasch zählt nicht als Pasch-Serie")
+
+    room = make_room("P2", humans=("h", "g"), bots=())
+    for i in (16, 18, 19): room.board_state[i]["owner"] = "h"
+    room.current_player_idx = 0; h = room.players[0]; h.money = 3000
+    h.position = 5
+    ok("Farbgruppe" in room.build_house("h", 16).get("error", ""), "Standard: nicht auf Orange → kein Bau")
+    h.position = 18
+    ok(room.build_house("h", 16).get("success"), "Auf Wiener Straße (Orange) → Bau auf Münchner Straße erlaubt")
+    room.current_player_idx = 1
+    ok("eigenen Zug" in room.build_house("h", 18).get("error", ""), "Im fremden Zug kein Bau")
+    room.current_player_idx = 0; room.send_to_jail(h)
+    ok(room.build_house("h", 18).get("error"), "Aus dem Gefängnis heraus kein Bau")
+    room = make_room("P3", humans=("h",), bots=("b",), settings={"build_rule": "anytime"})
+    for i in (16, 18, 19): room.board_state[i]["owner"] = "b"
+    room.current_player_idx = 0; bot = room.players[1]; bot.money = 3000; bot.position = 5
+    ok(room.build_house("b", 16).get("success"), "Regel „jederzeit“: Bauen überall und auch im fremden Zug")
+    room = make_room("P4", humans=("h",), bots=("b",))
+    for i in (16, 18, 19): room.board_state[i]["owner"] = "b"
+    room.current_player_idx = 1; bot = room.players[1]; bot.money = 3000; bot.position = 5
+    ok(bot_ai.choose_build(room, bot) is None, "Bot baut nicht, wenn er nicht auf seiner Farbe steht")
+    bot.position = 19
+    ok(bot_ai.choose_build(room, bot) in (16, 18, 19), "… aber sobald er auf Orange steht")
+
+    room = make_room("P5")
+    p = room.current_player()
+    jf = [i for i, c in enumerate(gs.CHANCE_CARDS) if c["action"] == "GET_OUT_OF_JAIL_FREE"][0]
+    room.chance_deck.remove(jf); room.chance_deck.insert(0, jf)
+    p.position = 4; room.roll_dice(forced_dice=[1, 2])
+    ok(room.last_card is not None, "Gezogene Karte liegt auf dem Stapel, solange sie offen ist")
+    room.confirm_card(p.id)
+    ok(room.last_card is None and p.jail_cards == 1, "Nach dem Bestätigen verschwindet sie vom Stapel, Gefängnisfrei-Karte ist im Besitz")
+    room.last_card = {"deck": "Ereignis", "card": {}, "text": "x", "image": "", "player": p.name}
+    room.pending_action = None; room.rolled = True; room.dice = [1, 2]
+    room.end_turn(p.id)
+    ok(room.last_card is None, "Spätestens beim Zugwechsel ist der Stapel wieder leer")
+
     print("== Simulation: 30 Bot-Partien mit gemischten Regeln ==")
     errs = []; ended = {"easy": 0, "normal": 0, "hard": 0}
     for seed in range(30):
         random.seed(seed)
         settings = {"bot_difficulty": ["easy", "normal", "hard"][seed % 3],
                     "free_parking_pot": seed % 2 == 0, "double_go": seed % 4 < 2,
-                    "jail_rolls": [1, 3][seed % 2], "start_money": [1000, 1500, 2000, 2500][seed % 4]}
+                    "jail_rolls": [1, 3][seed % 2], "start_money": [1000, 1500, 2000, 2500][seed % 4],
+                    "build_rule": ["on_group", "anytime"][(seed // 3) % 2]}
         rid = f"SIM{seed}"
         room = make_room(rid, humans=(), bots=tuple(f"b{i}" for i in range(2 + seed % 4)), settings=settings)
         srv.connections[rid] = {"watcher": FakeWS()}

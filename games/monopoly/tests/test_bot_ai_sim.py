@@ -17,6 +17,7 @@ def ok(c, m):
 print("== Unit-Tests Bot-Entscheidungen ==")
 def room2():
     r = GameRoom("U", "h"); r.add_player("h", "Mensch", "dog", "#e74c3c"); r.add_player("b", "Bot", "hat", "#3498db", is_bot=True)
+    r.update_settings({"build_rule": "anytime"})  # Unit-Tests prüfen die Baulogik, nicht die Standortregel
     r.start_game(); return r, r.players[0], r.players[1]
 r, H, Bt = room2()
 r.board_state[16]["owner"] = "b"; r.board_state[18]["owner"] = "b"

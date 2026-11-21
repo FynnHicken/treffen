@@ -218,6 +218,9 @@ SETTINGS_SCHEMA = [
      "hint": "Wer genau auf Los landet, bekommt 400 statt 200 DM."},
     {"key": "jail_rolls", "label": "Gefängnis-Würfe pro Runde", "type": "select", "default": 3,
      "options": [[1, "1 (Original)"], [3, "3"]]},
+    {"key": "build_rule", "label": "Häuser bauen", "type": "select", "default": "on_group",
+     "options": [["on_group", "Nur auf der Farbe, auf der man steht"], ["anytime", "Jederzeit (Original)"]],
+     "hint": "Standard: im eigenen Zug, wenn die Figur auf einer Straße dieser Farbgruppe steht."},
 ]
 DEFAULT_SETTINGS = {item["key"]: item["default"] for item in SETTINGS_SCHEMA}
 
@@ -677,12 +680,23 @@ class GameRoom:
             player.jail_rolls_this_turn += 1
             attempt = player.jail_rolls_this_turn
             if is_double:
+                # Hausregel des Projekts: Der Pasch befreit nur – gezogen wird mit einem neuen Wurf.
                 player.in_jail = False
                 player.jail_turns = 0
                 player.jail_rolls_this_turn = 0
                 player.doubles_count = 0
-                self.log(f"🔓 Pasch ({d1} & {d2}) im {attempt}. Versuch! {player.name} kommt frei aus dem Gefängnis und zieht {steps} Felder weiter!")
-                return self.move_player(player, steps, False)
+                self.rolled = False
+                self.pending_action = None
+                self.log(f"🔓 Pasch ({d1} & {d2}) im {attempt}. Versuch! {player.name} ist frei und würfelt jetzt, um loszuziehen.")
+                return {
+                    "dice": self.dice,
+                    "double": True,
+                    "jail_freed": True,
+                    "jail_attempt": attempt,
+                    "jail_max_attempts": max_attempts,
+                    "player": player.to_dict(),
+                    "action": None
+                }
             else:
                 if attempt < max_attempts:
                     self.rolled = False
@@ -947,6 +961,9 @@ class GameRoom:
         old_money = player.money
 
         self.pending_action = None
+        # Karte ist erledigt → nicht mehr auf dem Stapel zeigen (apply_card kann eine neue ziehen,
+        # z. B. "3 Felder zurück" auf ein Gemeinschaftsfeld – dann setzt evaluate_square last_card neu)
+        self.last_card = None
         self.apply_card(player, card, roll_sum)
 
         new_pos = player.position
@@ -1384,6 +1401,9 @@ class GameRoom:
         group_squares = COLOR_GROUPS[group]
         if not all(self.board_state[s]["owner"] == player.id for s in group_squares):
             return {"error": "Du musst die gesamte Farbgruppe besitzen!"}
+        build_err = self.build_location_error(player, group)
+        if build_err:
+            return {"error": build_err}
         if any(self.board_state[s]["mortgaged"] for s in group_squares):
             return {"error": "In der Farbgruppe existiert eine Hypothek!"}
 
@@ -1412,6 +1432,17 @@ class GameRoom:
         name = "ein Haus" if state["houses"] < 5 else "ein HOTEL"
         self.log(f"{player.name} baut {name} auf {square['name']} ({cost} DM)!")
         return {"success": True, "houses": state["houses"], "money": player.money}
+
+    def build_location_error(self, player: Player, group: str) -> Optional[str]:
+        """Bauregel "on_group": nur im eigenen Zug, wenn die Figur auf einer Straße der Gruppe steht."""
+        if self.settings.get("build_rule", "on_group") != "on_group":
+            return None
+        curr = self.current_player()
+        if not curr or curr.id != player.id:
+            return "Bauen ist nur im eigenen Zug möglich."
+        if player.in_jail or SQUARES[player.position].get("group") != group:
+            return "Du kannst nur auf der Farbgruppe bauen, auf der deine Figur gerade steht."
+        return None
 
     def sell_house(self, player_id: str, sq_idx) -> dict:
         player, sq_idx, err = self._owned_square(player_id, sq_idx)
@@ -1701,6 +1732,7 @@ class GameRoom:
 
         self.rolled = False
         self.pending_action = None
+        self.last_card = None
 
         self.current_player_idx = (self.current_player_idx + 1) % len(self.players)
         while self.players[self.current_player_idx].is_bankrupt:

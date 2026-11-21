@@ -102,6 +102,7 @@
 
         const amIPayer = (payerId === playerId);
         const amIOwner = (ownerId === playerId);
+        if (!amIPayer && !amIOwner) return;   // Unbeteiligte nicht unterbrechen (steht im Protokoll)
 
         cardEl.classList.remove('rent-paid', 'rent-received');
         if (amIPayer) {
@@ -1366,14 +1367,14 @@
                     }
                 } else if (res.action.type === 'WENT_TO_JAIL') {
                     if (Sound) Sound.playJail();
-                    showYourTurnPopup(
-                        '🚔 AB INS GEFÄNGNIS!',
-                        isMyTurn ? 'Du wanderst direkt ins Gefängnis!' : `${res.player.name} wandert direkt ins Gefängnis!`
-                    );
+                    if (isMyTurn) showYourTurnPopup('🚔 AB INS GEFÄNGNIS!', 'Du wanderst direkt ins Gefängnis!');
                 }
             }
 
-            if (isMyTurn && gameState && !gameState.rolled && !(res.player && res.player.in_jail) && (!res.action || res.action.type !== 'CARD_DRAWN')) {
+            const keptJailCard = res.card && (res.card.action === 'GET_OUT_OF_JAIL_FREE' || res.card.action === 'jail_free');
+            if (isMyTurn && keptJailCard) {
+                showYourTurnPopup('🗝️ KARTE BEHALTEN', 'Die Gefängnisfrei-Karte liegt jetzt in deiner Tisch-Ablage (📋 Besitz).');
+            } else if (isMyTurn && gameState && !gameState.rolled && !(res.player && res.player.in_jail) && (!res.action || res.action.type !== 'CARD_DRAWN')) {
                 showYourTurnPopup('PASCH! NOCHMAL DRAN!', 'Du hast einen Pasch gewürfelt und darfst direkt nochmal!');
             }
 
@@ -1450,26 +1451,27 @@
                     }
                 } else if (res.action.type === 'WENT_TO_JAIL') {
                     if (Sound) Sound.playJail();
-                    showYourTurnPopup(
-                        '🚔 AB INS GEFÄNGNIS!',
-                        isMyTurn ? 'Du wanderst direkt ins Gefängnis!' : `${res.player.name} wandert direkt ins Gefängnis!`
-                    );
+                    if (isMyTurn) showYourTurnPopup('🚔 AB INS GEFÄNGNIS!', 'Du wanderst direkt ins Gefängnis!');
                 }
             } else if (!gameState || !gameState.last_card) {
                 if (window.MonopolyBoard3D && window.MonopolyBoard3D.hideDrawnCards) {
                     window.MonopolyBoard3D.hideDrawnCards();
                 }
             }
-            if (isMyTurn && res.jail_reroll) {
-                const rem = 3 - (res.jail_attempt || 1);
+            const maxJail = res.jail_max_attempts || 3;
+            if (res.jail_freed) {
+                if (isMyTurn && Sound && Sound.playMoney) Sound.playMoney();
+                if (isMyTurn) showYourTurnPopup('🔓 PASCH – DU BIST FREI!', 'Würfle jetzt noch einmal, um loszuziehen.');
+            } else if (isMyTurn && res.jail_reroll) {
+                const rem = maxJail - (res.jail_attempt || 1);
                 showYourTurnPopup(
-                    `🔒 KEIN PASCH (VERSUCH ${res.jail_attempt}/3)`,
+                    `🔒 KEIN PASCH (VERSUCH ${res.jail_attempt}/${maxJail})`,
                     `Würfle direkt noch einmal! Du hast noch ${rem} ${rem === 1 ? 'Versuch' : 'Versuche'}, um einen Pasch zu schaffen.`
                 );
-            } else if (isMyTurn && res.jail_attempt === 3 && !res.double && res.player && res.player.in_jail) {
+            } else if (isMyTurn && res.jail_attempt === maxJail && !res.double && res.player && res.player.in_jail) {
                 showYourTurnPopup(
-                    '🔒 3x KEIN PASCH',
-                    'Alle 3 Versuche verbraucht – du bleibst diese Runde im Gefängnis.'
+                    maxJail === 1 ? '🔒 KEIN PASCH' : `🔒 ${maxJail}x KEIN PASCH`,
+                    maxJail === 1 ? 'Kein Pasch – du bleibst diese Runde im Gefängnis.' : `Alle ${maxJail} Versuche verbraucht – du bleibst diese Runde im Gefängnis.`
                 );
             } else if (isMyTurn && gameState && !gameState.rolled && d1 === d2 && !(res.player && res.player.in_jail) && (!res.action || res.action.type !== 'CARD_DRAWN')) {
                 showYourTurnPopup('PASCH! NOCHMAL DRAN!', 'Du hast einen Pasch gewürfelt und darfst direkt nochmal!');
@@ -1501,10 +1503,7 @@
                     // e.g. 3 doubles in a row -> straight to jail, or stayed in jail
                     if (res.double && res.player && res.player.in_jail) {
                         if (Sound) Sound.playJail();
-                        showYourTurnPopup(
-                            '🚔 3x PASCH = GEFÄNGNIS!',
-                            isMyTurn ? '3x Pasch! Du gehst direkt ins Gefängnis!' : `${res.player.name} geht wegen 3x Pasch ins Gefängnis!`
-                        );
+                        if (isMyTurn) showYourTurnPopup('🚔 3x PASCH = GEFÄNGNIS!', '3x Pasch! Du gehst direkt ins Gefängnis!');
                     }
                     finalizeLandingSequence();
                 }
@@ -1947,6 +1946,15 @@
     }
 
     // Show Auction Modal (Versteigerung mit 5s "Zum Ersten, zum Zweiten, Verkauft!" Hammer-Countdown)
+    // Kurzinfo für die Gebotsentscheidung: wie viele Straßen dieser Farbe besitze ich / besitzt wer?
+    function auctionGroupInfo(sq) {
+        if (!sq || !sq.group || !squaresData || !gameState.board_state) return '';
+        const groupSquares = squaresData.filter(s => s && s.group === sq.group);
+        const mine = groupSquares.filter(s => gameState.board_state[s.index] && gameState.board_state[s.index].owner === playerId).length;
+        const label = sq.type === 'station' ? 'Bahnhöfe' : (sq.type === 'utility' ? 'Werke' : 'Straßen dieser Farbe');
+        return `Du hast ${mine}/${groupSquares.length} ${label}`;
+    }
+
     function showAuctionModal() {
         if (!gameState || !gameState.auction_state) {
             clearAuctionCountdownTicker();
@@ -1992,7 +2000,7 @@
         modalBody.innerHTML = `
             ${imgHtml}
             <div style="text-align:center; margin-bottom:8px;">
-                <div style="font-size:16px; font-weight:800;">${sq.name}</div>
+                <div style="font-size:16px; font-weight:800;">${esc(sq.name)}</div>
                 <div style="font-size:12px; color:var(--text-muted);">Regulärer Kaufpreis: ${sq.price} DM</div>
             </div>
             <div id="auction-hammer-box" style="background:rgba(15,23,42,0.75); border:1px solid rgba(46,204,113,0.45); border-radius:10px; padding:8px 12px; margin-bottom:10px; text-align:center; transition:border-color 0.2s;">
@@ -2003,10 +2011,15 @@
                     <div id="auction-hammer-bar" style="width:100%; height:100%; background:#2ecc71; transition:width 0.1s linear, background 0.2s;"></div>
                 </div>
             </div>
-            <div style="background:rgba(255,255,255,0.06); padding:10px 14px; border-radius:8px; margin-bottom:12px; font-size:13px; display:flex; justify-content:space-between; align-items:center;">
+            <div style="background:rgba(255,255,255,0.06); padding:10px 14px; border-radius:8px; margin-bottom:8px; font-size:13px; display:flex; justify-content:space-between; align-items:center;">
                 <span>Höchstgebot: <strong style="color:var(--accent-gold); font-size:15px;">${highBid} DM</strong></span>
-                <span>Bieter: <strong>${highBidder}</strong></span>
+                <span>Bieter: <strong>${esc(highBidder)}</strong></span>
             </div>
+            ${myPlayer ? `
+            <div style="background:rgba(46,204,113,0.10); border:1px solid rgba(46,204,113,0.35); padding:8px 14px; border-radius:8px; margin-bottom:12px; font-size:13px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span>💵 Dein Bargeld: <strong style="color:#2ecc71; font-size:15px;">${myPlayer.money.toLocaleString('de-DE')} DM</strong></span>
+                <span style="color:var(--text-muted); font-size:12px;">${auctionGroupInfo(sq)}</span>
+            </div>` : ''}
             ${amIActive ? `
                 <div style="display:flex; gap:8px; margin-bottom:8px;">
                     <button class="btn-action btn-buy" style="flex:1; font-size:12px;" ${canAfford10 ? '' : 'disabled'} onclick="window.MonopolyGame.placeAuctionBid(${highBid + 10})">
@@ -2127,6 +2140,10 @@
 
     // Show Card Modal (Ereignis- / Gemeinschaftskarte with Instant Text Fallback + Cached ROM Graphic)
     function showCardModal(deckType, text, cardImage, playSound = false, drawerName = null) {
+        // Fremde Karten nicht als bildschirmfüllenden Dialog zeigen – sie liegen sichtbar auf dem Tisch
+        // und stehen im Protokoll. Sonst muss man bei jedem fremden Zug warten/wegklicken.
+        const drawnByMe = !!(gameState && gameState.current_player && gameState.current_player.id === playerId);
+        if (!drawnByMe) return;
         const titleEl = document.getElementById('card-modal-title');
         const subtitleEl = document.getElementById('card-modal-subtitle');
         const captionEl = document.getElementById('card-modal-caption');
@@ -2246,6 +2263,17 @@
         });
         if (mortgagedInGroup.length > 0) {
             return `Hausbau nicht möglich, solange eine Straße dieser Farbgruppe mit einer Hypothek belastet ist (${mortgagedInGroup.map(s => s.name).join(', ')})!`;
+        }
+
+        // Bauregel "on_group": nur im eigenen Zug, wenn die eigene Figur auf dieser Farbgruppe steht
+        if (!gameState.settings || (gameState.settings.build_rule || 'on_group') === 'on_group') {
+            const me = gameState.players ? gameState.players.find(p => p.id === playerId) : null;
+            const myTurn = gameState.current_player && gameState.current_player.id === playerId;
+            if (!myTurn) return 'Bauen ist nur im eigenen Zug möglich.';
+            const standSq = me ? squaresData[me.position] : null;
+            if (!me || me.in_jail || !standSq || standSq.group !== sq.group) {
+                return 'Du kannst nur auf der Farbgruppe bauen, auf der deine Figur gerade steht.';
+            }
         }
 
         const houses = st.houses || 0;
@@ -2683,37 +2711,66 @@
             reqJcInput.value = 0;
         }
 
-        // My properties
-        const myPropsWrap = document.getElementById('trade-my-props');
-        const myProps = [];
-        for (const [sqIdxStr, st] of Object.entries(gameState.board_state)) {
-            if (st.owner === playerId) {
-                myProps.push({ idx: parseInt(sqIdxStr), sq: squaresData[parseInt(sqIdxStr)] });
-            }
+        // Kopfzeile mit dem, was der Partner insgesamt besitzt
+        const summary = document.getElementById('trade-partner-summary');
+        if (summary && targetPlayer) {
+            const ownedCount = Object.values(gameState.board_state).filter(st => st.owner === targetId).length;
+            summary.innerHTML = `
+                <span>💵 <strong>${targetPlayer.money.toLocaleString('de-DE')} DM</strong></span>
+                <span>🏠 ${ownedCount} Grundstücke</span>
+                <span>🗝️ ${targetPlayer.jail_cards || 0} Gefängnisfrei</span>
+                <button class="btn-action" type="button" onclick="window.MonopolyGame.showPlayerPortfolio('${esc(targetId)}')">📋 Komplette Besitzliste</button>`;
         }
-        myPropsWrap.innerHTML = myProps.map(p => `
-            <label style="display:flex; align-items:center; gap:6px; font-size:12px; margin-bottom:4px; cursor:pointer;">
-                <input type="checkbox" name="trade_my_prop" value="${p.idx}">
-                <span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:${GROUP_COLORS[p.sq.group] || '#777'};"></span>
-                ${p.sq.name}
-            </label>
-        `).join('') || '<div style="font-size:11px; color:#888;">Keine Grundstücke</div>';
 
-        // Target properties
-        const targetPropsWrap = document.getElementById('trade-target-props');
-        const targetProps = [];
-        for (const [sqIdxStr, st] of Object.entries(gameState.board_state)) {
-            if (st.owner === targetId) {
-                targetProps.push({ idx: parseInt(sqIdxStr), sq: squaresData[parseInt(sqIdxStr)] });
-            }
+        renderTradeCardGrid('trade-my-props', 'trade_my_prop', playerId, myPlayer, 'trade-offer-jail-cards');
+        renderTradeCardGrid('trade-target-props', 'trade_target_prop', targetId, targetPlayer, 'trade-req-jail-cards');
+    }
+
+    function jailCardImage(i) {
+        return (i % 2 === 1) ? 'static/assets/chance_chest/cards/gemeinschaft_16.png' : 'static/assets/chance_chest/cards/ereignis_16.png';
+    }
+
+    // Eine Karte als Kachel (Urkundenbild). selectable=false → nur Anzeige (z. B. eingehendes Angebot).
+    function tradeCardTileHtml(idx, inputName, selectable = true) {
+        const sq = squaresData[idx];
+        const st = gameState.board_state[idx] || {};
+        const groupBuilt = sq.group && squaresData.some(s2 => s2 && s2.group === sq.group && gameState.board_state[s2.index] && gameState.board_state[s2.index].houses > 0);
+        const locked = selectable && groupBuilt;
+        const img = DEED_CARD_IMAGES[idx];
+        const badge = st.mortgaged ? '<span class="trade-badge mortgaged">Hypothek</span>'
+            : (groupBuilt ? `<span class="trade-badge">🏠 ${st.houses >= 5 ? 'Hotel' : (st.houses || 0)}</span>` : '');
+        const title = locked ? 'In dieser Farbgruppe stehen Häuser – erst verkaufen, dann handeln.' : sq.name;
+        const imgHtml = img ? `<img src="${resolveUrl(img)}" alt="${esc(sq.name)}" loading="lazy">`
+            : `<div style="height:60px; background:${GROUP_COLORS[sq.group] || '#555'}; border-radius:5px;"></div>`;
+        const input = selectable ? `<input type="checkbox" name="${inputName}" value="${idx}" ${locked ? 'disabled' : ''}>` : '';
+        return `<label class="trade-card ${locked ? 'locked' : ''}" title="${esc(title)}">${input}${badge}${imgHtml}<div class="trade-card-name">${esc(sq.name)}</div></label>`;
+    }
+
+    function renderTradeCardGrid(wrapId, inputName, ownerId, owner, jailInputId) {
+        const wrap = document.getElementById(wrapId);
+        if (!wrap) return;
+        const props = Object.entries(gameState.board_state)
+            .filter(([, st]) => st.owner === ownerId)
+            .map(([k]) => parseInt(k, 10))
+            .sort((a, b) => a - b);
+        const jailCount = owner ? (owner.jail_cards || 0) : 0;
+        let html = props.map(idx => tradeCardTileHtml(idx, inputName)).join('');
+        for (let i = 0; i < jailCount; i++) {
+            html += `<label class="trade-card" title="Du kommst aus dem Gefängnis frei"><input type="checkbox" data-jail-card="1">
+                <img src="${resolveUrl(jailCardImage(i))}" alt="Gefängnisfrei-Karte"><div class="trade-card-name">🗝️ Gefängnisfrei</div></label>`;
         }
-        targetPropsWrap.innerHTML = targetProps.map(p => `
-            <label style="display:flex; align-items:center; gap:6px; font-size:12px; margin-bottom:4px; cursor:pointer;">
-                <input type="checkbox" name="trade_target_prop" value="${p.idx}">
-                <span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:${GROUP_COLORS[p.sq.group] || '#777'};"></span>
-                ${p.sq.name}
-            </label>
-        `).join('') || '<div style="font-size:11px; color:#888;">Keine Grundstücke</div>';
+        wrap.innerHTML = html || '<div class="trade-empty">Keine Karten</div>';
+
+        const jailInput = document.getElementById(jailInputId);
+        if (jailInput) jailInput.value = 0;
+        wrap.querySelectorAll('.trade-card input').forEach(inp => {
+            inp.addEventListener('change', () => {
+                inp.closest('.trade-card').classList.toggle('selected', inp.checked);
+                if (inp.dataset.jailCard && jailInput) {
+                    jailInput.value = wrap.querySelectorAll('input[data-jail-card]:checked').length;
+                }
+            });
+        });
     }
 
     function submitTradeProposal() {
@@ -2747,17 +2804,24 @@
         const sender = gameState.players.find(p => p.id === trade.sender_id);
         const modalBody = document.getElementById('incoming-trade-body');
 
-        const offerPropNames = trade.offer_props.map(idx => squaresData[idx].name).join(', ') || 'Keine';
-        const reqPropNames = trade.req_props.map(idx => squaresData[idx].name).join(', ') || 'Keine';
-        const offerJcText = trade.offer_jail_cards ? `, ${trade.offer_jail_cards}x Gefängnisfrei` : '';
-        const reqJcText = trade.req_jail_cards ? `, ${trade.req_jail_cards}x Gefängnisfrei` : '';
+        const side = (props, money, jail) => {
+            let tiles = props.map(idx => tradeCardTileHtml(idx, '', false)).join('');
+            for (let i = 0; i < (jail || 0); i++) {
+                tiles += `<div class="trade-card"><img src="${resolveUrl(jailCardImage(i))}" alt="Gefängnisfrei"><div class="trade-card-name">🗝️ Gefängnisfrei</div></div>`;
+            }
+            return `<div style="font-size:14px; font-weight:800; margin:4px 0;">💵 ${(money || 0).toLocaleString('de-DE')} DM</div>
+                <div class="trade-card-grid readonly" style="max-height:200px;">${tiles || '<div class="trade-empty">Keine Karten</div>'}</div>`;
+        };
+        const me = gameState.players.find(p => p.id === playerId);
 
         modalBody.innerHTML = `
-            <p><strong>${sender ? sender.name : 'Mitspieler'}</strong> bietet dir folgenden Tausch an:</p>
-            <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:8px; margin:10px 0; font-size:13px; display:flex; flex-direction:column; gap:8px;">
-                <div><strong style="color:var(--primary);">Du erhältst:</strong> ${trade.offer_money} DM${offerJcText}, Grundstücke: ${offerPropNames}</div>
-                <div><strong style="color:var(--accent-red);">Du gibst:</strong> ${trade.req_money} DM${reqJcText}, Grundstücke: ${reqPropNames}</div>
+            <p><strong>${esc(sender ? sender.name : 'Mitspieler')}</strong> bietet dir folgenden Tausch an:</p>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:10px 0; font-size:13px;">
+                <div><strong style="color:var(--primary);">Du erhältst:</strong>${side(trade.offer_props, trade.offer_money, trade.offer_jail_cards)}</div>
+                <div><strong style="color:var(--accent-red);">Du gibst:</strong>${side(trade.req_props, trade.req_money, trade.req_jail_cards)}</div>
             </div>
+            ${me ? `<div style="font-size:12px; color:var(--text-muted); margin-bottom:6px;">Dein Bargeld: <strong style="color:#2ecc71;">${me.money.toLocaleString('de-DE')} DM</strong>
+                · <a href="#" onclick="event.preventDefault(); window.MonopolyGame.showPlayerPortfolio('${esc(trade.sender_id)}')" style="color:#93c5fd;">Besitz von ${esc(sender ? sender.name : 'Mitspieler')} ansehen</a></div>` : ''}
             <div style="display:flex; gap:10px; margin-top:10px;">
                 <button class="btn-action btn-buy" style="flex:1;" onclick="window.MonopolyGame.acceptTrade()">Annehmen</button>
                 <button class="btn-action" style="flex:1; background:#c0392b; color:#fff;" onclick="window.MonopolyGame.rejectTrade()">Ablehnen</button>
