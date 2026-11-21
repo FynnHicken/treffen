@@ -37,3 +37,5 @@ export MY_DOMAIN="deine-domain.ddns.net"
 ```
 
 Detaillierte Anweisungen für die Mac mini M4 Antigravity-Instanz findest du in [AGY_INSTRUCTIONS.md](AGY_INSTRUCTIONS.md).
+
+Für Entwickler und KI-Assistenten: Einstieg über [AGENTS.md](AGENTS.md), Monopoly-Details in [games/monopoly/DEVELOPMENT.md](games/monopoly/DEVELOPMENT.md).
