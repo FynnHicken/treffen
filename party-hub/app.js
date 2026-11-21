@@ -32,7 +32,7 @@ function generatePartyCode(len = 6) {
 
 // Read room code from URL ?room=... or ?code=...
 const urlParams = new URLSearchParams(window.location.search);
-let rawCode = (urlParams.get("room") || urlParams.get("code") || "").trim().toUpperCase();
+let rawCode = (urlParams.get("room") || urlParams.get("code") || "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32);
 
 // Note: If no room code is provided in URL, ROOM_CODE is empty ("") so the user lands on the Welcome screen.
 const ROOM_CODE = rawCode;
@@ -142,9 +142,48 @@ function updateConnectionStatus(connected) {
     }
 }
 
+// Spielernamen, Avatare, Farben und Raumcodes kommen von anderen Clients –
+// vor jeder Ausgabe per innerHTML escapen.
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function safeColor(value) {
+    return /^#[0-9a-fA-F]{3,8}$/.test(value || "") ? value : "#6366f1";
+}
+
+// Zufälliges Geheimnis pro Browser: bindet die eigene Spieler-ID serverseitig,
+// damit niemand anderes mit derselben ID (z. B. der Host-ID) beitreten kann.
+const CLIENT_SECRET_KEY = "treffen_client_secret";
+function getClientSecret() {
+    try {
+        let secret = localStorage.getItem(CLIENT_SECRET_KEY);
+        if (!secret) {
+            const bytes = new Uint8Array(24);
+            crypto.getRandomValues(bytes);
+            secret = Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+            localStorage.setItem(CLIENT_SECRET_KEY, secret);
+        }
+        return secret;
+    } catch (e) {
+        if (!window.__treffenSecret) {
+            window.__treffenSecret = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        }
+        return window.__treffenSecret;
+    }
+}
+
 function sendSocketMessage(msg) {
     if (socket && socket.readyState === WebSocket.OPEN) {
         try {
+            if (msg && msg.type === "JOIN") {
+                msg = { ...msg, secret: getClientSecret() };
+            }
             socket.send(JSON.stringify(msg));
         } catch (e) {
             console.error("WebSocket send error:", e);
@@ -407,7 +446,7 @@ window.refreshOpenRooms = async function() {
                 const targetTs = hasExpiry ? (now + r.remainingMs) : 0;
                 const remSec = hasExpiry ? Math.ceil(r.remainingMs / 1000) : 0;
                 const pct = hasExpiry ? Math.max(0, Math.min(100, (r.remainingMs / ttl) * 100)) : 100;
-                const playersText = (r.players || []).map(p => `${p.avatar || '🎮'} ${p.name}`).join(", ");
+                const playersText = (r.players || []).map(p => `${escapeHtml(p.avatar || '🎮')} ${escapeHtml(p.name)}`).join(", ");
                 const expiryBadge = hasExpiry
                     ? `<span class="room-expiry-sec" style="font-size: 0.74rem; font-weight: 800; color: #f59e0b; background: rgba(245,158,11,0.14); padding: 2px 6px; border-radius: 6px;">⏳ ${remSec}s</span>`
                     : "";
@@ -421,13 +460,13 @@ window.refreshOpenRooms = async function() {
                         <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
                             <div style="display: flex; flex-direction: column; gap: 2px;">
                                 <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                                    <strong style="font-family: monospace; font-size: 0.95rem; letter-spacing: 0.08em;">#${r.code}</strong>
-                                    <span style="font-size: 0.78rem; color: var(--ink-light);">👑 ${r.hostAvatar || '🐶'} ${r.hostName || 'Host'}</span>
+                                    <strong style="font-family: monospace; font-size: 0.95rem; letter-spacing: 0.08em;">#${escapeHtml(r.code)}</strong>
+                                    <span style="font-size: 0.78rem; color: var(--ink-light);">👑 ${escapeHtml(r.hostAvatar || '🐶')} ${escapeHtml(r.hostName || 'Host')}</span>
                                     ${expiryBadge}
                                 </div>
-                                <span style="font-size: 0.75rem; color: var(--ink-light);">👥 ${r.playerCount} Spieler (${playersText})</span>
+                                <span style="font-size: 0.75rem; color: var(--ink-light);">👥 ${Number(r.playerCount) || 0} Spieler (${playersText})</span>
                             </div>
-                            <button type="button" class="action-btn-sm" onclick="quickJoinOpenRoom('${r.code}')" style="padding: 6px 12px; font-size: 0.82rem;">Beitreten →</button>
+                            <button type="button" class="action-btn-sm" data-room-code="${escapeHtml(r.code)}" onclick="quickJoinOpenRoom(this.dataset.roomCode)" style="padding: 6px 12px; font-size: 0.82rem;">Beitreten →</button>
                         </div>
                         ${expiryBar}
                     </div>
@@ -805,22 +844,22 @@ function renderPlayerRoster() {
         let hostBtnHtml = '';
         if (isHostMe && !isMe) {
             hostBtnHtml = `
-                <button class="transfer-host-btn" type="button" title="${p.name} zum Party-Leader machen">
+                <button class="transfer-host-btn" type="button" title="${escapeHtml(p.name)} zum Party-Leader machen">
                     👑
                 </button>
             `;
         }
 
         card.innerHTML = `
-            <div class="player-card-avatar" style="background: ${p.color || '#6366f1'}22; border: 2.5px solid ${p.color || '#6366f1'};">
-                ${p.avatar}
+            <div class="player-card-avatar" style="background: ${safeColor(p.color)}22; border: 2.5px solid ${safeColor(p.color)};">
+                ${escapeHtml(p.avatar)}
                 <span class="status-dot"></span>
             </div>
             <div class="player-card-details">
                 <span class="player-card-name">
-                    ${p.name} ${p.isHost ? '👑' : ''} ${isMe ? '<small style="opacity:0.75; font-size:0.8em;">(Du)</small>' : ''}
+                    ${escapeHtml(p.name)} ${p.isHost ? '👑' : ''} ${isMe ? '<small style="opacity:0.75; font-size:0.8em;">(Du)</small>' : ''}
                 </span>
-                <span class="player-card-tag">${p.status || 'Bereit'}</span>
+                <span class="player-card-tag">${escapeHtml(p.status || 'Bereit')}</span>
             </div>
             ${hostBtnHtml}
         `;
@@ -1802,18 +1841,18 @@ window.renderModalReadiness = function() {
         let miniHostBtnHtml = '';
         if (isHostMe && !isMe) {
             miniHostBtnHtml = `
-                <button class="mini-transfer-host-btn" type="button" title="${p.name} zum Party-Leader machen">
+                <button class="mini-transfer-host-btn" type="button" title="${escapeHtml(p.name)} zum Party-Leader machen">
                     👑 Leader
                 </button>
             `;
         }
 
         item.innerHTML = `
-            <div class="mini-avatar ${isReady ? 'is-ready' : ''}" style="border-color: ${p.color || '#6366f1'};">
-                ${p.avatar}
+            <div class="mini-avatar ${isReady ? 'is-ready' : ''}" style="border-color: ${safeColor(p.color)};">
+                ${escapeHtml(p.avatar)}
                 <span class="mini-ready-check">${isReady ? '✓' : '…'}</span>
             </div>
-            <span class="mini-player-name">${p.name} ${isMe ? '(Du)' : ''} ${p.isHost ? '👑' : ''}</span>
+            <span class="mini-player-name">${escapeHtml(p.name)} ${isMe ? '(Du)' : ''} ${p.isHost ? '👑' : ''}</span>
             ${miniHostBtnHtml}
         `;
 

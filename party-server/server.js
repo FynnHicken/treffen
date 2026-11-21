@@ -5,6 +5,23 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 
 const SOLO_ROOM_TTL_MS = 60000; // 60 seconds for unused rooms with <= 1 player
 
+// Profilfelder kommen vom Client und landen bei allen anderen im DOM –
+// daher hier hart begrenzen (Defense in depth, der Client escaped zusätzlich).
+const COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
+function cleanText(value, maxLen, fallback) {
+    if (typeof value !== 'string') return fallback;
+    const cleaned = value.replace(/[<>"'`&\u0000-\u001f]/g, '').trim().slice(0, maxLen);
+    return cleaned || fallback;
+}
+function sanitizeProfile(user) {
+    return {
+        name: cleanText(user.name, 24, undefined),
+        avatar: cleanText(user.avatar, 8, undefined),
+        color: typeof user.color === 'string' && COLOR_RE.test(user.color) ? user.color : undefined,
+        status: cleanText(user.status, 32, undefined)
+    };
+}
+
 class Room {
     constructor(code) {
         this.code = code;
@@ -21,6 +38,7 @@ class Room {
         this.creatorId = null;
         this.hostTransferred = false;
         this.disconnectTimers = new Map(); // playerId -> timer
+        this.secrets = new Map(); // playerId -> client secret (bindet die ID an den Browser)
         this.expiresAt = Date.now() + SOLO_ROOM_TTL_MS;
     }
 
@@ -34,8 +52,27 @@ class Room {
         }
     }
 
-    addPlayer(user, ws) {
-        if (!user || !user.id) return;
+    addPlayer(user, ws, secret) {
+        if (!user || typeof user.id !== 'string' || !user.id || user.id.length > 64) return false;
+
+        // Eine Spieler-ID gehört dem Browser, der sie zuerst benutzt hat.
+        // Verhindert, dass jemand die (im Roster sichtbare) Host-ID übernimmt.
+        const clientSecret = typeof secret === 'string' ? secret.slice(0, 128) : null;
+        if (this.secrets.has(user.id)) {
+            if (this.secrets.get(user.id) !== clientSecret) {
+                console.warn(`[Room ${this.code}] Rejected JOIN for ${user.id}: secret mismatch`);
+                return false;
+            }
+        } else {
+            this.secrets.set(user.id, clientSecret);
+        }
+
+        // Alten Socket derselben ID entkoppeln (z. B. zweiter Tab / Reconnect)
+        const oldWs = this.sockets.get(user.id);
+        if (oldWs && oldWs !== ws) {
+            this.socketToPlayerId.delete(oldWs);
+        }
+        const profile = sanitizeProfile(user);
 
         // Cancel pending disconnect timer if player reconnected
         if (this.disconnectTimers.has(user.id)) {
@@ -65,13 +102,13 @@ class Room {
 
         const player = {
             id: user.id,
-            name: user.name || "Gast",
-            avatar: user.avatar || "🐶",
-            color: user.color || "#6366f1",
+            name: profile.name || "Gast",
+            avatar: profile.avatar || "🐶",
+            color: profile.color || "#6366f1",
             isHost: isHost,
             isReady: user.isReady ?? true,
-            status: user.status || "Bereit",
-            joinedAt: user.joinedAt || Date.now(),
+            status: profile.status || "Bereit",
+            joinedAt: Number.isFinite(user.joinedAt) ? user.joinedAt : Date.now(),
             lastSeen: Date.now()
         };
 
@@ -88,15 +125,17 @@ class Room {
 
         console.log(`[Room ${this.code}] Player joined: ${player.name} (${player.id}) [Host: ${isHost}, currentHost: ${this.hostId}]`);
         this.broadcastRoster();
+        return true;
     }
 
-    updateUser(user) {
-        if (!user || !user.id) return;
-        const player = this.players.get(user.id);
+    updateUser(playerId, user) {
+        if (!playerId || !user) return;
+        const player = this.players.get(playerId);
         if (player) {
-            if (user.name) player.name = user.name;
-            if (user.avatar) player.avatar = user.avatar;
-            if (user.color) player.color = user.color;
+            const profile = sanitizeProfile(user);
+            if (profile.name) player.name = profile.name;
+            if (profile.avatar) player.avatar = profile.avatar;
+            if (profile.color) player.color = profile.color;
             player.lastSeen = Date.now();
             this.broadcastRoster();
         }
@@ -120,6 +159,8 @@ class Room {
         if (!playerId) return;
 
         this.socketToPlayerId.delete(ws);
+        // Spieler hat inzwischen einen neuen Socket (Reload/zweiter Tab) → nichts entfernen
+        if (this.sockets.get(playerId) !== ws) return;
         this.sockets.delete(playerId);
 
         // Grace period of 15 seconds before removing player (handles app switching on mobile to share room code, page refresh, etc.)
@@ -131,6 +172,7 @@ class Room {
             console.log(`[Room ${this.code}] Player left: ${player.name} (${playerId})`);
             this.players.delete(playerId);
             this.userVotes.delete(playerId);
+            if (playerId !== this.creatorId) this.secrets.delete(playerId);
             this.recalcVotes();
 
             // Pass host to next remaining player if host left
@@ -213,8 +255,9 @@ class Room {
         return true;
     }
 
-    isSenderHost(ws, data) {
-        const senderId = this.socketToPlayerId.get(ws) || (data && (data.userId || data.playerId));
+    isSenderHost(ws) {
+        // Nur die serverseitig an den Socket gebundene ID zählt, nie Felder aus der Nachricht
+        const senderId = this.socketToPlayerId.get(ws);
         if (!senderId) return false;
         if (senderId === this.hostId) return true;
         if (!this.hostId && this.players.size > 0) {
@@ -347,25 +390,33 @@ const wss = new WebSocketServer({ server });
 wss.on('connection', (ws, req) => {
     const url = new URL(req.url, 'http://localhost');
     const roomCode = (url.searchParams.get('room') || 'DEFAULT').toUpperCase();
+    // Raumcodes werden in /rooms öffentlich gelistet → nur harmlose Zeichen zulassen
+    if (!/^[A-Z0-9_-]{1,32}$/.test(roomCode)) {
+        ws.close(1008, 'invalid room code');
+        return;
+    }
     const room = getOrCreateRoom(roomCode);
 
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message.toString());
             if (!data || !data.type) return;
+            const senderId = room.socketToPlayerId.get(ws);
 
             switch (data.type) {
                 case 'JOIN':
-                    room.addPlayer(data.user, ws);
+                    if (!room.addPlayer(data.user, ws, data.secret) && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'JOIN_REJECTED', reason: 'id-in-use' }));
+                    }
                     break;
 
                 case 'UPDATE_USER':
-                    room.updateUser(data.user);
+                    room.updateUser(senderId, data.user);
                     break;
 
                 case 'HEARTBEAT':
-                    if (data.playerId) {
-                        const p = room.players.get(data.playerId);
+                    if (senderId) {
+                        const p = room.players.get(senderId);
                         if (p) p.lastSeen = Date.now();
                     }
                     if (ws.readyState === WebSocket.OPEN) {
@@ -374,11 +425,11 @@ wss.on('connection', (ws, req) => {
                     break;
 
                 case 'READY_STATE_CHANGED':
-                    room.setReadyState(data.playerId, data.isReady);
+                    if (senderId) room.setReadyState(senderId, data.isReady);
                     break;
 
                 case 'OPEN_GAME_MODAL': {
-                    if (!room.isSenderHost(ws, data)) {
+                    if (!room.isSenderHost(ws)) {
                         console.warn(`[Room ${room.code}] Non-host tried to open game modal.`);
                         break;
                     }
@@ -396,7 +447,7 @@ wss.on('connection', (ws, req) => {
                 }
 
                 case 'CLOSE_GAME_MODAL': {
-                    if (!room.isSenderHost(ws, data)) {
+                    if (!room.isSenderHost(ws)) {
                         break;
                     }
                     room.activeModalGameId = null;
@@ -405,7 +456,7 @@ wss.on('connection', (ws, req) => {
                 }
 
                 case 'GAME_SETTINGS_UPDATE': {
-                    if (!room.isSenderHost(ws, data)) {
+                    if (!room.isSenderHost(ws)) {
                         console.warn(`[Room ${room.code}] Non-host tried to update game settings.`);
                         break;
                     }
@@ -420,7 +471,7 @@ wss.on('connection', (ws, req) => {
                 }
 
                 case 'TRANSFER_HOST': {
-                    if (!room.isSenderHost(ws, data)) {
+                    if (!room.isSenderHost(ws)) {
                         console.warn(`[Room ${room.code}] Non-host tried to transfer host.`);
                         break;
                     }
@@ -431,7 +482,7 @@ wss.on('connection', (ws, req) => {
                 }
 
                 case 'VOTE_CAST':
-                    room.castVote(data.playerId, data.gameId);
+                    if (senderId) room.castVote(senderId, data.gameId);
                     break;
 
                 case 'VOTE_TOGGLE':
@@ -439,13 +490,9 @@ wss.on('connection', (ws, req) => {
                     break;
 
                 case 'LAUNCH_GAME': {
-                    if (!room.isSenderHost(ws, data)) {
+                    if (!room.isSenderHost(ws)) {
                         console.warn(`[Room ${room.code}] Non-host tried to launch game.`);
                         break;
-                    }
-                    const senderId = room.socketToPlayerId.get(ws) || (data && (data.userId || data.playerId));
-                    if (senderId) {
-                        room.hostId = senderId;
                     }
                     room.activeGame = {
                         gameId: data.gameId,
@@ -462,7 +509,7 @@ wss.on('connection', (ws, req) => {
                 }
 
                 case 'EXIT_GAME': {
-                    if (room.isSenderHost(ws, data)) {
+                    if (room.isSenderHost(ws)) {
                         room.activeModalGameId = null;
                         room.activeGame = null;
                         room.updateExpiryTimer(true);
@@ -479,7 +526,7 @@ wss.on('connection', (ws, req) => {
                 }
 
                 case 'SLOT_MODAL_SYNC': {
-                    if (room.isSenderHost(ws, data)) {
+                    if (room.isSenderHost(ws)) {
                         room.broadcast({
                             type: 'SLOT_MODAL_SYNC',
                             action: data.action
@@ -489,7 +536,7 @@ wss.on('connection', (ws, req) => {
                 }
 
                 case 'SLOT_SPIN_START': {
-                    if (room.isSenderHost(ws, data)) {
+                    if (room.isSenderHost(ws)) {
                         room.broadcast({
                             type: 'SLOT_SPIN_START',
                             winningGameId: data.winningGameId,
