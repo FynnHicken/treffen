@@ -46,7 +46,38 @@ SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")  # Raum-/Spieler-IDs landen im
 rooms: Dict[str, GameRoom] = {}
 connections: Dict[str, Dict[str, WebSocket]] = {} # room_id -> {player_id: ws}
 auction_tasks: Dict[str, asyncio.Task] = {}
+bot_tasks: Dict[str, asyncio.Task] = {}      # room_id -> laufender Bot-Treiber
+away_tasks: Dict[tuple, asyncio.Task] = {}   # (room_id, player_id) -> Abwesenheits-Timer
+room_locks: Dict[str, asyncio.Lock] = {}
+room_empty_since: Dict[str, float] = {}      # room_id -> seit wann ohne Verbindung
 room_expiry: Dict[str, float] = {} # room_id -> unix timestamp when room expires
+
+AWAY_GRACE_SEC = float(os.environ.get("MONOPOLY_AWAY_GRACE_SEC", "30"))  # so lange darf ein Spieler weg sein, bevor der Computer übernimmt
+EMPTY_ROOM_TTL_SEC = 30 * 60   # Räume ganz ohne Verbindung werden nach 30 min gelöscht
+
+
+def get_lock(room_id: str) -> asyncio.Lock:
+    """Ein Lock pro Raum: alle Zustandsänderungen (Spieler, Bots, Auktion) laufen nacheinander."""
+    lock = room_locks.get(room_id)
+    if lock is None:
+        lock = room_locks[room_id] = asyncio.Lock()
+    return lock
+
+
+def delete_room(room_id: str):
+    for registry in (auction_tasks, bot_tasks):
+        task = registry.pop(room_id, None)
+        if task and task is not asyncio.current_task() and not task.done():
+            task.cancel()
+    for key in [k for k in away_tasks if k[0] == room_id]:
+        task = away_tasks.pop(key)
+        if not task.done():
+            task.cancel()
+    rooms.pop(room_id, None)
+    connections.pop(room_id, None)
+    room_expiry.pop(room_id, None)
+    room_empty_since.pop(room_id, None)
+    room_locks.pop(room_id, None)
 
 def update_room_expiry(room_id: str, force_reset: bool = False):
     room = rooms.get(room_id)
@@ -82,8 +113,17 @@ async def cleanup_expired_rooms_loop():
                         await ws.close()
                     except Exception:
                         pass
-                rooms.pop(r_id, None)
-                room_expiry.pop(r_id, None)
+                delete_room(r_id)
+                continue
+
+            # Laufende/beendete Räume ohne jede Verbindung irgendwann aufräumen
+            if connections.get(r_id):
+                room_empty_since.pop(r_id, None)
+            else:
+                since = room_empty_since.setdefault(r_id, now)
+                if now - since >= EMPTY_ROOM_TTL_SEC:
+                    print(f"[Room {r_id}] Seit {EMPTY_ROOM_TTL_SEC // 60} min ohne Verbindung – wird gelöscht.")
+                    delete_room(r_id)
 
 @app.on_event("startup")
 async def start_cleanup_task():
@@ -169,7 +209,20 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
         update_room_expiry(room_id, True)
 
     room = rooms[room_id]
-    connections[room_id][player_id] = websocket
+    connections.setdefault(room_id, {})[player_id] = websocket
+    room_empty_since.pop(room_id, None)
+
+    # Rückkehr: Abwesenheits-Timer stoppen und Kontrolle zurückgeben
+    timer = away_tasks.pop((room_id, player_id), None)
+    if timer and not timer.done():
+        timer.cancel()
+    if player_id in room.away_players:
+        async with get_lock(room_id):
+            room.away_players.discard(player_id)
+            p = next((pl for pl in room.players if pl.id == player_id), None)
+            if p:
+                room.log(f"👋 {p.name} ist zurück und spielt wieder selbst.")
+    kick_bot_driver(room_id)  # falls der Treiber mangels Zuschauer pausiert hat
 
     try:
         while True:
@@ -178,7 +231,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 data = json.loads(text)
                 if not isinstance(data, dict):
                     continue
-                await handle_message(websocket, room_id, player_id, data)
+                async with get_lock(room_id):
+                    await handle_message(websocket, room_id, player_id, data)
             except WebSocketDisconnect:
                 raise
             except Exception as e:
@@ -190,13 +244,51 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     pass
 
     except WebSocketDisconnect:
-        if room_id in connections:
-            connections[room_id].pop(player_id, None)
-            await broadcast_room(room_id, {
-                "type": "PLAYER_DISCONNECTED",
-                "player_id": player_id,
-                "state": room.to_dict()
-            })
+        pass
+    finally:
+        conns = connections.get(room_id)
+        # Nur entfernen, wenn das wirklich noch dieser Socket ist (Reconnect hat evtl. schon ersetzt)
+        if conns is not None and conns.get(player_id) is websocket:
+            conns.pop(player_id, None)
+            room = rooms.get(room_id)
+            if room:
+                schedule_away_timer(room_id, player_id)
+                await broadcast_room(room_id, {
+                    "type": "PLAYER_DISCONNECTED",
+                    "player_id": player_id,
+                    "state": room.to_dict()
+                })
+
+
+def schedule_away_timer(room_id: str, player_id: str):
+    room = rooms.get(room_id)
+    if not room or room.status != "PLAYING":
+        return
+    if not any(p.id == player_id and not p.is_bot and not p.is_bankrupt for p in room.players):
+        return  # Zuschauer oder Bot
+    old = away_tasks.pop((room_id, player_id), None)
+    if old and not old.done():
+        old.cancel()
+    away_tasks[(room_id, player_id)] = asyncio.create_task(_mark_away_after_grace(room_id, player_id))
+
+
+async def _mark_away_after_grace(room_id: str, player_id: str):
+    try:
+        await asyncio.sleep(AWAY_GRACE_SEC)
+    except asyncio.CancelledError:
+        return
+    away_tasks.pop((room_id, player_id), None)
+    room = rooms.get(room_id)
+    if not room or room.status != "PLAYING" or player_id in connections.get(room_id, {}):
+        return
+    async with get_lock(room_id):
+        p = next((pl for pl in room.players if pl.id == player_id), None)
+        if not p or p.is_bankrupt:
+            return
+        room.away_players.add(player_id)
+        room.log(f"💤 {p.name} ist nicht mehr verbunden – der Computer spielt, bis {p.name} zurück ist.")
+        await broadcast_room(room_id, {"type": "STATE_UPDATE", "state": room.to_dict()})
+    kick_bot_driver(room_id)
 
 
 def is_room_member(room: GameRoom, player_id: str) -> bool:
@@ -215,6 +307,14 @@ async def handle_message(websocket: WebSocket, room_id: str, player_id: str, dat
 
     if action == "JOIN":
         already_in_room = any(p.id == player_id for p in room.players)
+        if not already_in_room and room.status != "LOBBY":
+            # Laufendes Spiel: neue Leute schauen zu statt mit 1500 DM einzusteigen
+            await websocket.send_text(json.dumps({
+                "type": "SPECTATOR",
+                "message": "Das Spiel läuft bereits – du schaust zu. In der nächsten Runde kannst du mitspielen.",
+                "state": room.to_dict()
+            }))
+            return
         if not already_in_room and len(room.players) >= MAX_PLAYERS:
             await websocket.send_text(json.dumps({
                 "type": "ERROR",
@@ -252,7 +352,11 @@ async def handle_message(websocket: WebSocket, room_id: str, player_id: str, dat
                 "type": "GAME_STARTED",
                 "state": room.to_dict()
             })
-            await handle_bot_turn_if_needed(room_id)
+            # Wer schon beim Start nicht verbunden ist, bekommt ebenfalls die Gnadenfrist
+            for p in room.players:
+                if not p.is_bot and p.id not in connections.get(room_id, {}):
+                    schedule_away_timer(room_id, p.id)
+            kick_bot_driver(room_id)
         except Exception as e:
             await websocket.send_text(json.dumps({"type": "ERROR", "message": str(e)}))
 
@@ -304,7 +408,7 @@ async def handle_message(websocket: WebSocket, room_id: str, player_id: str, dat
             "state": room.to_dict()
         })
         if res.get("auction_ended"):
-            await finish_bot_turn_after_auction_if_needed(room_id)
+            kick_bot_driver(room_id)
         elif room.auction_state:
             schedule_auction_flow(room_id)
 
@@ -321,7 +425,7 @@ async def handle_message(websocket: WebSocket, room_id: str, player_id: str, dat
             "state": room.to_dict()
         })
         if res.get("auction_ended"):
-            await finish_bot_turn_after_auction_if_needed(room_id)
+            kick_bot_driver(room_id)
         elif room.auction_state:
             schedule_auction_flow(room_id)
 
@@ -338,7 +442,7 @@ async def handle_message(websocket: WebSocket, room_id: str, player_id: str, dat
         })
         if res.get("auction_ended"):
             cancel_auction_flow(room_id)
-            await finish_bot_turn_after_auction_if_needed(room_id)
+            kick_bot_driver(room_id)
         elif room.auction_state:
             schedule_auction_flow(room_id)
 
@@ -351,7 +455,7 @@ async def handle_message(websocket: WebSocket, room_id: str, player_id: str, dat
                 "result": res,
                 "state": room.to_dict()
             })
-            await finish_bot_turn_after_auction_if_needed(room_id)
+            kick_bot_driver(room_id)
 
     elif action == "CONFIRM_CARD":
         res = room.confirm_card(player_id)
@@ -413,23 +517,7 @@ async def handle_message(websocket: WebSocket, room_id: str, player_id: str, dat
         # Auto-evaluate if target is a Bot
         target_p = next((p for p in room.players if p.id == target_id), None)
         if res.get("success") and target_p and target_p.is_bot:
-            await asyncio.sleep(1.0)
-            offer_val = offer_money + offer_jail_cards * 50 + sum(SQUARES[i]["price"] for i in offer_props)
-            req_val = req_money + req_jail_cards * 50 + sum(SQUARES[i]["price"] for i in req_props)
-            if offer_val >= req_val and target_p.money >= req_money:
-                acc_res = room.accept_trade(target_p.id)
-                await broadcast_room(room_id, {
-                    "type": "TRADE_ACCEPTED",
-                    "result": acc_res,
-                    "state": room.to_dict()
-                })
-            else:
-                rej_res = room.reject_trade(target_p.id)
-                await broadcast_room(room_id, {
-                    "type": "TRADE_REJECTED",
-                    "result": rej_res,
-                    "state": room.to_dict()
-                })
+            asyncio.create_task(bot_answer_trade(room_id, res["trade"]["id"]))
 
     elif action == "ACCEPT_TRADE":
         res = room.accept_trade(player_id)
@@ -483,7 +571,7 @@ async def handle_message(websocket: WebSocket, room_id: str, player_id: str, dat
             "result": res,
             "state": room.to_dict()
         })
-        await handle_bot_turn_if_needed(room_id)
+        kick_bot_driver(room_id)
 
     elif action == "BANKRUPTCY":
         res = room.declare_bankruptcy(player_id)
@@ -492,7 +580,7 @@ async def handle_message(websocket: WebSocket, room_id: str, player_id: str, dat
             "result": res,
             "state": room.to_dict()
         })
-        await handle_bot_turn_if_needed(room_id)
+        kick_bot_driver(room_id)
 
     elif action == "RESET_LOBBY":
         # Host jederzeit, alle Mitspieler erst nach Spielende
@@ -565,7 +653,7 @@ async def handle_message(websocket: WebSocket, room_id: str, player_id: str, dat
                         "result": res.get("bankruptcy", res),
                         "state": room.to_dict()
                     })
-                    await handle_bot_turn_if_needed(room_id)
+                    kick_bot_driver(room_id)
                 else:
                     await broadcast_room(room_id, {
                         "type": "DEBUG_ACTION_APPLIED",
@@ -588,13 +676,13 @@ def schedule_auction_flow(room_id: str):
 
 
 async def _auction_lifecycle_loop(room_id: str):
+    """5-s-Hammer-Timer + Bot-Gebote. Wartet außerhalb, ändert Zustand nur innerhalb des Raum-Locks."""
     try:
         while True:
             room = rooms.get(room_id)
             if not room or room.status != "PLAYING" or not room.auction_state:
                 return
             current_seq = room.auction_state.get("bid_seq", 1)
-
             has_bot_candidate = any(
                 p.is_bot and p.id in room.auction_state["active_bidders"] and p.id != room.auction_state["high_bidder_id"]
                 for p in room.players
@@ -603,82 +691,42 @@ async def _auction_lifecycle_loop(room_id: str):
             if has_bot_candidate:
                 await asyncio.sleep(1.1)
                 elapsed = 1.1
+                async with get_lock(room_id):
+                    room = rooms.get(room_id)
+                    if not room or room.status != "PLAYING" or not room.auction_state:
+                        return
+                    if room.auction_state.get("bid_seq", 1) != current_seq:
+                        continue
+                    prev_active_len = len(room.auction_state["active_bidders"])
+                    bot_res = room.step_bot_auction_bid()
+                    if bot_res:
+                        await broadcast_room(room_id, {"type": "AUCTION_UPDATED", "result": bot_res, "state": room.to_dict()})
+                        continue
+                    if len(room.auction_state["active_bidders"]) != prev_active_len:
+                        if not room.auction_state["high_bidder_id"] and not room.auction_state["active_bidders"]:
+                            fin_res = room.finalize_auction_timeout()
+                            await broadcast_room(room_id, {"type": "AUCTION_UPDATED", "result": fin_res, "state": room.to_dict()})
+                            kick_bot_driver(room_id)
+                            return
+                        await broadcast_room(room_id, {"type": "STATE_UPDATE", "state": room.to_dict()})
+
+            await asyncio.sleep(max(0.1, 5.0 - elapsed))
+
+            async with get_lock(room_id):
                 room = rooms.get(room_id)
                 if not room or room.status != "PLAYING" or not room.auction_state:
                     return
                 if room.auction_state.get("bid_seq", 1) != current_seq:
                     continue
-
-                prev_active_len = len(room.auction_state["active_bidders"])
-                bot_res = room.step_bot_auction_bid()
-                if bot_res:
-                    await broadcast_room(room_id, {
-                        "type": "AUCTION_UPDATED",
-                        "result": bot_res,
-                        "state": room.to_dict()
-                    })
-                    continue
-                elif len(room.auction_state["active_bidders"]) != prev_active_len:
-                    if not room.auction_state["high_bidder_id"] and len(room.auction_state["active_bidders"]) == 0:
-                        fin_res = room.finalize_auction_timeout()
-                        await broadcast_room(room_id, {
-                            "type": "AUCTION_UPDATED",
-                            "result": fin_res,
-                            "state": room.to_dict()
-                        })
-                        await finish_bot_turn_after_auction_if_needed(room_id)
-                        return
-                    else:
-                        await broadcast_room(room_id, {
-                            "type": "STATE_UPDATE",
-                            "state": room.to_dict()
-                        })
-
-            remaining = max(0.1, 5.0 - elapsed)
-            await asyncio.sleep(remaining)
-
-            room = rooms.get(room_id)
-            if not room or room.status != "PLAYING" or not room.auction_state:
-                return
-            if room.auction_state.get("bid_seq", 1) != current_seq:
-                continue
-
-            fin_res = room.finalize_auction_timeout()
-            await broadcast_room(room_id, {
-                "type": "AUCTION_UPDATED",
-                "result": fin_res,
-                "state": room.to_dict()
-            })
-            await finish_bot_turn_after_auction_if_needed(room_id)
+                fin_res = room.finalize_auction_timeout()
+                await broadcast_room(room_id, {"type": "AUCTION_UPDATED", "result": fin_res, "state": room.to_dict()})
+            kick_bot_driver(room_id)
             return
     except asyncio.CancelledError:
         return
-
-
-async def finish_bot_turn_after_auction_if_needed(room_id: str):
-    room = rooms.get(room_id)
-    if not room or room.status != "PLAYING" or room.auction_state:
-        return
-    curr = room.current_player()
-    if curr and curr.is_bot and not curr.is_bankrupt:
-        await asyncio.sleep(0.8)
-        if curr.money < 0:
-            room.auto_resolve_bot_debt(curr)
-        if curr.money < 0:
-            bank_res = room.declare_bankruptcy(curr.id)
-            await broadcast_room(room_id, {
-                "type": "BANKRUPTCY",
-                "result": bank_res,
-                "state": room.to_dict()
-            })
-        elif room.rolled:
-            end_res = room.end_turn(curr.id)
-            await broadcast_room(room_id, {
-                "type": "TURN_ENDED",
-                "result": end_res,
-                "state": room.to_dict()
-            })
-        await handle_bot_turn_if_needed(room_id)
+    finally:
+        if auction_tasks.get(room_id) is asyncio.current_task():
+            auction_tasks.pop(room_id, None)
 
 
 def _calc_anim_wait_seconds(room, old_pos: int, new_pos: int, include_dice: bool = True) -> float:
@@ -696,110 +744,155 @@ def _calc_anim_wait_seconds(room, old_pos: int, new_pos: int, include_dice: bool
     return max(1.5, min(20.0, total_ms / 1000.0))
 
 
-async def handle_bot_turn_if_needed(room_id: str):
+def kick_bot_driver(room_id: str):
+    """Startet den Bot-Treiber des Raums, falls er nicht schon läuft. Blockiert nie."""
+    task = bot_tasks.get(room_id)
+    if task and not task.done():
+        return
     room = rooms.get(room_id)
     if not room or room.status != "PLAYING" or room.auction_state:
         return
+    if not room.is_auto_controlled(room.current_player()):
+        return
+    bot_tasks[room_id] = asyncio.create_task(_bot_driver_loop(room_id))
 
-    curr = room.current_player()
-    if curr and curr.is_bot and not curr.is_bankrupt:
+
+async def _bot_driver_loop(room_id: str):
+    """Spielt Bots und abwesende Spieler – ein Schritt pro Iteration, Warten außerhalb des Locks.
+    Ersetzt die frühere Rekursion, die im Socket-Handler eines Menschen lief."""
+    try:
         await asyncio.sleep(1.2)
-        # Bot jail handling before first roll of the turn
-        if curr.in_jail and not room.rolled and getattr(curr, "jail_rolls_this_turn", 0) == 0:
-            if curr.jail_cards > 0:
-                room.use_jail_card(curr.id)
-                await broadcast_room(room_id, {
-                    "type": "JAIL_CARD_USED",
-                    "state": room.to_dict()
-                })
-                await asyncio.sleep(0.6)
-            elif curr.jail_turns >= 2 and curr.money >= 250:
-                room.pay_bail(curr.id)
-                await broadcast_room(room_id, {
-                    "type": "BAIL_PAID",
-                    "state": room.to_dict()
-                })
-                await asyncio.sleep(0.6)
-
-        # Bot rolls
-        roll_res = room.roll_dice()
-        await broadcast_room(room_id, {
-            "type": "DICE_ROLLED",
-            "result": roll_res,
-            "state": room.to_dict()
-        })
-        roll_wait = _calc_anim_wait_seconds(
-            room,
-            roll_res.get("old_pos"),
-            roll_res.get("new_pos"),
-            include_dice=True
-        )
-        await asyncio.sleep(roll_wait)
-
-        while room.pending_action and room.pending_action.get("type") == "CARD_DRAWN":
-            await asyncio.sleep(2.4)
-            card_res = room.confirm_card(curr.id)
-            await broadcast_room(room_id, {
-                "type": "CARD_APPLIED",
-                "result": card_res,
-                "state": room.to_dict()
-            })
-            if card_res.get("moved") and not (curr and curr.in_jail):
-                card_wait = _calc_anim_wait_seconds(
-                    room,
-                    card_res.get("old_pos"),
-                    card_res.get("new_pos"),
-                    include_dice=False
-                )
-                await asyncio.sleep(card_wait)
-            else:
-                await asyncio.sleep(1.2)
-
-        # Bot decision on pending action
-        if room.pending_action and room.pending_action.get("type") == "BUY_OR_AUCTION":
-            sq = room.pending_action["square"]
-            price = sq["price"]
-            if curr.money >= price + 120:
-                room.buy_property(curr.id, sq["index"])
-                await broadcast_room(room_id, {
-                    "type": "PROPERTY_BOUGHT",
-                    "state": room.to_dict()
-                })
-                await asyncio.sleep(1.0)
-            else:
-                # Start auction according to Parker rules!
-                auc_res = room.start_auction(curr.id, sq["index"])
-                await broadcast_room(room_id, {
-                    "type": "AUCTION_UPDATED",
-                    "result": auc_res,
-                    "state": room.to_dict()
-                })
-                if room.auction_state:
-                    schedule_auction_flow(room_id)
+        failures = 0
+        while True:
+            room = rooms.get(room_id)
+            if not room or room.status != "PLAYING" or room.auction_state:
+                return
+            if not connections.get(room_id):
+                return  # niemand schaut zu → pausieren, beim nächsten Connect geht es weiter
+            async with get_lock(room_id):
+                curr = room.current_player()
+                if not room.is_auto_controlled(curr) or curr.is_bankrupt or room.auction_state or room.status != "PLAYING":
                     return
+                wait, ok = await _bot_step(room_id, room, curr)
+            if not ok:
+                failures += 1
+                if failures >= 3:
+                    print(f"[Room {room_id}] Bot-Treiber gibt auf (wiederholte Fehler) bei {curr.name}.")
+                    return
+            else:
+                failures = 0
+            if wait is None:
+                return  # z. B. Auktion gestartet – deren Task stößt den Treiber danach wieder an
+            await asyncio.sleep(wait)
+    except asyncio.CancelledError:
+        return
+    finally:
+        if bot_tasks.get(room_id) is asyncio.current_task():
+            bot_tasks.pop(room_id, None)
 
-        # Bot debt resolution or bankruptcy
+
+async def _bot_step(room_id: str, room: GameRoom, curr) -> tuple:
+    """Führt genau eine Aktion für den automatisch gesteuerten Spieler aus. Gibt (Wartezeit, Erfolg) zurück."""
+    pa = room.pending_action or {}
+    pa_type = pa.get("type")
+
+    async def send(msg_type: str, result: Optional[dict] = None):
+        payload = {"type": msg_type, "state": room.to_dict()}
+        if result is not None:
+            payload["result"] = result
+        await broadcast_room(room_id, payload)
+
+    def card_delay() -> float:
+        return 2.4 if (room.pending_action or {}).get("type") == "CARD_DRAWN" else 0.0
+
+    # 1. Schulden: Häuser verkaufen / Hypotheken, sonst Bankrott
+    if curr.money < 0:
+        room.auto_resolve_bot_debt(curr)
         if curr.money < 0:
-            room.auto_resolve_bot_debt(curr)
-        if curr.money < 0:
-            bank_res = room.declare_bankruptcy(curr.id)
-            await broadcast_room(room_id, {
-                "type": "BANKRUPTCY",
-                "result": bank_res,
-                "state": room.to_dict()
-            })
-            await handle_bot_turn_if_needed(room_id)
+            res = room.declare_bankruptcy(curr.id)
+            await send("BANKRUPTCY", res)
+            return 1.2, not res.get("error")
+        await send("STATE_UPDATE")
+        return 0.8, True
+
+    # 2. Offene Karte bestätigen
+    if pa_type == "CARD_DRAWN":
+        res = room.confirm_card(curr.id)
+        await send("CARD_APPLIED", res)
+        if res.get("moved") and not curr.in_jail:
+            wait = _calc_anim_wait_seconds(room, res.get("old_pos"), res.get("new_pos"), include_dice=False)
+        else:
+            wait = 1.2
+        return wait + card_delay(), not res.get("error")
+
+    # 3. Einkommensteuer (nur bei abwesenden Menschen – Bots zahlen direkt)
+    if pa_type == "TAX_CHOICE":
+        mode = "percent" if pa.get("percent_tax", 10**9) < pa.get("flat_tax", 200) else "flat"
+        res = room.pay_income_tax(curr.id, mode)
+        await send("TAX_PAID", res)
+        return 1.0, not res.get("error")
+
+    # 4. Kaufen oder versteigern
+    if pa_type == "BUY_OR_AUCTION":
+        sq = pa["square"]
+        if curr.money >= sq["price"] + 120:
+            res = room.buy_property(curr.id, sq["index"])
+            await send("PROPERTY_BOUGHT", res)
+            return 1.0, not res.get("error")
+        res = room.start_auction(curr.id, sq["index"])
+        await send("AUCTION_UPDATED", res)
+        if room.auction_state:
+            schedule_auction_flow(room_id)
+            return None, True
+        return 0.8, not res.get("error")
+
+    # 5. Gefängnis vor dem ersten Wurf: Karte oder Kaution
+    if curr.in_jail and not room.rolled and curr.jail_rolls_this_turn == 0:
+        if curr.jail_cards > 0:
+            room.use_jail_card(curr.id)
+            await send("JAIL_CARD_USED")
+            return 0.6, True
+        if curr.jail_turns >= 2 and curr.money >= 250:
+            room.pay_bail(curr.id)
+            await send("BAIL_PAID")
+            return 0.6, True
+
+    # 6. Würfeln
+    if not room.rolled:
+        res = room.roll_dice()
+        await send("DICE_ROLLED", res)
+        if res.get("error"):
+            return 1.0, False
+        wait = _calc_anim_wait_seconds(room, res.get("old_pos"), res.get("new_pos"), include_dice=True)
+        return wait + card_delay(), True
+
+    # 7. Zug beenden (bei Pasch setzt end_turn rolled zurück → nächster Schritt würfelt erneut)
+    res = room.end_turn(curr.id)
+    await send("TURN_ENDED", res)
+    return 1.2, not res.get("error")
+
+
+async def bot_answer_trade(room_id: str, trade_id: str):
+    await asyncio.sleep(1.0)
+    room = rooms.get(room_id)
+    if not room:
+        return
+    async with get_lock(room_id):
+        trade = room.pending_trade
+        if not trade or trade.get("id") != trade_id:
             return
+        target_p = next((p for p in room.players if p.id == trade["target_id"]), None)
+        if not target_p or not target_p.is_bot:
+            return
+        offer_val = trade["offer_money"] + trade["offer_jail_cards"] * 50 + sum(SQUARES[i]["price"] for i in trade["offer_props"])
+        req_val = trade["req_money"] + trade["req_jail_cards"] * 50 + sum(SQUARES[i]["price"] for i in trade["req_props"])
+        if offer_val >= req_val and target_p.money >= trade["req_money"]:
+            res = room.accept_trade(target_p.id)
+            await broadcast_room(room_id, {"type": "TRADE_ACCEPTED", "result": res, "state": room.to_dict()})
+        else:
+            res = room.reject_trade(target_p.id)
+            await broadcast_room(room_id, {"type": "TRADE_REJECTED", "result": res, "state": room.to_dict()})
 
-        # Bot ends turn (or rolls again immediately if room.rolled was reset due to Pasch)
-        if room.rolled:
-            end_res = room.end_turn(curr.id)
-            await broadcast_room(room_id, {
-                "type": "TURN_ENDED",
-                "result": end_res,
-                "state": room.to_dict()
-            })
-        await handle_bot_turn_if_needed(room_id)
 
 # Mount static files dynamically
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

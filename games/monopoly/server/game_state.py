@@ -211,6 +211,7 @@ class GameRoom:
         self.host_id = host_id
         self.party_id = party_id
         self.host_claimed = False  # Host-Übernahme per is_host-Flag (Hub) nur einmal pro Raum
+        self.away_players: set = set()  # Menschen ohne Verbindung, deren Züge der Computer übernimmt
         self.status = "LOBBY"  # LOBBY, PLAYING, GAME_OVER
         self.players: List[Player] = []
         self.current_player_idx = 0
@@ -455,8 +456,13 @@ class GameRoom:
         self.last_card = None
         self.winner = None
 
+    def is_auto_controlled(self, player: Optional["Player"]) -> bool:
+        """Bots und abwesende Menschen werden vom Server gespielt."""
+        return bool(player) and (player.is_bot or player.id in self.away_players)
+
     def reset_to_lobby(self):
         self._reset_round_state()
+        self.away_players.clear()
         self.status = "LOBBY"
         self.log("🔄 Raum wurde für eine neue Runde in die Lobby zurückgesetzt.")
 
@@ -1731,7 +1737,7 @@ class GameRoom:
             "status": self.status,
             "winner": self.winner,
             "max_players": MAX_PLAYERS,
-            "players": [p.to_dict() for p in self.players],
+            "players": [{**p.to_dict(), "away": p.id in self.away_players} for p in self.players],
             "current_player_idx": self.current_player_idx,
             "current_player": self.current_player().to_dict() if self.players else None,
             "dice": self.dice,

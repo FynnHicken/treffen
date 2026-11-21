@@ -833,14 +833,7 @@
 
         socket.onopen = function() {
             console.log('WebSocket connected to room', roomId);
-            // Join message
-            sendWsMessage({
-                action: 'JOIN',
-                name: playerName,
-                token: selectedToken,
-                color: selectedColor,
-                is_host: (getQueryParam('host') === '1')
-            });
+            sendJoinMessage();
         };
 
         socket.onmessage = function(event) {
@@ -857,6 +850,16 @@
             console.log('WebSocket disconnected, reconnecting in 2s...');
             setTimeout(connectWebSocket, 2000);
         };
+    }
+
+    function sendJoinMessage() {
+        sendWsMessage({
+            action: 'JOIN',
+            name: playerName,
+            token: selectedToken,
+            color: selectedColor,
+            is_host: (getQueryParam('host') === '1')
+        });
     }
 
     function sendWsMessage(msg) {
@@ -982,6 +985,14 @@
             case 'LOBBY_RESET':
                 closeModal('modal-gameover');
                 openModal('modal-lobby');
+                // Zuschauer der letzten Runde steigen jetzt ein
+                if (gameState && gameState.players && !gameState.players.some(p => p.id === playerId)) {
+                    sendJoinMessage();
+                }
+                break;
+
+            case 'SPECTATOR':
+                showYourTurnPopup('👀 ZUSCHAUER', msg.message || 'Das Spiel läuft bereits – du schaust zu.');
                 break;
 
             case 'DICE_ROLLED':
@@ -1517,7 +1528,7 @@
                             ${p.in_jail ? '<span class="hud-jail-tag">⛓️</span>' : ''}
                         </div>
                         <div class="hud-pod-details">
-                            <div class="hud-pod-name">${esc(p.name)} ${isMe ? '(Du)' : ''}</div>
+                            <div class="hud-pod-name">${esc(p.name)} ${isMe ? '(Du)' : ''}${p.away ? ' 💤' : ''}</div>
                             <div class="hud-pod-money">${p.money} DM</div>
                         </div>
                         <button class="hud-pod-inspect-btn" onclick="event.stopPropagation(); window.MonopolyGame.showPlayerPortfolio('${p.id}');" title="Besitzliste öffnen">📋</button>
@@ -1543,7 +1554,7 @@
                         <div class="player-header">
                             <div class="player-identity">
                                 <div class="player-dot" style="background:${p.color};"></div>
-                                <span class="player-name">${esc(p.name)} ${isMe ? '(Du)' : ''}</span>
+                                <span class="player-name">${esc(p.name)} ${isMe ? '(Du)' : ''}${p.away ? ' <span title="Nicht verbunden – der Computer spielt">💤</span>' : ''}</span>
                             </div>
                             ${tokenGraphic}
                         </div>
