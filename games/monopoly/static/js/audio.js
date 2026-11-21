@@ -170,28 +170,48 @@
             Sound.playHop();
         },
 
-        // Token step hop sound (clean zero-latency synthesized click/tap with file fallback)
-        playHop: function() {
+        // Figur setzt auf dem Brett auf: kurzes Holz-"Klack" (gefiltertes Rauschen) + dumpfer Körper.
+        // Leichte Zufallsvariation, damit es nicht maschinell klingt; final = letztes Feld (kräftiger).
+        playHop: function(final = false) {
             if (isMuted) return;
             const ctx = getAudioContext();
             if (ctx && ctx.state === 'running') {
                 try {
                     const now = ctx.currentTime;
+                    const vol = (final ? 0.42 : 0.30) * (0.9 + Math.random() * 0.2);
+                    const pitch = 0.92 + Math.random() * 0.16;
+
+                    // a) Klack: 25 ms Rauschen durch einen Bandpass
+                    const len = Math.floor(ctx.sampleRate * 0.025);
+                    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+                    const data = buf.getChannelData(0);
+                    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+                    const noise = ctx.createBufferSource();
+                    noise.buffer = buf;
+                    const bp = ctx.createBiquadFilter();
+                    bp.type = 'bandpass';
+                    bp.frequency.value = 2100 * pitch;
+                    bp.Q.value = 1.4;
+                    const nGain = ctx.createGain();
+                    nGain.gain.value = vol;
+                    noise.connect(bp); bp.connect(nGain); nGain.connect(ctx.destination);
+                    noise.start(now);
+
+                    // b) Körper: kurzer tiefer Ton (Holzbrett)
                     const osc = ctx.createOscillator();
-                    const gain = ctx.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(420, now);
-                    osc.frequency.exponentialRampToValueAtTime(180, now + 0.06);
-                    gain.gain.setValueAtTime(0.28, now);
-                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
+                    const oGain = ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(190 * pitch, now);
+                    osc.frequency.exponentialRampToValueAtTime(90 * pitch, now + 0.07);
+                    oGain.gain.setValueAtTime(vol * 0.55, now);
+                    oGain.gain.exponentialRampToValueAtTime(0.001, now + (final ? 0.12 : 0.08));
+                    osc.connect(oGain); oGain.connect(ctx.destination);
                     osc.start(now);
-                    osc.stop(now + 0.07);
+                    osc.stop(now + 0.14);
                     return;
                 } catch(e) {}
             }
-            playAudioFile(soundFiles.select, 0.4);
+            playAudioFile(soundFiles.select, final ? 0.5 : 0.4);
         },
 
         // Money gain / Passed GO

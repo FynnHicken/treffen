@@ -220,6 +220,28 @@ async def main():
     room.end_turn(p.id)
     ok(room.last_card is None, "Spätestens beim Zugwechsel ist der Stapel wieder leer")
 
+    print("== Figuren & Farben (jede nur einmal, wie am Tisch) ==")
+    room = make_room("F1", humans=("host",), bots=("b1", "b2"), start=False)
+    room.add_player("host", "Host", "dog", gs.PLAYER_COLORS[0]["hex"])
+    bot_with_hat = next(p for p in room.players if p.id in ("b1", "b2") and p.token == "hat") if any(p.token == "hat" for p in room.players) else None
+    room.add_player("host", "Host", "hat", gs.PLAYER_COLORS[0]["hex"])
+    ok(room.players[0].token == "hat" and not room.last_join_notices, "Host bekommt den Zylinder, auch wenn ein Bot ihn hatte")
+    room.add_player("gast", "Gast", "hat", gs.PLAYER_COLORS[0]["hex"])
+    gast = next(p for p in room.players if p.id == "gast")
+    ok(gast.token != "hat" and gast.color != gs.PLAYER_COLORS[0]["hex"] and len(room.last_join_notices) == 2,
+       f"Gast bekommt NICHT die Figur des Hosts, aber einen Hinweis: {room.last_join_notices[:1]}")
+    room.add_player("gast", "Gast", "hat", gast.color)
+    ok(gast.token != "hat", "Auch ein späterer Wechsel auf die Host-Figur geht nicht (vorher: doppelt vergeben)")
+    ok(len({p.token for p in room.players}) == len(room.players) and len({p.color for p in room.players}) == len(room.players),
+       f"Alle Figuren und Farben eindeutig: {[(p.name, p.token) for p in room.players]}")
+    room.start_game()
+    before = room.players[0].token
+    room.add_player("host", "Host", "car", gs.PLAYER_COLORS[0]["hex"])
+    ok(room.players[0].token == before, "Während des Spiels kein Figurenwechsel (z. B. Reconnect aus anderem Tab)")
+    srv.connections["F1"]["gast"] = FakeWS(); room.status = "LOBBY"
+    await send("F1", "gast", action="JOIN", name="Gast", token="hat", color=gast.color)
+    ok(any(m.get("code") == "TOKEN_TAKEN" for m in srv.connections["F1"]["gast"].sent), "Hinweis kommt per WebSocket beim Spieler an")
+
     print("== Simulation: 30 Bot-Partien mit gemischten Regeln ==")
     errs = []; ended = {"easy": 0, "normal": 0, "hard": 0}
     for seed in range(30):

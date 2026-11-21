@@ -1820,3 +1820,11 @@ body.spectator-mode #dock-wallet { display: none !important; }
 /* Besitzliste/Urkunde können aus dem Handel heraus geöffnet werden → darüber anzeigen */
 #modal-portfolio { z-index: 110; }
 #modal-deed { z-index: 120; }
+
+/* Belegte Figuren/Farben in der Lobby */
+.token-choice { position: relative; }
+.token-choice.taken { opacity: 0.38; cursor: not-allowed; filter: grayscale(0.7); }
+.token-choice .token-owner-tag { position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); max-width: 92%;
+    font-size: 9px; font-weight: 800; background: rgba(0,0,0,0.75); color: #fff; padding: 1px 5px; border-radius: 6px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.color-dot-pick.taken { opacity: 0.3; cursor: not-allowed; outline: 2px dashed rgba(255,255,255,0.5); outline-offset: 1px; }

@@ -1576,6 +1576,29 @@
             });
         }
 
+        // Belegte Figuren/Farben markieren: Mitspieler = gesperrt (mit Name), Bot = frei (Bot tauscht)
+        const others = gameState.players.filter(p => p.id !== playerId);
+        document.querySelectorAll('.token-choice').forEach(el => {
+            const holder = others.find(p => p.token === el.getAttribute('data-token'));
+            const takenByHuman = !!(holder && !holder.is_bot);
+            el.classList.toggle('taken', takenByHuman);
+            el.title = takenByHuman ? `Gehört ${holder.name}` : (holder ? `Hat gerade ${holder.name} – der Bot gibt sie dir` : '');
+            let tag = el.querySelector('.token-owner-tag');
+            if (takenByHuman) {
+                if (!tag) { tag = document.createElement('span'); tag.className = 'token-owner-tag'; el.appendChild(tag); }
+                tag.textContent = holder.name;
+            } else if (tag) {
+                tag.remove();
+            }
+        });
+        document.querySelectorAll('.color-dot-pick').forEach(el => {
+            const c = (el.getAttribute('data-color') || '').toLowerCase();
+            const holder = others.find(p => (p.color || '').toLowerCase() === c);
+            const takenByHuman = !!(holder && !holder.is_bot);
+            el.classList.toggle('taken', takenByHuman);
+            el.title = takenByHuman ? `Farbe von ${holder.name}` : '';
+        });
+
         // Players list in lobby
         const listEl = document.getElementById('lobby-players-list');
         if (listEl) {
@@ -3135,6 +3158,11 @@
         refreshOpenRooms: refreshOpenRooms,
 
         selectToken: function(tokenId) {
+            const el = document.querySelector(`.token-choice[data-token="${tokenId}"]`);
+            if (el && el.classList.contains('taken')) {
+                showYourTurnPopup('⚠️ FIGUR VERGEBEN', el.title || 'Diese Figur hat schon ein Mitspieler.');
+                return;
+            }
             selectedToken = tokenId;
             localStorage.setItem('monopoly_player_token', tokenId);
             document.querySelectorAll('.token-choice').forEach(el => {
@@ -3144,6 +3172,11 @@
         },
 
         selectColor: function(hex) {
+            const el = document.querySelector(`.color-dot-pick[data-color="${hex}"]`);
+            if (el && el.classList.contains('taken')) {
+                showYourTurnPopup('⚠️ FARBE VERGEBEN', el.title || 'Diese Farbe hat schon ein Mitspieler.');
+                return;
+            }
             selectedColor = hex;
             localStorage.setItem('monopoly_player_color', hex);
             document.querySelectorAll('.color-dot-pick').forEach(el => {

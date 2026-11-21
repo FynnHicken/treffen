@@ -369,6 +369,8 @@ async def handle_message(websocket: WebSocket, room_id: str, player_id: str, dat
             room.host_id = player_id
             room.host_claimed = True
         room.add_player(player_id, name, token, color)
+        for notice in room.last_join_notices:
+            await websocket.send_text(json.dumps({"type": "ERROR", "code": "TOKEN_TAKEN", "message": notice}))
         update_room_expiry(room_id, False)
         await broadcast_room(room_id, {
             "type": "STATE_UPDATE",

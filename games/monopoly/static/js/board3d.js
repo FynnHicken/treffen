@@ -1631,10 +1631,6 @@
                 const startScale = tokenGroup.scale.x || 1.0;
                 const endScale = isFinalStep ? (targetSlot.scale || 1.0) : 1.0;
 
-                if (window.MonopolySound && window.MonopolySound.playHop) {
-                    window.MonopolySound.playHop();
-                }
-
                 const startTime = performance.now();
                 const stepDuration = animConfig.stepDuration || 280; // ms
                 const stepPause = (animConfig.stepPause !== undefined) ? animConfig.stepPause : 75; // ms
@@ -1680,6 +1676,10 @@
                         tokenGroup.position.y = 0.09;
                         tokenGroup.scale.setScalar(endScale);
                         fromPos = toPos;
+                        // Ton beim Aufsetzen – genau einmal pro Schritt, auch auf dem Zielfeld
+                        if (window.MonopolySound && window.MonopolySound.playHop) {
+                            window.MonopolySound.playHop(isFinalStep);
+                        }
                         setTimeout(hopNext, stepPause);
                     }
                 };

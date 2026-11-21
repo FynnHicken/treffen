@@ -297,6 +297,7 @@ class GameRoom:
         self.party_id = party_id
         self.host_claimed = False  # Host-Übernahme per is_host-Flag (Hub) nur einmal pro Raum
         self.away_players: set = set()  # Menschen ohne Verbindung, deren Züge der Computer übernimmt
+        self.last_join_notices: List[str] = []
         self.settings: dict = dict(DEFAULT_SETTINGS)
         self.free_parking_pot = 0
         self.game_started_at: Optional[float] = None
@@ -435,82 +436,77 @@ class GameRoom:
             if cred and not cred.is_bankrupt and pay > 0:
                 self._credit_money(cred, pay)
 
-    def add_player(self, player_id: str, name: str, token: str, color: str, is_bot: bool = False) -> Player:
+    # ------------------------------------------------------------------
+    # Figuren & Farben: wie am echten Tisch gibt es jede nur einmal.
+    # Wer sie zuerst nimmt (Mensch), behält sie; Bots geben ihre sofort an Menschen ab.
+    # ------------------------------------------------------------------
+    def _free_token(self, exclude_ids=()) -> str:
+        used = {p.token for p in self.players if p.id not in exclude_ids}
+        return next((t["id"] for t in TOKEN_OPTIONS if t["id"] not in used), TOKEN_OPTIONS[0]["id"])
+
+    def _free_color(self, exclude_ids=()) -> str:
+        used = {p.color for p in self.players if p.id not in exclude_ids}
+        return next((c["hex"] for c in PLAYER_COLORS if c["hex"] not in used), PLAYER_COLORS[0]["hex"])
+
+    def _claim(self, player: "Player", token: str, color: str) -> List[str]:
+        """Weist player die gewünschte Figur/Farbe zu, soweit möglich. Gibt Hinweise für den Spieler zurück."""
+        notices = []
+        token_names = {t["id"]: t["name"] for t in TOKEN_OPTIONS}
+        color_names = {c["hex"]: c["name"] for c in PLAYER_COLORS}
+
+        holder = next((p for p in self.players if p.id != player.id and p.token == token), None)
+        if holder and not holder.is_bot and not player.is_bot:
+            if not player.token or any(p.id != player.id and p.token == player.token for p in self.players):
+                player.token = self._free_token(exclude_ids=(player.id,))
+            notices.append(f"{token_names.get(token, token)} gehört schon {holder.name} – du spielst mit "
+                           f"{token_names.get(player.token, player.token)}. Wähle gern eine andere freie Figur.")
+        elif holder and holder.is_bot and not player.is_bot:
+            player.token = token
+            holder.token = self._free_token(exclude_ids=(holder.id,))
+        elif holder:   # Bot will eine belegte Figur → freie nehmen
+            player.token = self._free_token(exclude_ids=(player.id,))
+        else:
+            player.token = token
+
+        holder = next((p for p in self.players if p.id != player.id and p.color == color), None)
+        if holder and not holder.is_bot and not player.is_bot:
+            if not player.color or any(p.id != player.id and p.color == player.color for p in self.players):
+                player.color = self._free_color(exclude_ids=(player.id,))
+            notices.append(f"Die Farbe {color_names.get(color, color)} hat schon {holder.name} – deine Farbe ist "
+                           f"{color_names.get(player.color, player.color)}.")
+        elif holder and holder.is_bot and not player.is_bot:
+            player.color = color
+            holder.color = self._free_color(exclude_ids=(holder.id,))
+        elif holder:
+            player.color = self._free_color(exclude_ids=(player.id,))
+        else:
+            player.color = color
+        return notices
+
+    def add_player(self, player_id: str, name: str, token: str, color: str, is_bot: bool = False):
+        """Neuer Spieler oder Profil-Update eines bestehenden. Gibt (Player|None, [Hinweise]) zurück –
+        für Abwärtskompatibilität ist das Ergebnis auch direkt als Player nutzbar (siehe last_join_notices)."""
         name = clean_text(name, 24) or "Spieler"
         if not any(t["id"] == token for t in TOKEN_OPTIONS):
             token = TOKEN_OPTIONS[0]["id"]
         if not any(c["hex"] == color for c in PLAYER_COLORS):
             color = PLAYER_COLORS[0]["hex"]
-        for p in self.players:
-            if p.id == player_id:
-                p.name = name
-                p.token = token
-                p.color = color
-                for other in self.players:
-                    if other.id != player_id and other.is_bot:
-                        if other.token == token:
-                            used_t = {x.token for x in self.players if x.id != other.id}
-                            for opt in TOKEN_OPTIONS:
-                                if opt["id"] not in used_t:
-                                    other.token = opt["id"]
-                                    break
-                        if other.color == color:
-                            used_c = {x.color for x in self.players if x.id != other.id}
-                            for c in PLAYER_COLORS:
-                                if c["hex"] not in used_c:
-                                    other.color = c["hex"]
-                                    break
-                return p
+        self.last_join_notices = []
+
+        existing = next((p for p in self.players if p.id == player_id), None)
+        if existing:
+            existing.name = name
+            # Während des Spiels keine Figuren-/Farbwechsel (z. B. durch Reconnect aus anderem Tab)
+            if self.status == "LOBBY" and (existing.token != token or existing.color != color):
+                self.last_join_notices = self._claim(existing, token, color)
+            return existing
 
         if len(self.players) >= MAX_PLAYERS:
             return None
 
-        if is_bot:
-            used_tokens = {p.token for p in self.players}
-            if token in used_tokens:
-                for opt in TOKEN_OPTIONS:
-                    if opt["id"] not in used_tokens:
-                        token = opt["id"]
-                        break
-            used_colors = {p.color for p in self.players}
-            if color in used_colors:
-                for c in PLAYER_COLORS:
-                    if c["hex"] not in used_colors:
-                        color = c["hex"]
-                        break
-        else:
-            human_tokens = {p.token for p in self.players if not p.is_bot}
-            if token in human_tokens:
-                all_used = {p.token for p in self.players}
-                for opt in TOKEN_OPTIONS:
-                    if opt["id"] not in all_used:
-                        token = opt["id"]
-                        break
-            human_colors = {p.color for p in self.players if not p.is_bot}
-            if color in human_colors:
-                all_used_c = {p.color for p in self.players}
-                for c in PLAYER_COLORS:
-                    if c["hex"] not in all_used_c:
-                        color = c["hex"]
-                        break
-
-        p = Player(player_id, name, token, color, is_bot)
+        p = Player(player_id, name, "", "", is_bot)
         self.players.append(p)
-        if not is_bot:
-            for other in self.players:
-                if other.id != player_id and other.is_bot:
-                    if other.token == token:
-                        used_t = {x.token for x in self.players if x.id != other.id}
-                        for opt in TOKEN_OPTIONS:
-                            if opt["id"] not in used_t:
-                                other.token = opt["id"]
-                                break
-                    if other.color == color:
-                        used_c = {x.color for x in self.players if x.id != other.id}
-                        for c in PLAYER_COLORS:
-                            if c["hex"] not in used_c:
-                                other.color = c["hex"]
-                                break
+        self.last_join_notices = self._claim(p, token, color)
         self.log(f"{name} ist dem Spiel beigetreten ({p.token}).")
         return p
 
