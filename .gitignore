@@ -37,6 +37,8 @@ build/
 
 # Docker volumes and persistent state
 gtp-postgres-data/
+*.db
+*.db-journal
 
 # Archives
 *.zip

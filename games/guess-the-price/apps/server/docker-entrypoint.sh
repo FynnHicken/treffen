@@ -3,18 +3,13 @@ set -e
 
 echo "=== Guess The Price Backend Initialization ==="
 
-# Wait briefly for Postgres to be accepting connections
-echo "Checking database connection..."
-until npx prisma migrate deploy; do
-  echo "Database not ready yet, retrying in 2 seconds..."
-  sleep 2
-done
+# SQLite: Schema anlegen/aktualisieren (kein Migrations-Verlauf nötig,
+# der Seed löscht und befüllt den Produktkatalog bei jedem Start neu)
+echo "Applying database schema..."
+npx prisma db push --skip-generate
 
-echo "Database migrations applied successfully!"
-
-# Seed products and categories
-echo "Seeding initial product catalog..."
-npm run seed || echo "Seed completed or skipped."
+echo "Seeding product catalog..."
+npm run seed
 
 echo "Starting Guess The Price backend on port ${PORT:-3005}..."
 exec npm run start

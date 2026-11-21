@@ -86,26 +86,8 @@ services:
       - party-net
 
   # =========================================================================
-  # Spiel 4: Guess The Price - PostgreSQL Datenbank
-  # =========================================================================
-  gtp-db:
-    image: postgres:15-alpine
-    container_name: gtp-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: root
-      POSTGRES_DB: guess-the-price
-    volumes:
-      - gtp-postgres-data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    networks:
-      - party-net
-
-  # =========================================================================
-  # Spiel 4: Guess The Price - Backend (Express + Prisma + WebSockets)
-  # Automatische Migration & Seeding beim ersten Start
+  # Spiel 4: Guess The Price - Backend (Express + Prisma/SQLite + WebSockets)
+  # Schema wird beim Start per "prisma db push" angelegt und neu befüllt
   # =========================================================================
   gtp-server:
     build:
@@ -115,12 +97,10 @@ services:
     restart: unless-stopped
     environment:
       PORT: 3005
-      DATABASE_URL: "postgresql://root:root@gtp-db:5432/guess-the-price?schema=public"
+      DATABASE_URL: "file:/app/prisma/dev.db"
       CORS_ORIGIN: "*"
     ports:
       - "3005:3005"
-    depends_on:
-      - gtp-db
     networks:
       - party-net
 
@@ -157,6 +137,3 @@ services:
 networks:
   party-net:
     driver: bridge
-
-volumes:
-  gtp-postgres-data:
