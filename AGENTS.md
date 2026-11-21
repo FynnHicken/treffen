@@ -74,6 +74,12 @@ Erledigt und auf `main`:
 5. Monopoly Block 3: Bot-KI (`bot_ai.py`), Bot↔Bot-Handel, lesbare Kartentexte.
 6. Tests ins Repo (`games/monopoly/tests/`), diese Dokumentation.
 
-**In Arbeit:** Monopoly-Gameplay-Features (Hausregeln, Spieldauer, Zug-Timer, Bot-Angebote an
-Menschen, Zuschauer-Ansicht, Bot-Schwierigkeit). Genaue Spezifikation und Status:
-[`games/monopoly/DEVELOPMENT.md` → Roadmap](games/monopoly/DEVELOPMENT.md#roadmap--status).
+7. Monopoly Gameplay-Paket G1–G10: Raum-Einstellungen in der Lobby (Startgeld, Spieldauer ∞/30–120 Min,
+   Zug-Timer, Bot-Schwierigkeit, Frei-Parken-Topf, 400 DM auf Los, Gefängnis-Würfe), Bot-Angebote an
+   Menschen, Handelsablauf nach 60 s, Zuschauer-Ansicht, Header-Uhren, Zeitende mit Rangliste.
+
+**Als Nächstes:** Browser-Playtest des Gameplay-Pakets durch den Nutzer (Server-Seite ist getestet,
+UI noch nicht von Hand). Weitere Ideen: [`games/monopoly/DEVELOPMENT.md` → Roadmap](games/monopoly/DEVELOPMENT.md#roadmap--status).
+
+Lokaler Testserver (falls er läuft): Podman-Container `treffen-monopoly-dev`, `http://127.0.0.1:8090/`
+bzw. im WLAN `http://<LAN-IP>:8090/` – Start-/Neustart-Befehle in DEVELOPMENT.md Abschnitt 2.

@@ -199,7 +199,51 @@ def clean_text(value, max_len: int) -> str:
     return cleaned.strip()[:max_len]
 
 
+# Raum-Einstellungen (Host setzt sie in der Lobby). Reihenfolge = Anzeige-Reihenfolge im Client.
+# type: "select" (options = [[wert, label], …]) oder "toggle".
+SETTINGS_SCHEMA = [
+    {"key": "start_money", "label": "Startgeld", "type": "select", "default": 1500,
+     "options": [[1000, "1.000 DM"], [1500, "1.500 DM"], [2000, "2.000 DM"], [2500, "2.500 DM"]]},
+    {"key": "time_limit_min", "label": "Spieldauer", "type": "select", "default": 0,
+     "options": [[0, "∞ Unbegrenzt"], [30, "30 Min"], [45, "45 Min"], [60, "60 Min"], [90, "90 Min"], [120, "120 Min"]],
+     "hint": "Bei Zeitende gewinnt das höchste Vermögen."},
+    {"key": "turn_timer_sec", "label": "Zug-Timer", "type": "select", "default": 0,
+     "options": [[0, "Aus"], [60, "60 s"], [90, "90 s"], [120, "2 Min"], [180, "3 Min"]],
+     "hint": "Danach beendet der Computer den Zug."},
+    {"key": "bot_difficulty", "label": "Bot-Schwierigkeit", "type": "select", "default": "normal",
+     "options": [["easy", "Leicht"], ["normal", "Normal"], ["hard", "Schwer"]]},
+    {"key": "free_parking_pot", "label": "Frei-Parken-Topf", "type": "toggle", "default": False,
+     "hint": "Steuern und Strafen sammeln sich in der Mitte – wer auf Frei Parken landet, bekommt alles."},
+    {"key": "double_go", "label": "Doppeltes Gehalt auf Los", "type": "toggle", "default": False,
+     "hint": "Wer genau auf Los landet, bekommt 400 statt 200 DM."},
+    {"key": "jail_rolls", "label": "Gefängnis-Würfe pro Runde", "type": "select", "default": 3,
+     "options": [[1, "1 (Original)"], [3, "3"]]},
+]
+DEFAULT_SETTINGS = {item["key"]: item["default"] for item in SETTINGS_SCHEMA}
+
+
+def validate_settings(changes: dict) -> dict:
+    """Nur bekannte Schlüssel mit erlaubten Werten übernehmen."""
+    valid = {}
+    if not isinstance(changes, dict):
+        return valid
+    for item in SETTINGS_SCHEMA:
+        key = item["key"]
+        if key not in changes:
+            continue
+        value = changes[key]
+        if item["type"] == "toggle":
+            if isinstance(value, bool):
+                valid[key] = value
+        else:
+            allowed = [opt[0] for opt in item["options"]]
+            if value in allowed and type(value) is type(item["default"]):
+                valid[key] = value
+    return valid
+
+
 MAX_BANK_HOUSES = 32
+TRADE_TIMEOUT_SEC = 60
 MAX_BANK_HOTELS = 12
 MAX_PLAYERS = 8
 
@@ -250,6 +294,15 @@ class GameRoom:
         self.party_id = party_id
         self.host_claimed = False  # Host-Übernahme per is_host-Flag (Hub) nur einmal pro Raum
         self.away_players: set = set()  # Menschen ohne Verbindung, deren Züge der Computer übernimmt
+        self.settings: dict = dict(DEFAULT_SETTINGS)
+        self.free_parking_pot = 0
+        self.game_started_at: Optional[float] = None
+        self.game_ends_at: Optional[float] = None     # Spieldauer-Limit (None = unbegrenzt)
+        self.time_up_announced = False
+        self.turn_started_at: Optional[float] = None  # für den Zug-Timer
+        self.turn_autoplay_id: Optional[str] = None   # Mensch, dessen Zug-Timer abgelaufen ist
+        self.turn_counter = 0                         # Anzahl Spielerwechsel (Cooldowns der Bot-Angebote)
+        self.bot_offer_log: Dict[tuple, int] = {}     # (bot, mensch, gruppe) -> turn_counter
         self.status = "LOBBY"  # LOBBY, PLAYING, GAME_OVER
         self.players: List[Player] = []
         self.current_player_idx = 0
@@ -467,7 +520,8 @@ class GameRoom:
 
     def _reset_round_state(self):
         for p in self.players:
-            p.money = 1500
+            p.money = self.settings.get("start_money", 1500)
+            p.debts = {}
             p.position = 0
             p.in_jail = False
             p.jail_turns = 0
@@ -493,10 +547,48 @@ class GameRoom:
         self.auction_state = None
         self.last_card = None
         self.winner = None
+        self.free_parking_pot = 0
+        self.game_started_at = None
+        self.game_ends_at = None
+        self.time_up_announced = False
+        self.turn_started_at = None
+        self.turn_autoplay_id = None
+        self.turn_counter = 0
+        self.bot_offer_log = {}
 
     def is_auto_controlled(self, player: Optional["Player"]) -> bool:
-        """Bots und abwesende Menschen werden vom Server gespielt."""
-        return bool(player) and (player.is_bot or player.id in self.away_players)
+        """Bots, abwesende Menschen und Menschen mit abgelaufenem Zug-Timer werden vom Server gespielt."""
+        return bool(player) and (player.is_bot or player.id in self.away_players or player.id == self.turn_autoplay_id)
+
+    def update_settings(self, changes: dict) -> dict:
+        if self.status != "LOBBY":
+            return {"error": "Einstellungen können nur in der Lobby geändert werden."}
+        valid = validate_settings(changes)
+        if not valid:
+            return {"error": "Ungültige Einstellung."}
+        self.settings.update(valid)
+        return {"success": True, "settings": dict(self.settings)}
+
+    def _begin_turn(self):
+        """Wird bei jedem Spielerwechsel aufgerufen (Zug-Timer, Cooldowns)."""
+        self.turn_started_at = time.time()
+        self.turn_autoplay_id = None
+        self.turn_counter += 1
+
+    def turn_deadline(self) -> Optional[float]:
+        secs = self.settings.get("turn_timer_sec", 0)
+        curr = self.current_player()
+        if not secs or self.status != "PLAYING" or not curr or curr.is_bot or not self.turn_started_at:
+            return None
+        return self.turn_started_at + secs
+
+    def _pay_fine(self, player: Player, amount: int, label: str = ""):
+        """Zahlung an die Bank, die bei aktivem Frei-Parken-Topf in die Mitte geht
+        (nur der tatsächlich bezahlte Anteil – sonst entstünde Geld aus Schulden)."""
+        paid = min(max(0, player.money), amount)
+        self._record_payment(player, amount, "BANK")
+        if self.settings.get("free_parking_pot") and paid > 0:
+            self.free_parking_pot += paid
 
     def reset_to_lobby(self):
         self._reset_round_state()
@@ -524,6 +616,32 @@ class GameRoom:
         starter = self.players[self.current_player_idx]
         self.log(f"🎲 Startspieler-Auswürfeln ({roll_summary}) → {starter.name} beginnt!")
         self.log("Das Monopoly-Spiel hat begonnen! Möge der beste Immobilienmogul gewinnen!")
+        self.game_started_at = time.time()
+        limit = self.settings.get("time_limit_min", 0)
+        self.game_ends_at = self.game_started_at + limit * 60 if limit else None
+        self._begin_turn()
+        rules = self.describe_rules()
+        if rules:
+            self.log("📋 Hausregeln: " + rules)
+
+    def describe_rules(self) -> str:
+        st = self.settings
+        parts = []
+        if st.get("start_money", 1500) != 1500:
+            parts.append(f"Startgeld {st['start_money']} DM")
+        if st.get("time_limit_min"):
+            parts.append(f"Spieldauer {st['time_limit_min']} Min")
+        if st.get("turn_timer_sec"):
+            parts.append(f"Zug-Timer {st['turn_timer_sec']} s")
+        if st.get("free_parking_pot"):
+            parts.append("Frei-Parken-Topf")
+        if st.get("double_go"):
+            parts.append("400 DM auf Los")
+        if st.get("jail_rolls", 3) == 1:
+            parts.append("1 Gefängnis-Wurf pro Runde")
+        if st.get("bot_difficulty", "normal") != "normal":
+            parts.append("Bots " + {"easy": "leicht", "hard": "schwer"}[st["bot_difficulty"]])
+        return ", ".join(parts)
 
     def current_player(self) -> Optional[Player]:
         if not self.players:
@@ -553,8 +671,9 @@ class GameRoom:
         steps = d1 + d2
         self.log(f"{player.name} würfelt eine {d1} und {d2} (Gesamt: {steps})!")
 
-        # Handle Jail (3x Würfeln pro Runde im Gefängnis, um einen Pasch zu würfeln)
+        # Gefängnis: bis zu max_attempts Würfe pro Runde (Einstellung jail_rolls, Original = 1)
         if player.in_jail:
+            max_attempts = self.settings.get("jail_rolls", 3)
             player.jail_rolls_this_turn += 1
             attempt = player.jail_rolls_this_turn
             if is_double:
@@ -565,40 +684,39 @@ class GameRoom:
                 self.log(f"🔓 Pasch ({d1} & {d2}) im {attempt}. Versuch! {player.name} kommt frei aus dem Gefängnis und zieht {steps} Felder weiter!")
                 return self.move_player(player, steps, False)
             else:
-                if attempt < 3:
-                    # Spieler darf im Gefängnis bis zu 3x würfeln, um einen Pasch zu schaffen
+                if attempt < max_attempts:
                     self.rolled = False
                     self.pending_action = None
-                    rem = 3 - attempt
+                    rem = max_attempts - attempt
                     self.log(f"🔒 Kein Pasch im {attempt}. Versuch ({d1} & {d2}) – {player.name} darf noch {rem}x würfeln!")
                     return {
                         "dice": self.dice,
                         "double": False,
                         "jail_reroll": True,
                         "jail_attempt": attempt,
-                        "jail_max_attempts": 3,
+                        "jail_max_attempts": max_attempts,
                         "player": player.to_dict(),
                         "action": None
                     }
                 else:
-                    # Alle 3 Versuche in dieser Runde verbraucht
+                    # Alle Versuche dieser Runde verbraucht
                     player.jail_rolls_this_turn = 0
                     player.jail_turns += 1
                     if player.jail_turns >= 3:
-                        self._record_payment(player, 50, "BANK")
+                        self._pay_fine(player, 50)
                         player.in_jail = False
                         player.jail_turns = 0
-                        self.log(f"🔒 Auch im 3. Versuch kein Pasch! Nach der 3. Gefängnis-Runde zahlt {player.name} 50 DM Bußgeld und zieht {steps} Felder weiter!")
+                        self.log(f"🔒 Wieder kein Pasch! Nach der 3. Gefängnis-Runde zahlt {player.name} 50 DM Bußgeld und zieht {steps} Felder weiter!")
                         return self.move_player(player, steps, False)
                     else:
-                        self.log(f"🔒 Auch im 3. Versuch kein Pasch! {player.name} bleibt im Gefängnis (Runde {player.jail_turns}/3).")
+                        self.log(f"🔒 Kein Pasch! {player.name} bleibt im Gefängnis (Runde {player.jail_turns}/3).")
                         self.pending_action = {"type": "END_TURN"}
                         return {
                             "dice": self.dice,
                             "double": False,
                             "jail_reroll": False,
-                            "jail_attempt": 3,
-                            "jail_max_attempts": 3,
+                            "jail_attempt": max_attempts,
+                            "jail_max_attempts": max_attempts,
                             "player": player.to_dict(),
                             "action": self.pending_action
                         }
@@ -645,8 +763,7 @@ class GameRoom:
         # Check if reached or passed GO in forward direction
         passed_go = (new_pos < old_pos and steps > 0)
         if passed_go:
-            self._credit_money(player, 200)
-            self.log(f"{player.name} erreicht/passiert LOS und zieht 200 DM Gehalt ein!")
+            self._collect_salary(player, landed_on_go=(new_pos == 0))
 
         player.position = new_pos
         square = SQUARES[new_pos]
@@ -670,6 +787,14 @@ class GameRoom:
             "player": player.to_dict(),
             "action": action
         }
+
+    def _collect_salary(self, player: Player, landed_on_go: bool):
+        if landed_on_go and self.settings.get("double_go"):
+            self._credit_money(player, 400)
+            self.log(f"💰 {player.name} landet genau auf LOS und kassiert doppeltes Gehalt: 400 DM!")
+        else:
+            self._credit_money(player, 200)
+            self.log(f"{player.name} erreicht/passiert LOS und zieht 200 DM Gehalt ein!")
 
     def evaluate_square(
         self,
@@ -737,7 +862,7 @@ class GameRoom:
                 ten_pct = max(1, round(wealth * 0.10))
                 if player.is_bot:
                     chosen = min(tax, ten_pct)
-                    self._record_payment(player, chosen, "BANK")
+                    self._pay_fine(player, chosen)
                     self.log(f"{player.name} zahlt {chosen} DM Einkommensteuer ({'10% Vermögen' if chosen == ten_pct and ten_pct < tax else 'Pauschalbetrag'})!")
                     return {"type": "TAX_PAID", "tax": chosen}
                 return {
@@ -748,7 +873,7 @@ class GameRoom:
                     "wealth": wealth
                 }
             else:
-                self._record_payment(player, tax, "BANK")
+                self._pay_fine(player, tax)
                 self.log(f"{player.name} zahlt {tax} DM {square['name']}!")
                 return {"type": "TAX_PAID", "tax": tax}
 
@@ -794,7 +919,16 @@ class GameRoom:
                 "roll_sum": roll_sum
             }
 
-        elif sq_type in ["go", "parking", "jail"]:
+        elif sq_type == "parking":
+            pot = self.free_parking_pot
+            if self.settings.get("free_parking_pot") and pot > 0:
+                self.free_parking_pot = 0
+                self._credit_money(player, pot)
+                self.log(f"🅿️ {player.name} landet auf Frei Parken und räumt den Topf ab: {pot} DM!")
+                return {"type": "END_TURN", "free_parking": pot}
+            return {"type": "END_TURN"}
+
+        elif sq_type in ["go", "jail"]:
             return {"type": "END_TURN"}
 
         return {"type": "END_TURN"}
@@ -850,7 +984,7 @@ class GameRoom:
         percent_tax = self.pending_action.get("percent_tax", 200)
         amount = percent_tax if mode == "percent" else flat_tax
         label = f"10% des Vermögens ({amount} DM)" if mode == "percent" else f"Pauschalbetrag ({amount} DM)"
-        self._record_payment(player, amount, "BANK")
+        self._pay_fine(player, amount)
         self.log(f"💸 {player.name} wählt bei der Einkommensteuer: {label}.")
         self.pending_action = {"type": "TAX_PAID", "tax": amount}
         self._check_doubles_reroll(player)
@@ -929,20 +1063,19 @@ class GameRoom:
                 self._credit_money(player, amt)
                 self.log(f"💰 {player.name} erhält {amt} DM.")
             else:
-                self._record_payment(player, -amt, "BANK")
+                self._pay_fine(player, -amt)
                 self.log(f"💸 {player.name} zahlt {-amt} DM.")
 
         elif act in ["PAY_MONEY"]:
             amt = card.get("value", 0)
-            self._record_payment(player, amt, "BANK")
+            self._pay_fine(player, amt)
             self.log(f"💸 {player.name} zahlt {amt} DM.")
 
         elif act in ["MOVE_TO_TILE", "goto"]:
             target = card.get("target_tile") if ("target_tile" in card and card["target_tile"] is not None) else card.get("pos", 0)
             passed_go = (target < player.position) or (target == 0 and player.position != 0)
             if passed_go:
-                self._credit_money(player, 200)
-                self.log(f"🏃 {player.name} erreicht/passiert LOS und erhält 200 DM!")
+                self._collect_salary(player, landed_on_go=(target == 0))
             player.position = target
             sq = SQUARES[target]
             if sq["type"] != "go":
@@ -991,7 +1124,7 @@ class GameRoom:
                         total += hot_cost
                     else:
                         total += st["houses"] * h_cost
-            self._record_payment(player, total, "BANK")
+            self._pay_fine(player, total)
             self.log(f"🏚️ {player.name} zahlt {total} DM für Gebäude-Renovierungen ({h_cost} DM/Haus, {hot_cost} DM/Hotel).")
 
         elif act in ["PAY_EACH_PLAYER", "pay_each"]:
@@ -1341,7 +1474,8 @@ class GameRoom:
         if not (offer_money or offer_props or offer_jail_cards or req_money or req_props or req_jail_cards):
             return {"error": "Leeres Angebot."}
         if (self.pending_trade and self.pending_trade["sender_id"] != sender_id
-                and time.time() - self.pending_trade.get("created_at", 0) < 60):
+                and self.pending_trade["target_id"] != sender_id   # Empfänger darf mit eigenem Angebot antworten
+                and time.time() - self.pending_trade.get("created_at", 0) < TRADE_TIMEOUT_SEC):
             return {"error": "Es läuft bereits ein anderes Handelsangebot (max. 60 s)."}
         if sender.money < offer_money or offer_money < 0:
             return {"error": "Ungültiges Geldangebot."}
@@ -1440,6 +1574,14 @@ class GameRoom:
         self._check_doubles_reroll()
         return {"success": True}
 
+    def expire_trade_if_stale(self) -> bool:
+        t = self.pending_trade
+        if t and time.time() - t.get("created_at", 0) >= TRADE_TIMEOUT_SEC:
+            self.pending_trade = None
+            self.log(f"⌛ Handelsangebot von {t['sender_name']} an {t['target_name']} ist abgelaufen.")
+            return True
+        return False
+
     def reject_trade(self, player_id: str) -> dict:
         trade = self.pending_trade
         if not trade:
@@ -1493,7 +1635,7 @@ class GameRoom:
             return {"error": "Freikaufen ist nur vor dem ersten Würfelversuch der Runde möglich."}
         if player.money < 50:
             return {"error": "Nicht genug Geld für Kaution (50 DM)."}
-        player.money -= 50
+        self._pay_fine(player, 50)
         player.in_jail = False
         player.jail_turns = 0
         player.jail_rolls_this_turn = 0
@@ -1554,6 +1696,8 @@ class GameRoom:
         game_over_res = self._check_game_over(player)
         if game_over_res:
             return game_over_res
+        if self.game_ends_at and time.time() >= self.game_ends_at:
+            return self.finish_by_time()
 
         self.rolled = False
         self.pending_action = None
@@ -1562,9 +1706,32 @@ class GameRoom:
         while self.players[self.current_player_idx].is_bankrupt:
             self.current_player_idx = (self.current_player_idx + 1) % len(self.players)
 
+        self._begin_turn()
         next_p = self.current_player()
         self.log(f"{next_p.name} ist jetzt am Zug.")
         return {"success": True, "next_player": next_p.to_dict()}
+
+    def finish_by_time(self) -> dict:
+        """Spieldauer abgelaufen: Sieger ist das höchste Gesamtvermögen."""
+        active = [p for p in self.players if not p.is_bankrupt]
+        ranking = sorted(
+            ({"id": p.id, "name": p.name, "color": p.color, "token": p.token, "money": p.money,
+              "wealth": self.calculate_player_wealth(p)} for p in active),
+            key=lambda r: -r["wealth"])
+        self.status = "GAME_OVER"
+        self.rolled = False
+        self.pending_action = None
+        self.auction_state = None
+        winner_obj = next(p for p in active if p.id == ranking[0]["id"])
+        self.winner = {
+            **winner_obj.to_dict(),
+            "wealth": ranking[0]["wealth"],
+            "properties_count": sum(1 for st in self.board_state.values() if st["owner"] == winner_obj.id),
+            "reason": "time",
+            "ranking": ranking,
+        }
+        self.log(f"⏰ Zeit abgelaufen! {winner_obj.name} gewinnt mit {ranking[0]['wealth']} DM Gesamtvermögen.")
+        return {"success": True, "game_over": True, "winner": self.winner}
 
     def _check_game_over(self, fallback_player: Optional[Player] = None) -> Optional[dict]:
         active_players = [p for p in self.players if not p.is_bankrupt]
@@ -1763,6 +1930,13 @@ class GameRoom:
             "auction_state": self.auction_state,
             "last_card": self.last_card,
             "anim_config": self.anim_config,
+            "settings": dict(self.settings),
+            "settings_schema": SETTINGS_SCHEMA,
+            "free_parking_pot": self.free_parking_pot,
+            "game_ends_at": self.game_ends_at,
+            "turn_deadline": self.turn_deadline(),
+            "turn_autoplay_id": self.turn_autoplay_id,
+            "server_time": time.time(),
             "logs": self.logs[-25:],
             "squares": SQUARES
         }

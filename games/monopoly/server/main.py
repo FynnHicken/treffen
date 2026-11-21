@@ -118,6 +118,9 @@ async def cleanup_expired_rooms_loop():
                 delete_room(r_id)
                 continue
 
+            if room.status == "PLAYING":
+                await tick_room_timers(r_id)
+
             # Laufende/beendete Räume ohne jede Verbindung irgendwann aufräumen
             if connections.get(r_id):
                 room_empty_since.pop(r_id, None)
@@ -126,6 +129,40 @@ async def cleanup_expired_rooms_loop():
                 if now - since >= EMPTY_ROOM_TTL_SEC:
                     print(f"[Room {r_id}] Seit {EMPTY_ROOM_TTL_SEC // 60} min ohne Verbindung – wird gelöscht.")
                     delete_room(r_id)
+
+async def tick_room_timers(room_id: str):
+    """Einmal pro Sekunde: Handelsangebote verfallen lassen, Spieldauer und Zug-Timer prüfen."""
+    room = rooms.get(room_id)
+    if not room:
+        return
+    kick = False
+    async with get_lock(room_id):
+        if room.status != "PLAYING":
+            return
+        now = time.time()
+        if room.expire_trade_if_stale():
+            await broadcast_room(room_id, {"type": "TRADE_REJECTED", "result": {"success": True, "expired": True},
+                                           "state": room.to_dict()})
+
+        # Spieldauer: sofort beenden (nach einer laufenden Versteigerung)
+        if room.game_ends_at and now >= room.game_ends_at and not room.auction_state:
+            cancel_auction_flow(room_id)
+            res = room.finish_by_time()
+            await broadcast_room(room_id, {"type": "GAME_OVER", "result": res, "state": room.to_dict()})
+            return
+
+        # Zug-Timer: Computer beendet den Zug eines Menschen, der zu lange braucht
+        deadline = room.turn_deadline()
+        curr = room.current_player()
+        if (deadline and now >= deadline and curr and not room.is_auto_controlled(curr)
+                and not room.auction_state):
+            room.turn_autoplay_id = curr.id
+            room.log(f"⏱️ Zeit für den Zug von {curr.name} abgelaufen – der Computer beendet ihn.")
+            await broadcast_room(room_id, {"type": "STATE_UPDATE", "state": room.to_dict()})
+            kick = True
+    if kick:
+        kick_bot_driver(room_id)
+
 
 @app.on_event("startup")
 async def start_cleanup_task():
@@ -361,6 +398,16 @@ async def handle_message(websocket: WebSocket, room_id: str, player_id: str, dat
             kick_bot_driver(room_id)
         except Exception as e:
             await websocket.send_text(json.dumps({"type": "ERROR", "message": str(e)}))
+
+    elif action == "SET_SETTINGS":
+        if room.host_id != player_id:
+            await websocket.send_text(json.dumps({"type": "ERROR", "message": "Nur der Host kann die Regeln ändern."}))
+            return
+        res = room.update_settings(data.get("settings", {}))
+        if res.get("error"):
+            await websocket.send_text(json.dumps({"type": "ERROR", "message": res["error"]}))
+            return
+        await broadcast_room(room_id, {"type": "SETTINGS_UPDATED", "result": res, "state": room.to_dict()})
 
     elif action == "ADD_BOT":
         if room.status == "LOBBY" and is_room_member(room, player_id):
@@ -889,6 +936,16 @@ async def _bot_step(room_id: str, room: GameRoom, curr) -> tuple:
                     acc = room.accept_trade(offer["target_id"])
                     await broadcast_room(room_id, {"type": "TRADE_ACCEPTED", "result": acc, "state": room.to_dict()})
                     return 1.5, True
+            # Angebot an einen Menschen: der Bot wartet nicht auf die Antwort (verfällt nach 60 s)
+            offer = bot_ai.find_human_offer(room, curr)
+            if offer:
+                res = room.propose_trade(curr.id, offer["target_id"], offer["offer_money"], offer["offer_props"],
+                                         offer["req_money"], offer["req_props"], 0, 0)
+                room.bot_offer_log[(curr.id, offer["target_id"], offer["group"])] = room.turn_counter
+                if res.get("success"):
+                    await broadcast_room(room_id, {"type": "TRADE_PROPOSED", "actor_id": curr.id,
+                                                   "result": res, "state": room.to_dict()})
+                    return 1.0, True
         idx = bot_ai.choose_unmortgage(room, curr)
         if idx is not None:
             res = room.toggle_mortgage(curr.id, idx)

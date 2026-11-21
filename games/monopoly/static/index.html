@@ -50,6 +50,8 @@
 
     <!-- UI Overlay Layer (Minimalist 2012 Console Aesthetic) -->
     <div id="ui-root">
+        <!-- Zuschauer-Hinweis (body.spectator-mode) -->
+        <div class="spectator-banner" id="spectator-banner">👀 Du schaust zu – in der nächsten Runde spielst du mit.</div>
         <!-- Top Game Header Bar -->
         <header class="game-header interactive">
             <div class="brand-section">
@@ -59,6 +61,10 @@
                     <strong class="code" id="header-room-code"><script>document.write(window.__INITIAL_ROOM_ID__ || 'WAHL');</script></strong>
                     <span style="margin-left:4px; font-size:12px;">📋</span>
                 </div>
+                <!-- Spielzeit, Zug-Timer und Frei-Parken-Topf (nur sichtbar, wenn die Regel aktiv ist) -->
+                <div class="room-chip hdr-info-chip" id="hdr-game-clock" style="display:none;" title="Verbleibende Spielzeit">⏰ <strong id="hdr-game-clock-val"></strong></div>
+                <div class="room-chip hdr-info-chip" id="hdr-turn-clock" style="display:none;" title="Verbleibende Zeit für diesen Zug">⏱️ <strong id="hdr-turn-clock-val"></strong></div>
+                <div class="room-chip hdr-info-chip" id="hdr-pot" style="display:none;" title="Frei-Parken-Topf">🅿️ <strong id="hdr-pot-val"></strong></div>
             </div>
 
             <!-- Top Center: 2012 Console Player HUD Strip (Authentic 4-Player Pods) -->
@@ -232,6 +238,13 @@
                     <label id="lobby-players-label" style="font-size:12px; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px;">MITSPIELER IM RAUM (MAX. 8)</label>
                     <div class="lobby-players-list" id="lobby-players-list">
                         <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <div>
+                    <label style="font-size:12px; font-weight:700; color:var(--text-muted); display:block; margin-bottom:6px;">REGELN <span id="lobby-settings-hint" style="font-weight:500;"></span></label>
+                    <div class="lobby-settings" id="lobby-settings">
+                        <!-- Populated by JS from state.settings_schema -->
                     </div>
                 </div>
 

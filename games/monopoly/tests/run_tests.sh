@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Führt alle Monopoly-Tests in Podman/Docker aus. Nichts wird auf dem Host installiert.
 #   ./games/monopoly/tests/run_tests.sh            # alle Tests
-#   ./games/monopoly/tests/run_tests.sh rules      # nur test_rules_ws.py (rules|driver|sim)
+#   ./games/monopoly/tests/run_tests.sh rules      # nur test_rules_ws.py (rules|driver|settings|sim)
 set -euo pipefail
 cd "$(dirname "$0")/.."            # -> games/monopoly
 ENGINE=$(command -v podman || command -v docker)
@@ -23,15 +23,16 @@ run_ws_test() {  # $1 = Testdatei; startet einen frischen Server im selben Conta
         echo \"Server-Tracebacks: \$n\"; [ \"\$n\" = 0 ] || grep -A8 Traceback /tmp/server.log | head -40
         exit \$rc"
 }
-run_sim_test() {
-    echo; echo "=================== test_bot_ai_sim.py"
-    $ENGINE run --rm -v "$PWD":/src:ro,Z "$IMAGE" sh -c "cd /tmp && timeout 900 python -I /src/tests/test_bot_ai_sim.py > /tmp/out.txt 2>&1; rc=\$?; grep -v '^\[Room\|^INFO' /tmp/out.txt; exit \$rc"
+run_inproc_test() {  # $1 = Testdatei; läuft im Prozess gegen den Server-Code (kein Netz)
+    echo; echo "=================== $1"
+    $ENGINE run --rm -v "$PWD":/src:ro,Z "$IMAGE" sh -c "cd /tmp && timeout 900 python -I /src/tests/$1 > /tmp/out.txt 2>&1; rc=\$?; grep -v '^\[Room\|^INFO' /tmp/out.txt; exit \$rc"
 }
 
 what=${1:-all}
 rc=0
 [[ $what == all || $what == rules  ]] && { run_ws_test test_rules_ws.py  || rc=1; }
 [[ $what == all || $what == driver ]] && { run_ws_test test_driver_ws.py || rc=1; }
-[[ $what == all || $what == sim    ]] && { run_sim_test                   || rc=1; }
+[[ $what == all || $what == settings ]] && { run_inproc_test test_settings.py   || rc=1; }
+[[ $what == all || $what == sim    ]] && { run_inproc_test test_bot_ai_sim.py || rc=1; }
 echo; [[ $rc == 0 ]] && echo "✅ Alle Testdateien bestanden." || echo "❌ Mindestens eine Testdatei ist fehlgeschlagen."
 exit $rc

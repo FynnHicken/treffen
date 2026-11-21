@@ -16,6 +16,25 @@ GROUP_PRIORITY = {
 }
 STREET_GROUPS = [g for g in COLOR_GROUPS if g not in ("station", "utility")]
 
+# Schwierigkeitsstufen (Raum-Einstellung "bot_difficulty").
+#   easy   = das alte, naive Verhalten: kauft nur mit 120 DM Puffer, kein Blocken, bewertet Handel nur
+#            nach Kaufpreis, baut höchstens 2 Häuser, handelt nicht von sich aus.
+#   normal = volle KI.
+#   hard   = volle KI, bietet höher, hält weniger Reserve (baut früher), macht öfter Angebote.
+DIFFICULTY = {
+    "easy":   {"smart": False, "max_houses": 2, "bot_trades": False, "human_offers": False,
+               "auction_factor": 0.70, "reserve_mult": 1.0, "offer_factor": None, "offer_cooldown": None},
+    "normal": {"smart": True, "max_houses": 5, "bot_trades": True, "human_offers": True,
+               "auction_factor": 0.85, "reserve_mult": 1.0, "offer_factor": 1.6, "offer_cooldown": 10},
+    "hard":   {"smart": True, "max_houses": 5, "bot_trades": True, "human_offers": True,
+               "auction_factor": 0.95, "reserve_mult": 0.8, "offer_factor": 1.5, "offer_cooldown": 6},
+}
+
+
+def params(room) -> dict:
+    settings = getattr(room, "settings", {}) or {}
+    return DIFFICULTY.get(settings.get("bot_difficulty", "normal"), DIFFICULTY["normal"])
+
 
 # ---------------------------------------------------------------------------
 # Hilfen
@@ -66,7 +85,8 @@ def cash_reserve(room, player) -> int:
     """Wie viel Bargeld der Bot mindestens behalten will.
     Früh im Spiel wenig, sobald Gegner gebaut haben, entsprechend mehr."""
     danger = max_opponent_rent(room, player)
-    return max(100, min(700, int(danger * 0.6) + 50))
+    base = max(100, min(700, int(danger * 0.6) + 50))
+    return int(base * params(room)["reserve_mult"])
 
 
 def unowned_count(room) -> int:
@@ -97,6 +117,8 @@ def should_buy(room, player, idx: int) -> bool:
     price = SQUARES[idx]["price"]
     if player.money < price:
         return False
+    if not params(room)["smart"]:
+        return player.money >= price + 120
     bonus = strategic_bonus(room, player, idx)
     if bonus >= 0.6:
         return player.money - price >= 50        # wichtige Straße: fast alles einsetzen
@@ -109,8 +131,11 @@ def should_buy(room, player, idx: int) -> bool:
 def auction_limit(room, player, idx: int) -> int:
     """Höchstgebot des Bots für eine Versteigerung."""
     price = SQUARES[idx]["price"]
+    cfg = params(room)
+    if not cfg["smart"]:
+        return max(0, min(player.money - 100, int(price * cfg["auction_factor"])))
     bonus = strategic_bonus(room, player, idx)
-    factor = 0.85 + bonus * 0.5                  # bis 1,35 × Preis für die letzte Straße einer Gruppe
+    factor = cfg["auction_factor"] + bonus * 0.5   # normal bis 1,35 × Preis für die letzte Straße einer Gruppe
     keep = 50 if bonus >= 0.6 else cash_reserve(room, player)
     return max(0, min(player.money - keep, int(price * factor)))
 
@@ -142,6 +167,7 @@ def choose_build(room, player) -> Optional[int]:
     """Nächstes Feld für ein Haus/Hotel – gleichmäßig, mit Bargeldreserve, bester Gruppe zuerst.
     Bis 3 Häuser ist der Mietsprung am größten, danach erst Hotels."""
     reserve = cash_reserve(room, player)
+    max_houses = params(room)["max_houses"]
     best = None
     for group in STREET_GROUPS:
         squares = COLOR_GROUPS[group]
@@ -150,7 +176,7 @@ def choose_build(room, player) -> Optional[int]:
         if any(room.board_state[s]["mortgaged"] for s in squares):
             continue
         min_h = min(room.board_state[s]["houses"] for s in squares)
-        if min_h >= 5:
+        if min_h >= max_houses:
             continue
         idx = next(s for s in squares if room.board_state[s]["houses"] == min_h)
         cost = SQUARES[idx]["house_cost"]
@@ -229,6 +255,10 @@ def resolve_debt(room, player) -> List[dict]:
 def jail_decision(room, player) -> str:
     """'card', 'bail' oder 'roll'. Früh raus, solange es noch viel zu kaufen gibt;
     spät im Gefängnis sitzen bleiben, wenn draußen teure Mieten drohen."""
+    if not params(room)["smart"]:
+        if player.jail_cards > 0:
+            return "card"
+        return "bail" if player.jail_turns >= 2 and player.money >= 250 else "roll"
     late_game = unowned_count(room) <= 6 and max_opponent_rent(room, player) >= 300
     if late_game and player.jail_turns < 2:
         return "roll"
@@ -267,6 +297,12 @@ def evaluate_trade(room, bot, trade: dict) -> bool:
         return False
     gets_props, gives_props = trade["offer_props"], trade["req_props"]
 
+    if not params(room)["smart"]:
+        # Leicht: nur Kaufpreise vergleichen (lässt sich die letzte Straße einer Gruppe abkaufen)
+        offer_val = trade["offer_money"] + trade["offer_jail_cards"] * 50 + sum(SQUARES[i]["price"] for i in gets_props)
+        req_val = trade["req_money"] + trade["req_jail_cards"] * 50 + sum(SQUARES[i]["price"] for i in gives_props)
+        return offer_val >= req_val
+
     # Eigene komplette Gruppe zerschlagen? Nie.
     for idx in gives_props:
         group = SQUARES[idx].get("group")
@@ -303,6 +339,8 @@ def find_bot_trade(room, bot) -> Optional[dict]:
     """Sucht einen Handel mit einem anderen BOT, der dem Bot eine Farbgruppe komplettiert:
     bevorzugt ein Tausch, bei dem der Partner ebenfalls eine Gruppe bekommt, sonst Kauf gegen Geld.
     Gibt die Parameter für GameRoom.propose_trade zurück – oder None."""
+    if not params(room)["bot_trades"]:
+        return None
     reserve = cash_reserve(room, bot)
     for group in sorted(STREET_GROUPS, key=lambda g: -GROUP_PRIORITY.get(g, 3)):
         partner_id, wanted = _missing_from_single_owner(room, bot.id, group)
@@ -351,3 +389,52 @@ def _as_trade(sender, t: dict) -> dict:
             "offer_money": t["offer_money"], "offer_props": t["offer_props"],
             "req_money": t["req_money"], "req_props": t["req_props"],
             "offer_jail_cards": 0, "req_jail_cards": 0}
+
+
+# ---------------------------------------------------------------------------
+# Angebote an Menschen (normal/schwer)
+# ---------------------------------------------------------------------------
+def find_human_offer(room, bot) -> Optional[dict]:
+    """Ein Angebot an einen MENSCHEN, das dem Bot eine Farbgruppe komplettiert.
+    Tausch, wenn der Mensch dadurch ebenfalls eine Gruppe bekommt (mit Ausgleich), sonst Kauf
+    zum Preis × offer_factor. Cooldown pro (Bot, Mensch, Gruppe), damit niemand zugespammt wird.
+    Rückgabe enthält "group" für das Cooldown-Log."""
+    cfg = params(room)
+    if not cfg["human_offers"]:
+        return None
+    reserve = cash_reserve(room, bot)
+    away = getattr(room, "away_players", set())
+    for group in sorted(STREET_GROUPS, key=lambda g: -GROUP_PRIORITY.get(g, 3)):
+        partner_id, wanted = _missing_from_single_owner(room, bot.id, group)
+        if not partner_id or partner_id in away:
+            continue
+        partner = next((p for p in room.players if p.id == partner_id), None)
+        if not partner or partner.is_bot or partner.is_bankrupt:
+            continue
+        if any(room.board_state[s]["mortgaged"] for s in wanted):
+            continue
+        last = room.bot_offer_log.get((bot.id, partner.id, group))
+        if last is not None and room.turn_counter - last < cfg["offer_cooldown"]:
+            continue
+        w_val = sum(SQUARES[s]["price"] for s in wanted)
+
+        # a) Tausch: der Mensch bekommt dafür eine eigene Gruppe komplett
+        for other in STREET_GROUPS:
+            if other == group:
+                continue
+            owner_id, give = _missing_from_single_owner(room, partner.id, other)
+            if owner_id != bot.id or any(room.board_state[s]["mortgaged"] for s in give):
+                continue
+            g_val = sum(SQUARES[s]["price"] for s in give)
+            offer_money = max(0, int((w_val - g_val) * 1.2))
+            if bot.money - offer_money < reserve:
+                continue
+            return dict(target_id=partner.id, offer_money=offer_money, offer_props=give,
+                        req_money=0, req_props=wanted, group=group)
+
+        # b) Kauf gegen Geld
+        offer_money = int(w_val * cfg["offer_factor"])
+        if bot.money - offer_money >= reserve + 100:
+            return dict(target_id=partner.id, offer_money=offer_money, offer_props=[],
+                        req_money=0, req_props=wanted, group=group)
+    return None

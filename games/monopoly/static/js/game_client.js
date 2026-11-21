@@ -307,8 +307,9 @@
             const myPlayer = (gameState && gameState.players) ? gameState.players.find(p => p.id === playerId) : null;
             const isMyTurn = (gameState && gameState.current_player && gameState.current_player.id === playerId);
             const inJailRolling = (isMyTurn && myPlayer && myPlayer.in_jail && !gameState.rolled);
-            const attemptNum = inJailRolling ? Math.min(3, (myPlayer.jail_rolls_this_turn || 0) + 1) : 0;
-            const baseRollText = inJailRolling ? `Würfeln (${attemptNum}/3)` : 'Würfeln';
+            const maxJailRolls = (gameState.settings && gameState.settings.jail_rolls) || 3;
+            const attemptNum = inJailRolling ? Math.min(maxJailRolls, (myPlayer.jail_rolls_this_turn || 0) + 1) : 0;
+            const baseRollText = inJailRolling ? `Würfeln (${attemptNum}/${maxJailRolls})` : 'Würfeln';
 
             if (endTurnTimerInterval && endTurnTimerMode === 'ROLL' && endTurnSecondsLeft > 0 && !isActivelyInteracting) {
                 rollLabelEl.textContent = `${baseRollText} (${endTurnSecondsLeft}s)`;
@@ -852,6 +853,111 @@
         };
     }
 
+    // ===== Gameplay-Paket: Raum-Einstellungen, Uhren, Zuschauer =====
+    let serverOffsetMs = 0;            // Serverzeit − lokale Zeit (für Countdown-Anzeigen)
+    let lastSettingsRenderKey = null;  // nur neu rendern, wenn sich etwas geändert hat
+
+    function serverNowSec() {
+        return (Date.now() + serverOffsetMs) / 1000;
+    }
+
+    function formatClock(totalSec) {
+        totalSec = Math.max(0, Math.floor(totalSec));
+        const h = Math.floor(totalSec / 3600);
+        const m = Math.floor((totalSec % 3600) / 60);
+        const sec = totalSec % 60;
+        const mm = String(m).padStart(h ? 2 : 1, '0');
+        return (h ? `${h}:` : '') + `${mm}:${String(sec).padStart(2, '0')}`;
+    }
+
+    function renderLobbySettings() {
+        const box = document.getElementById('lobby-settings');
+        if (!box || !gameState || !gameState.settings_schema) return;
+        const key = JSON.stringify([gameState.settings, isHost]);
+        if (key === lastSettingsRenderKey) return;
+        lastSettingsRenderKey = key;
+
+        const hint = document.getElementById('lobby-settings-hint');
+        if (hint) hint.textContent = isHost ? '(du bist Host und legst sie fest)' : '(legt der Host fest)';
+
+        const settings = gameState.settings || {};
+        box.innerHTML = gameState.settings_schema.map((item, i) => {
+            const val = settings[item.key];
+            const disabled = isHost ? '' : 'disabled';
+            const hintHtml = item.hint ? `<span class="setting-hint">${esc(item.hint)}</span>` : '';
+            if (item.type === 'toggle') {
+                return `<div class="lobby-setting">
+                    <label class="setting-toggle"><input type="checkbox" data-setting-idx="${i}" ${val ? 'checked' : ''} ${disabled}> ${esc(item.label)}</label>
+                    ${hintHtml}</div>`;
+            }
+            const opts = item.options.map((opt, j) =>
+                `<option value="${j}" ${opt[0] === val ? 'selected' : ''}>${esc(opt[1])}</option>`).join('');
+            return `<div class="lobby-setting">
+                <label>${esc(item.label)}</label>
+                <select data-setting-idx="${i}" ${disabled}>${opts}</select>
+                ${hintHtml}</div>`;
+        }).join('');
+
+        if (!isHost) return;
+        box.querySelectorAll('[data-setting-idx]').forEach(el => {
+            el.addEventListener('change', () => {
+                const item = gameState.settings_schema[parseInt(el.dataset.settingIdx, 10)];
+                const value = (item.type === 'toggle') ? el.checked : item.options[parseInt(el.value, 10)][0];
+                sendWsMessage({ action: 'SET_SETTINGS', settings: { [item.key]: value } });
+            });
+        });
+    }
+
+    function isSpectator() {
+        return !!(gameState && gameState.status !== 'LOBBY' && gameState.players &&
+            !gameState.players.some(p => p.id === playerId));
+    }
+
+    function updateSpectatorMode() {
+        document.body.classList.toggle('spectator-mode', isSpectator());
+    }
+
+    function setChip(id, valId, text, cls) {
+        const chip = document.getElementById(id);
+        if (!chip) return;
+        if (text === null) { chip.style.display = 'none'; return; }
+        chip.style.display = '';
+        chip.classList.toggle('warn', cls === 'warn');
+        chip.classList.toggle('danger', cls === 'danger');
+        const valEl = document.getElementById(valId);
+        if (valEl) valEl.textContent = text;
+    }
+
+    function updateHeaderClocks() {
+        const playing = gameState && gameState.status === 'PLAYING';
+        const now = serverNowSec();
+
+        // Spielzeit
+        if (playing && gameState.game_ends_at) {
+            const left = gameState.game_ends_at - now;
+            setChip('hdr-game-clock', 'hdr-game-clock-val', formatClock(left), left < 120 ? 'danger' : (left < 600 ? 'warn' : null));
+        } else {
+            setChip('hdr-game-clock', 'hdr-game-clock-val', null);
+        }
+
+        // Zug-Timer (nur solange ein Mensch selbst am Zug ist)
+        if (playing && gameState.turn_deadline && !gameState.turn_autoplay_id && !gameState.auction_state) {
+            const left = gameState.turn_deadline - now;
+            const who = (gameState.current_player && gameState.current_player.id === playerId) ? 'Du: ' : '';
+            setChip('hdr-turn-clock', 'hdr-turn-clock-val', who + formatClock(left), left < 10 ? 'danger' : (left < 30 ? 'warn' : null));
+        } else {
+            setChip('hdr-turn-clock', 'hdr-turn-clock-val', null);
+        }
+
+        // Frei-Parken-Topf
+        if (playing && gameState.settings && gameState.settings.free_parking_pot) {
+            setChip('hdr-pot', 'hdr-pot-val', `${(gameState.free_parking_pot || 0).toLocaleString('de-DE')} DM`, null);
+        } else {
+            setChip('hdr-pot', 'hdr-pot-val', null);
+        }
+    }
+    setInterval(updateHeaderClocks, 1000);
+
     function sendJoinMessage() {
         sendWsMessage({
             action: 'JOIN',
@@ -901,6 +1007,11 @@
             const wasMyTurn = (prevState && prevState.status === 'PLAYING' && prevState.current_player && prevState.current_player.id === playerId);
             const prevRolled = prevState ? !!prevState.rolled : false;
             gameState = msg.state;
+            if (typeof msg.state.server_time === 'number') {
+                serverOffsetMs = msg.state.server_time * 1000 - Date.now();
+            }
+            updateSpectatorMode();
+            updateHeaderClocks();
             if (msg.state.squares) squaresData = msg.state.squares;
             const nowMyTurn = (gameState && gameState.status === 'PLAYING' && gameState.current_player && gameState.current_player.id === playerId);
 
@@ -1425,6 +1536,7 @@
 
         // Is host
         isHost = (gameState.host_id === playerId);
+        renderLobbySettings();
         const startBtn = document.getElementById('btn-start-game');
         if (startBtn) {
             startBtn.style.display = isHost ? 'inline-block' : 'none';
@@ -1977,10 +2089,20 @@
                 ${didIWin ? 'DU HAST GEWONNEN!' : `${winner.name.toUpperCase()} HAT GEWONNEN!`}
             </div>
             <div style="font-size:13px; color:#cbd5e1; margin-bottom:18px; line-height:1.45;">
-                ${didIWin
-                    ? 'Alle Mitspieler sind bankrott – du bist als Letzter übrig und beherrschst das Monopoly-Imperium!'
-                    : `Alle anderen Mitspieler sind bankrott – <strong>${esc(winner.name)}</strong> ist als Letzter übrig geblieben!`}
+                ${winner.reason === 'time'
+                    ? `⏰ Die Spielzeit ist abgelaufen – ${didIWin ? 'du hast' : `<strong>${esc(winner.name)}</strong> hat`} das höchste Gesamtvermögen!`
+                    : (didIWin
+                        ? 'Alle Mitspieler sind bankrott – du bist als Letzter übrig und beherrschst das Monopoly-Imperium!'
+                        : `Alle anderen Mitspieler sind bankrott – <strong>${esc(winner.name)}</strong> ist als Letzter übrig geblieben!`)}
             </div>
+            ${(winner.reason === 'time' && Array.isArray(winner.ranking)) ? `
+            <table class="gameover-ranking">
+                ${winner.ranking.map((r, i) => `<tr>
+                    <td>${i + 1}.</td>
+                    <td><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${esc(r.color)}; margin-right:6px;"></span>${esc(r.name)}${r.id === playerId ? ' (Du)' : ''}</td>
+                    <td class="num">${(r.wealth || 0).toLocaleString('de-DE')} DM</td>
+                </tr>`).join('')}
+            </table>` : ''}
             <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(241,196,15,0.35); border-radius:14px; padding:14px 16px; margin-bottom:18px; display:flex; align-items:center; gap:14px; text-align:left;">
                 <div style="width:64px; height:64px; border-radius:50%; border:3px solid ${winner.color || '#f1c40f'}; background:rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
                     ${tokenGraphic}

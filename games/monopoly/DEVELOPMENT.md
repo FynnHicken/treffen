@@ -49,13 +49,14 @@ Umgebungsvariablen: `PORT` (8090), `HOST` (0.0.0.0), `MONOPOLY_AWAY_GRACE_SEC` (
 
 ```bash
 games/monopoly/tests/run_tests.sh          # alles (~5 min)
-games/monopoly/tests/run_tests.sh rules    # | driver | sim
+games/monopoly/tests/run_tests.sh rules    # | driver | settings | sim
 ```
 
 | Datei | Prüft |
 |---|---|
 | `test_rules_ws.py` | Host-Rechte, Zug-/Kaufprüfungen, Validierung, Chat-Bereinigung, `create_room`, Bankrott-Geldmenge |
 | `test_driver_ws.py` | Bot-Treiber (nur Bots), Reaktionszeit während Bot-Zügen, Abwesenheit → Computer → Rückkehr, Reconnect-Reihenfolge, Zuschauer, 240 parallele Nachrichten |
+| `test_settings.py` | Gameplay-Paket G1–G10 im Prozess gegen den echten Server-Code (Fake-Sockets, Sleeps auf 0): Einstellungs-Rechte, Startgeld, Frei-Parken-Topf, Los-Gehalt, Gefängnis-Würfe, Spieldauer, Zug-Timer, Schwierigkeiten, Bot-Angebote + Cooldown, Handelsablauf, 30 Partien mit gemischten Regeln |
 | `test_bot_ai_sim.py` | 11 Unit-Tests der Bot-KI + 40 komplette Bot-Partien über den **echten** Bot-Treiber (Sleeps auf 0) mit Invarianten-Prüfung nach jedem Schritt |
 
 Jede Datei endet mit Exit-Code ≠ 0 bei Fehlern; WS-Tests laufen gegen einen frischen Server pro Datei.
@@ -127,7 +128,12 @@ Reine Funktionen, die über normale `GameRoom`-Methoden ausgeführt werden (glei
 (gleichmäßig, Orange/Rot zuerst, bis 3 Häuser dann Hotels), `choose_unmortgage`, `resolve_debt`
 (erst Einzelstraßen beleihen, dann Häuser der schwächsten Gruppe), `jail_decision`,
 `evaluate_trade` (eigene Gruppe nie abgeben; was eine Gruppe komplettiert, zählt doppelt),
-`find_bot_trade` (Bot↔Bot-Tausch/Kauf gegen Patt).
+`find_bot_trade` (Bot↔Bot-Tausch/Kauf gegen Patt), `find_human_offer` (Angebote an Menschen mit
+Cooldown in `room.bot_offer_log`).
+**Schwierigkeit** (`room.settings["bot_difficulty"]`): `bot_ai.DIFFICULTY` + `params(room)`.
+`easy` = altes naives Verhalten (kauft nur mit 120 DM Puffer, Handel nach Kaufpreis, max. 2 Häuser,
+kein Bot-Handel, keine Angebote – kann im Patt enden), `normal` = volle KI, `hard` = höhere Gebote,
+80 % Reserve, Angebote alle 6 statt 10 Züge.
 Abwesende Menschen nutzen nur die vorsichtigen Regeln (kaufen bei Geld ≥ Preis + 120).
 
 ## 7. Protokoll
@@ -140,13 +146,15 @@ WebSocket: `ws(s)://<host>/<basepath>/ws/{room_id}/{player_id}`, JSON-Nachrichte
 `BUILD_HOUSE {sq_idx}`, `SELL_HOUSE {sq_idx}`, `TOGGLE_MORTGAGE {sq_idx}`, `PAY_BAIL`,
 `USE_JAIL_CARD`, `PROPOSE_TRADE {target_id, offer_money, offer_props[], req_money, req_props[],
 offer_jail_cards, req_jail_cards}`, `ACCEPT_TRADE`, `REJECT_TRADE`, `END_TURN`, `BANKRUPTCY`,
-`RESET_LOBBY`, `CHAT {message}`, `UPDATE_ANIM_CONFIG {password, config}`,
+`RESET_LOBBY`, `SET_SETTINGS {settings: {key: value}}` (nur Host, nur Lobby),
+`CHAT {message}`, `UPDATE_ANIM_CONFIG {password, config}`,
 `DEBUG_ACTION {password, cmd, target_id, value}`.
 
 **Server → Client** (`{"type": …, "state": room.to_dict(), "result"?: …}`): `STATE_UPDATE`,
 `GAME_STARTED`, `DICE_ROLLED`, `PROPERTY_BOUGHT`, `AUCTION_UPDATED`, `CARD_APPLIED`, `TAX_PAID`,
 `HOUSE_BUILT`, `HOUSE_SOLD`, `MORTGAGE_TOGGLED`, `BAIL_PAID`, `JAIL_CARD_USED`, `TRADE_PROPOSED`,
-`TRADE_ACCEPTED`, `TRADE_REJECTED`, `TURN_ENDED`, `BANKRUPTCY`, `LOBBY_RESET`, `CHAT`,
+`TRADE_ACCEPTED`, `TRADE_REJECTED` (auch bei Ablauf, `result.expired`), `TURN_ENDED`, `BANKRUPTCY`,
+`LOBBY_RESET`, `SETTINGS_UPDATED`, `GAME_OVER` (Spieldauer abgelaufen), `CHAT`,
 `ANIM_CONFIG_UPDATED`, `DEBUG_ACTION_APPLIED`, `PLAYER_DISCONNECTED`, `SPECTATOR`, `ROOM_EXPIRED`,
 `ERROR {message, code?}` (nur an den Absender).
 
@@ -155,7 +163,13 @@ HTTP: `GET /api/config`, `GET /api/rooms`, `POST /api/create_room {room_id?, pla
 
 `state` enthält u. a. `status` (LOBBY|PLAYING|GAME_OVER), `host_id`, `players[]` (+ `away`, `debts`),
 `current_player`, `dice`, `rolled`, `board_state`, `pending_action`, `pending_trade`,
-`auction_state`, `last_card`, `anim_config`, `logs` (letzte 25), `winner`, `squares`.
+`auction_state`, `last_card`, `anim_config`, `logs` (letzte 25), `winner` (bei Zeitende mit
+`reason: "time"` + `ranking[]`), `squares`, `settings`, `settings_schema`, `free_parking_pot`,
+`game_ends_at`, `turn_deadline`, `turn_autoplay_id`, `server_time` (Unix-Sekunden, für Countdowns).
+
+**Raum-Uhr** (`tick_room_timers` im 1-s-Cleanup-Loop, unter dem Lock): Handelsangebote verfallen
+nach `TRADE_TIMEOUT_SEC` (60 s); Spieldauer abgelaufen → `finish_by_time()` **sofort** (bzw. direkt
+nach einer laufenden Versteigerung); Zug-Timer abgelaufen → `turn_autoplay_id` setzen, Treiber anstoßen.
 
 ## 8. Client (`game_client.js`) – Einstiegspunkte
 
@@ -180,7 +194,7 @@ Legende: ✅ erledigt · 🚧 in Arbeit · ⬜ offen
 - ✅ Block 2 – Bot-Treiber + Lock, Abwesenheit, Zuschauer (Basis), Reconnect, Aufräumen
 - ✅ Block 3 – Bot-KI, Bot↔Bot-Handel, Kartentexte
 
-### 🚧 Gameplay-Paket (vom Nutzer am 2026-11-21 beauftragt)
+### ✅ Gameplay-Paket (vom Nutzer am 2026-11-21 beauftragt, umgesetzt am selben Tag)
 
 Alle Einstellungen sind **Raum-Einstellungen**, die der **Host in der Lobby** setzt
 (andere sehen sie nur). Speicherort: `GameRoom.settings` (Dict), validiert gegen
@@ -189,19 +203,20 @@ Neue Client-Aktion: `SET_SETTINGS {settings: {key: value}}` (nur Host, nur `LOBB
 
 | # | Feature | Spezifikation | Status |
 |---|---|---|---|
-| G1 | Startgeld | `start_money` ∈ {1000, 1500, 2000, 2500}, Standard 1500 | ⬜ |
-| G2 | Frei-Parken-Topf | `free_parking_pot` bool. Steuern, Strafkarten (`PAY_MONEY`, `PAY_FOR_BUILDINGS`) und Kaution/Gefängnis-Bußgeld gehen in `room.free_parking_pot` (nur tatsächlich bezahlter Anteil!). Wer auf Feld 20 landet, bekommt den Topf. Topf in `state`, Anzeige im Header. | ⬜ |
-| G3 | Doppeltes Gehalt auf Los | `double_go` bool: genau auf Feld 0 landen (Würfel oder Karte „Rücke vor bis auf Los“) → 400 statt 200 DM | ⬜ |
-| G4 | Gefängnis-Würfe | `jail_rolls` ∈ {1, 3}, Standard 3 (bisheriges Verhalten); ersetzt die feste 3 in `roll_dice` | ⬜ |
-| G5 | Spieldauer | `time_limit_min` ∈ {0 (= ∞), 30, 45, 60, 90, 120}. Start setzt `game_ends_at`. Nach Ablauf: Log-Hinweis, Spiel endet beim nächsten Zugwechsel; Sieger = höchstes Vermögen (`calculate_player_wealth`), `winner.reason = "time"` + `ranking[]`. Client: Restzeit im Header, Game-Over-Text für Zeitende. `state.server_time` für Uhrabgleich. | ⬜ |
-| G6 | Zug-Timer | `turn_timer_sec` ∈ {0 (aus), 60, 90, 120, 180}. Gilt nur für Menschen; `turn_started_at` bei jedem Spielerwechsel. Abgelaufen (und keine Auktion läuft) → `room.turn_autoplay_id = id`, `is_auto_controlled` liefert True, Computer beendet den Zug (vorsichtige Regeln wie bei Abwesenheit). Prüfung im 1-s-Cleanup-Loop. Client: Countdown in der Turn-Anzeige; vorhandenen Client-Timer (`syncEndTurnTimer`) berücksichtigen. | ⬜ |
-| G7 | Bot-Schwierigkeit | `bot_difficulty` ∈ {easy, normal, hard} (Raum). `bot_ai.DIFFICULTY[...]`-Parameter: easy = altes Verhalten (kauft bei Geld ≥ Preis+120, kein Blocken, naive Handelsbewertung, max. 2 Häuser, kein Bot-Handel, keine Angebote); normal = aktuelle KI; hard = höhere Gebote, kleinere Reserve, häufigere Angebote. | ⬜ |
-| G8 | Bot-Angebote an Menschen | Normal/Schwer: Bot schlägt Menschen einen Kauf/Tausch vor, wenn ihm das eine Farbgruppe komplettiert (Preis × 1,6 bzw. 1,5; Tausch mit Ausgleich). Cooldown pro (Bot, Mensch, Gruppe): 10 bzw. 6 Züge (`room.turn_counter`). Nur wenn kein anderes Angebot offen ist. Handelsangebote verfallen nach 60 s (Cleanup-Loop → `TRADE_REJECTED`). Ein Mensch darf ein eigenes Angebot machen, auch wenn ihm gerade ein Bot-Angebot vorliegt (ersetzt es). | ⬜ |
-| G9 | Zuschauer-Ansicht | Client: `body.spectator-mode` wenn `PLAYING` und nicht in `players` → Banner „👀 Du schaust zu – in der nächsten Runde spielst du mit“, Aktions-Dock/Konto ausgeblendet, Spielerlisten bleiben sichtbar. | ⬜ |
-| G10 | Lobby-UI für Einstellungen | Abschnitt in `#lobby-step-room` vor `.lobby-actions`, aus `settings_schema` generiert; Host: Selects/Toggles → `SET_SETTINGS`; Gäste: read-only. Im Spiel: kompakte Regel-Übersicht (z. B. im Log-Panel oder Tooltip). | ⬜ |
+| G1 | Startgeld | `start_money` ∈ {1000, 1500, 2000, 2500}, Standard 1500 | ✅ |
+| G2 | Frei-Parken-Topf | `free_parking_pot` bool. Steuern, Strafkarten (`PAY_MONEY`, `PAY_FOR_BUILDINGS`) und Kaution/Gefängnis-Bußgeld gehen in `room.free_parking_pot` (nur tatsächlich bezahlter Anteil!). Wer auf Feld 20 landet, bekommt den Topf. Topf in `state`, Anzeige im Header. | ✅ |
+| G3 | Doppeltes Gehalt auf Los | `double_go` bool: genau auf Feld 0 landen (Würfel oder Karte „Rücke vor bis auf Los“) → 400 statt 200 DM | ✅ |
+| G4 | Gefängnis-Würfe | `jail_rolls` ∈ {1, 3}, Standard 3 (bisheriges Verhalten); ersetzt die feste 3 in `roll_dice` | ✅ |
+| G5 | Spieldauer | `time_limit_min` ∈ {0 (= ∞), 30, 45, 60, 90, 120}. Start setzt `game_ends_at`. Nach Ablauf endet das Spiel **sofort** (bzw. direkt nach einer laufenden Versteigerung – sonst könnte ein Mensch ohne Zug-Timer das Ende hinauszögern); Sieger = höchstes Vermögen (`calculate_player_wealth`), `winner.reason = "time"` + `ranking[]`. Client: Restzeit im Header, Game-Over-Text für Zeitende. `state.server_time` für Uhrabgleich. | ✅ |
+| G6 | Zug-Timer | `turn_timer_sec` ∈ {0 (aus), 60, 90, 120, 180}. Gilt nur für Menschen; `turn_started_at` bei jedem Spielerwechsel. Abgelaufen (und keine Auktion läuft) → `room.turn_autoplay_id = id`, `is_auto_controlled` liefert True, Computer beendet den Zug (vorsichtige Regeln wie bei Abwesenheit). Prüfung im 1-s-Cleanup-Loop. Client: Countdown in der Turn-Anzeige; vorhandenen Client-Timer (`syncEndTurnTimer`) berücksichtigen. | ✅ |
+| G7 | Bot-Schwierigkeit | `bot_difficulty` ∈ {easy, normal, hard} (Raum). `bot_ai.DIFFICULTY[...]`-Parameter: easy = altes Verhalten (kauft bei Geld ≥ Preis+120, kein Blocken, naive Handelsbewertung, max. 2 Häuser, kein Bot-Handel, keine Angebote); normal = aktuelle KI; hard = höhere Gebote, kleinere Reserve, häufigere Angebote. | ✅ |
+| G8 | Bot-Angebote an Menschen | Normal/Schwer: Bot schlägt Menschen einen Kauf/Tausch vor, wenn ihm das eine Farbgruppe komplettiert (Preis × 1,6 bzw. 1,5; Tausch mit Ausgleich). Cooldown pro (Bot, Mensch, Gruppe): 10 bzw. 6 Züge (`room.turn_counter`). Nur wenn kein anderes Angebot offen ist. Handelsangebote verfallen nach 60 s (Cleanup-Loop → `TRADE_REJECTED`). Ein Mensch darf ein eigenes Angebot machen, auch wenn ihm gerade ein Bot-Angebot vorliegt (ersetzt es). | ✅ |
+| G9 | Zuschauer-Ansicht | Client: `body.spectator-mode` wenn `PLAYING` und nicht in `players` → Banner „👀 Du schaust zu – in der nächsten Runde spielst du mit“, Aktions-Dock/Konto ausgeblendet, Spielerlisten bleiben sichtbar. | ✅ |
+| G10 | Lobby-UI für Einstellungen | Abschnitt in `#lobby-step-room` vor `.lobby-actions`, aus `settings_schema` generiert; Host: Selects/Toggles → `SET_SETTINGS`; Gäste: read-only. Im Spiel: kompakte Regel-Übersicht (z. B. im Log-Panel oder Tooltip). | ✅ |
 
-Tests dafür: neue Datei `tests/test_settings_ws.py` + Erweiterung der Simulation (alle
-Schwierigkeiten, Topf an/aus, Zeitlimit) – die Simulation darf keine Invarianten verletzen.
+Tests: `tests/test_settings.py` (siehe Abschnitt 3). Offene Punkte aus diesem Paket:
+im Browser noch nicht von Hand durchgespielt (Lobby-Einstellungen, Header-Uhren, Zuschauer-Banner,
+Game-Over-Rangliste) – bitte beim ersten echten Spiel prüfen.
 
 ### ⬜ Später / Ideen
 - Debug-Passwort aus dem Client entfernen (Server-ENV) – Nutzer: „später“.
