@@ -16,7 +16,7 @@ fi
 
 run_ws_test() {  # $1 = Testdatei; startet einen frischen Server im selben Container
     echo; echo "=================== $1"
-    $ENGINE run --rm -e MONOPOLY_AWAY_GRACE_SEC=3 -v "$PWD":/src:ro,Z "$IMAGE" sh -c "
+    $ENGINE run --rm -e MONOPOLY_AWAY_GRACE_SEC=3 -v "$PWD":/src:ro,z "$IMAGE" sh -c "
         cd /src && (python -u server/main.py >/tmp/server.log 2>&1 &) ; sleep 3
         timeout 300 python -I tests/$1; rc=\$?
         n=\$(grep -c Traceback /tmp/server.log || true)
@@ -25,7 +25,7 @@ run_ws_test() {  # $1 = Testdatei; startet einen frischen Server im selben Conta
 }
 run_inproc_test() {  # $1 = Testdatei; läuft im Prozess gegen den Server-Code (kein Netz)
     echo; echo "=================== $1"
-    $ENGINE run --rm -v "$PWD":/src:ro,Z "$IMAGE" sh -c "cd /tmp && timeout 900 python -I /src/tests/$1 > /tmp/out.txt 2>&1; rc=\$?; grep -v '^\[Room\|^INFO' /tmp/out.txt; exit \$rc"
+    $ENGINE run --rm -v "$PWD":/src:ro,z "$IMAGE" sh -c "cd /tmp && timeout 900 python -I /src/tests/$1 > /tmp/out.txt 2>&1; rc=\$?; grep -v '^\[Room\|^INFO' /tmp/out.txt; exit \$rc"
 }
 
 what=${1:-all}

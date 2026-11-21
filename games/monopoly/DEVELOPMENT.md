@@ -34,16 +34,30 @@ cd games/monopoly
 podman build -t localhost/mono-test-deps -f tests/Containerfile .
 # Dev-Server (Code wird read-only gemountet → Client-Änderungen = Browser-Reload,
 # Server-Änderungen = Container neu starten; laufende Partien gehen dabei verloren)
-podman run -d --name treffen-monopoly-dev -p 8090:8090 -v .:/src:ro,Z \
+podman run -d --name treffen-monopoly-dev -p 8090:8090 -v .:/src:ro,z \
     localhost/mono-test-deps sh -c 'cd /src && exec python -u server/main.py'
 podman restart treffen-monopoly-dev     # nach Server-Änderungen
 podman logs -f treffen-monopoly-dev
 ```
 
+**Wichtig: immer `:z` (klein) beim Mounten** – `:Z` vergibt ein privates SELinux-Label und nimmt dem
+jeweils anderen Container (Dev-Server ↔ Tests) die Leserechte (`PermissionError: index.html`).
+
 Aufruf: **`http://127.0.0.1:8090/`** (nicht `localhost` – das löst auf diesem Rechner zu IPv6 auf,
 wo die rootless-Portweiterleitung nicht antwortet). Im WLAN: `http://<LAN-IP>:8090/`.
 
 Umgebungsvariablen: `PORT` (8090), `HOST` (0.0.0.0), `MONOPOLY_AWAY_GRACE_SEC` (30).
+
+### Weitere Asset-Quellen außerhalb des Repos (Stand 2026-11-22)
+Unter `~/AGY/Treffen/` liegen alte Projektordner des Nutzers. Nichts davon ist im Repo; vor einer Übernahme
+mit dem Nutzer klären (Herkunft/Lizenz):
+- `Monopoly/extracted_assets/` – aus „Monopoly Plus“ (Ubisoft/Asobo) extrahiert: 418 SFX + 150 deutsche
+  Sprachzeilen + 36 Musikstücke (nur Zahlen-IDs, müssen angehört/benannt werden), Texturen (Geldscheine,
+  Figuren, Würfel, UI), `data/strings_de.json`, `data/cards.json`.
+- `Skribbol/Monopoly/Assets/` – Quelle der bereits genutzten Assets (z. B. `08_Audio/figur_*.wav`: das sind
+  Bewegungs-Schleifen pro Figur à 0,25–3 s, aktuell ungenutzt).
+- `Skribbol/Monopoly/monopoly-master/` – Open-Source-Monopoly von Daniel Moyer (MIT-Lizenz), u. a. `ai.js`.
+- `partyhub-bundle/` – ältere Fassung dieses Repos (in der Git-Historie enthalten, nichts Neues).
 
 ## 3. Tests
 
