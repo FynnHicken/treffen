@@ -88,6 +88,7 @@
     let manualCallbacks = { onTokenTap: null, onDeckClick: null, onSquareAction: null };
     let manualHighlight = { active: false, playerId: null, targetIdx: null, drawDeck: null };
     let manualTargetRing = null;
+    let hoveredCard = null;
 
     // Deed card texture mapping
     const DEED_CARD_IMAGES = {
@@ -1056,7 +1057,7 @@
 
             // Pointer interaction for physical cards on the table & board squares
             let pointerDownPos = null;
-            let hoveredCard = null;
+            hoveredCard = null;
 
             renderer.domElement.addEventListener('pointerdown', (e) => {
                 pointerDownPos = { x: e.clientX, y: e.clientY, time: performance.now() };
