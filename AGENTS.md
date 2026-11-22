@@ -56,6 +56,11 @@ Räumen, Host, Abstimmung, synchronem Start) bettet mehrere Multiplayer-Spiele p
   Host-/Spieleraktionen nutzen nur die **an den Socket gebundene** ID, nie Felder aus der Nachricht.
 - Monopoly: Aktionen prüfen Zug/Host/Mitgliedschaft serverseitig; Raum-/Spieler-IDs `[A-Za-z0-9_-]{1,40}`.
 
+## Werkzeuge
+
+- `tools/asset-labeler/` – lokale Seite zum Anhören/Ansehen und Benennen von Sounds und 3D-Modellen
+  (Labels in `~/AGY/Treffen/asset-labels.json`). Siehe dessen README.
+
 ## Testen
 
 - **Monopoly**: `games/monopoly/tests/run_tests.sh` (Podman oder Docker, nichts auf dem Host

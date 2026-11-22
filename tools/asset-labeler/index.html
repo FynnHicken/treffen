@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asset-Labeler</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --ink:#e2e8f0; --muted:#94a3b8; --line:#334155;
+          --accent:#f1c40f; --ok:#2ecc71; --bad:#e74c3c; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.4 system-ui, sans-serif; }
+  header { position:sticky; top:0; z-index:5; background:var(--bg); border-bottom:1px solid var(--line); padding:10px 16px; }
+  h1 { font-size:17px; margin:0 0 8px; }
+  .tabs button, .btn { background:var(--panel2); color:var(--ink); border:1px solid var(--line); border-radius:8px;
+          padding:6px 12px; cursor:pointer; font:inherit; }
+  .tabs button.active { background:var(--accent); color:#000; border-color:var(--accent); font-weight:700; }
+  .filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:8px; }
+  .filters input[type=search], select, input[type=text] { background:#0b1220; color:var(--ink); border:1px solid var(--line);
+          border-radius:8px; padding:6px 8px; font:inherit; }
+  .progress { margin-left:auto; color:var(--muted); font-size:13px; }
+  .progress b { color:var(--ok); }
+  main { display:grid; grid-template-columns:minmax(0,1fr) 420px; gap:12px; padding:12px 16px; }
+  @media (max-width: 980px) { main { grid-template-columns:1fr; } #side { order:-1; } }
+  #list { display:flex; flex-direction:column; gap:4px; }
+  .row { display:grid; grid-template-columns:36px minmax(0,1.2fr) minmax(0,1fr) 140px 34px; gap:8px; align-items:center;
+          background:var(--panel); border:1px solid transparent; border-radius:8px; padding:6px 8px; cursor:pointer; }
+  .row.sel { border-color:var(--accent); background:#2a3a55; }
+  .row.done .fname::before { content:"✓ "; color:var(--ok); }
+  .row .fname { font-family:ui-monospace, monospace; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row .meta { color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row input[type=text] { width:100%; }
+  .row .play { width:32px; height:32px; border-radius:50%; border:none; background:var(--panel2); color:var(--ink); cursor:pointer; }
+  .row .play[disabled] { opacity:.35; cursor:not-allowed; }
+  .row .star { background:none; border:none; font-size:18px; cursor:pointer; filter:grayscale(1); opacity:.5; }
+  .row .star.on { filter:none; opacity:1; }
+  #side { position:sticky; top:118px; align-self:start; display:flex; flex-direction:column; gap:10px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; }
+  .card h2 { font-size:14px; margin:0 0 8px; }
+  #wave { width:100%; height:90px; background:#0b1220; border-radius:6px; display:block; }
+  #viewer { width:100%; height:340px; background:#0b1220; border-radius:6px; display:block; }
+  .kv { display:grid; grid-template-columns:110px 1fr; gap:4px 8px; font-size:12px; }
+  .kv span:nth-child(odd) { color:var(--muted); }
+  .kv code { word-break:break-all; font-size:11px; }
+  .hint { color:var(--muted); font-size:12px; }
+  .warn { color:#fbbf24; font-size:12px; }
+  textarea { width:100%; min-height:54px; background:#0b1220; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:6px 8px; font:inherit; }
+  .status { font-size:12px; color:var(--muted); }
+  kbd { background:#0b1220; border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:0 4px; font-size:11px; }
+  .suggest { font-size:11px; color:#93c5fd; cursor:pointer; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎧 Asset-Labeler – Sounds &amp; 3D-Modelle benennen</h1>
+  <div class="tabs">
+    <button data-tab="sound" class="active">Sounds</button>
+    <button data-tab="model">3D-Modelle</button>
+    <button class="btn" id="btn-export" title="Labels als JSON herunterladen">⬇ Export</button>
+    <button class="btn" id="btn-rescan" title="Ordner neu einlesen (z. B. nach dem Umwandeln)">↻ Neu scannen</button>
+  </div>
+  <div class="filters">
+    <input type="search" id="q" placeholder="Suchen (Datei, Name, Notiz) …">
+    <select id="folder"><option value="">Alle Ordner</option></select>
+    <select id="catfilter"><option value="">Alle Kategorien</option></select>
+    <label><input type="checkbox" id="only-open"> nur unbenannte</label>
+    <label><input type="checkbox" id="only-playable" checked> nur abspielbare/anzeigbare</label>
+    <label><input type="checkbox" id="only-star"> nur ⭐</label>
+    <span class="progress" id="progress"></span>
+  </div>
+</header>
+<main>
+  <section id="list"></section>
+  <aside id="side">
+    <div class="card">
+      <h2 id="detail-title">Nichts ausgewählt</h2>
+      <canvas id="wave" width="800" height="180"></canvas>
+      <canvas id="viewer" style="display:none"></canvas>
+      <p class="warn" id="detail-warn" style="display:none"></p>
+      <div class="kv" id="detail-kv" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <h2>Beschreibung</h2>
+      <textarea id="note" placeholder="Notiz, z. B. „klingt wie Würfel auf Holz, gut für Wurf“"></textarea>
+      <div class="status" id="save-status">–</div>
+    </div>
+    <div class="card hint">
+      <kbd>Leertaste</kbd> abspielen/stoppen · <kbd>↑</kbd>/<kbd>↓</kbd> vorheriger/nächster ·
+      <kbd>Enter</kbd> Name bearbeiten (Enter erneut = speichern &amp; weiter) · <kbd>S</kbd> ⭐ fürs Spiel ·
+      <kbd>Esc</kbd> Feld verlassen. Alles wird automatisch gespeichert.
+    </div>
+  </aside>
+</main>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+const CATS = {
+  sound: ["Würfel", "Figur / Schritt", "Geld", "Karten", "Häuser & Hotels", "Gefängnis", "Auktion & Handel",
+          "Bankrott / Sieg", "UI / Klick", "Stimme", "Musik", "Ambiente", "Sonstiges", "Unbrauchbar"],
+  model: ["Spielfigur", "Haus / Hotel", "Würfel", "Spielbrett", "Geld", "Karte", "Figur / NPC", "Kulisse",
+          "UI", "Effekt", "Sonstiges", "Unbrauchbar"],
+};
+const state = { tab: "sound", items: [], labels: {}, filtered: [], sel: -1, audio: null, playingId: null };
+const $ = (id) => document.getElementById(id);
+
+// ---------- Laden ----------
+async function load(rescan = false) {
+  const [m, l] = await Promise.all([
+    fetch("/api/manifest" + (rescan ? "?rescan=1" : "")).then(r => r.json()),
+    fetch("/api/labels").then(r => r.json()),
+  ]);
+  state.items = m.items; state.labels = l;
+  const folders = [...new Set(m.items.map(i => i.folder))].sort();
+  $("folder").innerHTML = '<option value="">Alle Ordner</option>' + folders.map(f => `<option>${escapeHtml(f)}</option>`).join("");
+  fillCats(); render();
+}
+function fillCats() {
+  $("catfilter").innerHTML = '<option value="">Alle Kategorien</option><option value="__none">(ohne Kategorie)</option>' +
+    CATS[state.tab].map(c => `<option>${escapeHtml(c)}</option>`).join("");
+}
+function escapeHtml(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+// Vorschlag aus sprechenden Dateinamen ("figur_hund_laufen.wav" → "Figur Hund laufen"); reine Zahlen → keiner
+function suggestion(item) {
+  if (item.model_name) return item.model_name;
+  let base = item.file.replace(/\.(TMESH\.)?(tmesh|obj|wav|ogg|mp3)$/i, "");
+  if (/^(sfx_bank\d+_|music_)?\d+$/.test(base)) return "";
+  base = base.replace(/_MESH$/i, "").replace(/__+/g, " · ").replace(/_/g, " ").trim();
+  return base.charAt(0).toUpperCase() + base.slice(1).toLowerCase();
+}
+const usable = (i) => i.kind === "sound" ? i.playable : i.viewable;
+
+// ---------- Liste ----------
+function render() {
+  const q = $("q").value.toLowerCase(), folder = $("folder").value, cat = $("catfilter").value;
+  state.filtered = state.items.filter(i => {
+    if (i.kind !== state.tab) return false;
+    const lab = state.labels[i.id] || {};
+    if (folder && i.folder !== folder) return false;
+    if ($("only-open").checked && lab.name) return false;
+    if ($("only-playable").checked && !usable(i)) return false;
+    if ($("only-star").checked && !lab.use) return false;
+    if (cat === "__none" && lab.category) return false;
+    if (cat && cat !== "__none" && lab.category !== cat) return false;
+    if (q && ![i.file, lab.name, lab.note, i.folder].join(" ").toLowerCase().includes(q)) return false;
+    return true;
+  });
+  const all = state.items.filter(i => i.kind === state.tab);
+  const named = all.filter(i => (state.labels[i.id] || {}).name).length;
+  const unusable = all.filter(i => !usable(i)).length;
+  $("progress").innerHTML = `<b>${named}</b> / ${all.length} benannt · ${state.filtered.length} angezeigt` +
+    (unusable ? ` · <span style="color:#fbbf24">${unusable} noch nicht ${state.tab === "sound" ? "abspielbar" : "anzeigbar"}</span>` : "");
+
+  const list = $("list");
+  list.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  state.filtered.forEach((item, idx) => {
+    const lab = state.labels[item.id] || {};
+    const row = document.createElement("div");
+    row.className = "row" + (lab.name ? " done" : "") + (idx === state.sel ? " sel" : "");
+    row.dataset.idx = idx;
+    const metaBits = item.kind === "sound"
+      ? [item.duration ? item.duration + " s" : "", item.codec, item.paths.length > 1 ? `${item.paths.length}× vorhanden` : ""]
+      : [item.vertices ? item.vertices + " Punkte" : "", item.ext, item.paths.length > 1 ? `${item.paths.length}× vorhanden` : ""];
+    row.innerHTML = `
+      <button class="play" ${usable(item) ? "" : "disabled"} title="${item.kind === "sound" ? "Abspielen" : "Ansehen"}">${item.kind === "sound" ? "▶" : "👁"}</button>
+      <div><div class="fname"></div><div class="meta"></div></div>
+      <div><input type="text" placeholder="Name …"><div class="suggest"></div></div>
+      <select><option value="">Kategorie …</option>${CATS[state.tab].map(c => `<option ${lab.category === c ? "selected" : ""}>${escapeHtml(c)}</option>`).join("")}</select>
+      <button class="star ${lab.use ? "on" : ""}" title="Fürs Spiel vormerken (S)">⭐</button>`;
+    row.querySelector(".fname").textContent = item.file;
+    row.querySelector(".meta").textContent = item.folder + " · " + metaBits.filter(Boolean).join(" · ");
+    const nameInput = row.querySelector("input");
+    nameInput.value = lab.name || "";
+    const sug = suggestion(item);
+    const sugEl = row.querySelector(".suggest");
+    if (sug && !lab.name) {
+      sugEl.textContent = "Vorschlag: " + sug;
+      sugEl.onclick = (e) => { e.stopPropagation(); nameInput.value = sug; setLabel(item, { name: sug }); };
+    }
+    nameInput.addEventListener("input", () => setLabel(item, { name: nameInput.value.trim() }));
+    nameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); nameInput.blur(); select(Math.min(idx + 1, state.filtered.length - 1), true); }
+      if (e.key === "Escape") nameInput.blur();
+    });
+    nameInput.addEventListener("focus", () => { if (state.sel !== idx) select(idx, false); });
+    row.querySelector("select").addEventListener("change", (e) => setLabel(item, { category: e.target.value }));
+    row.querySelector(".star").addEventListener("click", (e) => { e.stopPropagation(); toggleStar(item, e.currentTarget); });
+    row.querySelector(".play").addEventListener("click", (e) => { e.stopPropagation(); select(idx, false); activate(item); });
+    row.addEventListener("click", (e) => { if (e.target.tagName !== "INPUT" && e.target.tagName !== "SELECT") select(idx, false); });
+    frag.appendChild(row);
+  });
+  list.appendChild(frag);
+  if (!state.filtered.length) list.innerHTML = '<p class="hint">Keine Einträge für diese Filter.</p>';
+}
+
+function select(idx, focusName) {
+  if (idx < 0 || idx >= state.filtered.length) return;
+  state.sel = idx;
+  document.querySelectorAll(".row.sel").forEach(r => r.classList.remove("sel"));
+  const row = document.querySelector(`.row[data-idx="${idx}"]`);
+  if (row) { row.classList.add("sel"); row.scrollIntoView({ block: "nearest" }); if (focusName) row.querySelector("input").focus(); }
+  showDetail(state.filtered[idx]);
+}
+
+// ---------- Speichern ----------
+let pending = {}, saveTimer = null;
+function setLabel(item, patch) {
+  const lab = { ...(state.labels[item.id] || {}), ...patch, file: item.file, paths: item.paths };
+  state.labels[item.id] = lab;
+  pending[item.id] = lab;
+  const row = document.querySelector(`.row.sel`);
+  if (row && patch.name !== undefined) row.classList.toggle("done", !!lab.name);
+  $("save-status").textContent = "… speichere";
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flush, 400);
+}
+async function flush() {
+  const body = pending; pending = {};
+  try {
+    const r = await fetch("/api/labels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const j = await r.json();
+    $("save-status").textContent = `✓ gespeichert (${j.count} Labels) – ${new Date().toLocaleTimeString("de-DE")}`;
+    const all = state.items.filter(i => i.kind === state.tab);
+    const named = all.filter(i => (state.labels[i.id] || {}).name).length;
+    $("progress").querySelector("b").textContent = named;
+  } catch (e) {
+    Object.assign(pending, body);
+    $("save-status").textContent = "⚠️ Speichern fehlgeschlagen – läuft der Server noch?";
+  }
+}
+function toggleStar(item, el) {
+  const on = !(state.labels[item.id] || {}).use;
+  setLabel(item, { use: on });
+  if (el) el.classList.toggle("on", on);
+}
+$("note").addEventListener("input", () => { const it = state.filtered[state.sel]; if (it) setLabel(it, { note: $("note").value }); });
+
+// ---------- Detail: Sound ----------
+const waveCache = {};
+let audioCtx = null;
+async function activate(item) {
+  if (item.kind === "sound") return togglePlay(item);
+  return showModel(item);
+}
+function togglePlay(item) {
+  if (!item.playable) return;
+  if (state.audio && state.playingId === item.id && !state.audio.paused) { state.audio.pause(); return; }
+  if (state.audio) state.audio.pause();
+  state.audio = new Audio("/media/" + item.paths[0].split("/").map(encodeURIComponent).join("/"));
+  state.playingId = item.id;
+  state.audio.play().catch(err => { $("detail-warn").style.display = ""; $("detail-warn").textContent = "Abspielen fehlgeschlagen: " + err.message; });
+  drawWave(item);
+}
+async function drawWave(item) {
+  const cv = $("wave"), g = cv.getContext("2d");
+  g.clearRect(0, 0, cv.width, cv.height);
+  if (!item.playable) return;
+  try {
+    if (!waveCache[item.id]) {
+      audioCtx = audioCtx || new AudioContext();
+      const buf = await fetch("/media/" + item.paths[0].split("/").map(encodeURIComponent).join("/")).then(r => r.arrayBuffer());
+      const audio = await audioCtx.decodeAudioData(buf);
+      const data = audio.getChannelData(0), step = Math.ceil(data.length / cv.width), peaks = [];
+      for (let x = 0; x < cv.width; x++) {
+        let mx = 0; for (let i = x * step; i < (x + 1) * step && i < data.length; i++) mx = Math.max(mx, Math.abs(data[i]));
+        peaks.push(mx);
+      }
+      waveCache[item.id] = { peaks, duration: audio.duration };
+    }
+    const { peaks, duration } = waveCache[item.id];
+    g.fillStyle = "#f1c40f";
+    peaks.forEach((p, x) => { const h = Math.max(1, p * cv.height * 0.95); g.fillRect(x, (cv.height - h) / 2, 1, h); });
+    g.fillStyle = "#94a3b8"; g.font = "22px system-ui"; g.fillText(duration.toFixed(2) + " s", 8, 26);
+  } catch (e) { g.fillStyle = "#e74c3c"; g.font = "22px system-ui"; g.fillText("Wellenform nicht verfügbar", 8, 26); }
+}
+
+// ---------- Detail: Modell ----------
+let three = null;
+async function showModel(item) {
+  const cv = $("viewer");
+  if (!item.viewable) return;
+  if (!three) {
+    const THREE = await import("three");
+    const { OBJLoader } = await import("three/addons/loaders/OBJLoader.js");
+    const { OrbitControls } = await import("three/addons/controls/OrbitControls.js");
+    const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true });
+    const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0b1220);
+    const cam = new THREE.PerspectiveCamera(40, 1, 0.01, 1000);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x334155, 1.2));
+    const dl = new THREE.DirectionalLight(0xffffff, 1.4); dl.position.set(3, 5, 4); scene.add(dl);
+    const controls = new OrbitControls(cam, cv); controls.enableDamping = true; controls.autoRotate = true;
+    three = { THREE, OBJLoader, renderer, scene, cam, controls, obj: null };
+    const loop = () => {
+      const w = cv.clientWidth, h = cv.clientHeight;
+      if (cv.width !== w || cv.height !== h) { renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); }
+      controls.update(); renderer.render(scene, cam); requestAnimationFrame(loop);
+    };
+    loop();
+  }
+  const { THREE, OBJLoader, scene, cam, controls } = three;
+  const text = await fetch("/media/" + item.paths[0].split("/").map(encodeURIComponent).join("/")).then(r => r.text());
+  if (three.obj) scene.remove(three.obj);
+  const obj = new OBJLoader().parse(text);
+  obj.traverse(c => { if (c.isMesh) c.material = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.35 }); });
+  const box = new THREE.Box3().setFromObject(obj), size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
+  obj.position.sub(center); scene.add(obj); three.obj = obj;
+  const r = Math.max(size.x, size.y, size.z) || 1;
+  cam.position.set(r * 1.4, r * 0.9, r * 1.6); controls.target.set(0, 0, 0); cam.near = r / 100; cam.far = r * 100; cam.updateProjectionMatrix();
+}
+
+function showDetail(item) {
+  const lab = state.labels[item.id] || {};
+  $("detail-title").textContent = lab.name || suggestion(item) || item.file;
+  $("note").value = lab.note || "";
+  $("wave").style.display = item.kind === "sound" ? "" : "none";
+  $("viewer").style.display = item.kind === "model" && item.viewable ? "" : "none";
+  const warn = $("detail-warn");
+  if (!usable(item)) {
+    warn.style.display = "";
+    warn.textContent = item.kind === "sound"
+      ? `Format ${item.codec}: der Browser kann das nicht abspielen. Erst umwandeln (siehe README), dann „Neu scannen“.`
+      : (item.format || "Nicht darstellbar") + " – nur über den Namen benennbar.";
+  } else warn.style.display = "none";
+  const kv = [["Datei", item.file], ["Ordner", item.folder], ["Größe", (item.size / 1024).toFixed(0) + " KB"]];
+  if (item.kind === "sound") kv.push(["Format", `${item.codec}${item.rate ? ", " + item.rate + " Hz" : ""}${item.channels ? ", " + item.channels + " Kanal" : ""}`]);
+  if (item.vertices) kv.push(["Punkte", item.vertices]);
+  if (item.paths.length > 1) kv.push(["Auch in", item.paths.slice(1).join("\n")]);
+  kv.push(["ID", item.id]);
+  $("detail-kv").innerHTML = kv.map(([k, v]) => `<span>${escapeHtml(k)}</span><code>${escapeHtml(v)}</code>`).join("");
+  if (item.kind === "sound") drawWave(item); else showModel(item);
+}
+
+// ---------- Bedienung ----------
+document.querySelectorAll(".tabs [data-tab]").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".tabs [data-tab]").forEach(x => x.classList.toggle("active", x === b));
+  state.tab = b.dataset.tab; state.sel = -1; fillCats(); render();
+}));
+["q", "folder", "catfilter", "only-open", "only-playable", "only-star"].forEach(id => $(id).addEventListener("input", () => { state.sel = -1; render(); }));
+$("btn-rescan").addEventListener("click", () => load(true));
+$("btn-export").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(state.labels, null, 1)], { type: "application/json" });
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "asset-labels.json" }); a.click();
+});
+document.addEventListener("keydown", (e) => {
+  const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName);
+  if (typing) return;
+  if (e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); select(state.sel + 1, false); const it = state.filtered[state.sel]; if (it && it.kind === "sound") togglePlay(it); }
+  else if (e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); select(Math.max(0, state.sel - 1), false); const it = state.filtered[state.sel]; if (it && it.kind === "sound") togglePlay(it); }
+  else if (e.key === " ") { e.preventDefault(); const it = state.filtered[state.sel]; if (it) activate(it); }
+  else if (e.key === "Enter") { e.preventDefault(); select(Math.max(0, state.sel), true); }
+  else if (e.key === "s" || e.key === "S") { const it = state.filtered[state.sel]; if (it) toggleStar(it, document.querySelector(".row.sel .star")); }
+});
+window.addEventListener("beforeunload", () => { if (Object.keys(pending).length) navigator.sendBeacon("/api/labels", new Blob([JSON.stringify(pending)], { type: "application/json" })); });
+load();
+</script>
+</body>
+</html>
