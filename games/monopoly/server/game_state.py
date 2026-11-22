@@ -221,6 +221,9 @@ SETTINGS_SCHEMA = [
     {"key": "build_rule", "label": "Häuser bauen", "type": "select", "default": "on_group",
      "options": [["on_group", "Nur auf der Farbe, auf der man steht"], ["anytime", "Jederzeit (Original)"]],
      "hint": "Standard: im eigenen Zug, wenn die Figur auf einer Straße dieser Farbgruppe steht."},
+    {"key": "play_mode", "label": "Spielmodus", "type": "select", "default": "auto",
+     "options": [["auto", "Automatisch"], ["manual", "Manuell (selbst würfeln, ziehen & aufdecken)"]],
+     "hint": "Manuell: Würfelbecher schütteln, Figur Schritt für Schritt ziehen und Karten selbst aufdecken."},
 ]
 DEFAULT_SETTINGS = {item["key"]: item["default"] for item in SETTINGS_SCHEMA}
 
@@ -559,6 +562,10 @@ class GameRoom:
         """Bots, abwesende Menschen und Menschen mit abgelaufenem Zug-Timer werden vom Server gespielt."""
         return bool(player) and (player.is_bot or player.id in self.away_players or player.id == self.turn_autoplay_id)
 
+    def is_manual_mode(self) -> bool:
+        """True, wenn der Raum im manuellen Spielmodus läuft."""
+        return self.settings.get("play_mode") == "manual"
+
     def update_settings(self, changes: dict) -> dict:
         if self.status != "LOBBY":
             return {"error": "Einstellungen können nur in der Lobby geändert werden."}
@@ -647,7 +654,7 @@ class GameRoom:
             return None
         return self.players[self.current_player_idx % len(self.players)]
 
-    def roll_dice(self, forced_dice: Optional[List[int]] = None, ignore_already_rolled: bool = False) -> dict:
+    def roll_dice(self, forced_dice: Optional[List[int]] = None, ignore_already_rolled: bool = False, power: Optional[float] = None) -> dict:
         player = self.current_player()
         if not player or self.status != "PLAYING":
             return {"error": "Nicht im Spiel."}
@@ -666,9 +673,35 @@ class GameRoom:
         self.rolled = True
         self.last_card = None
         is_double = (d1 == d2)
+        extra_power = {"power": power} if power is not None else {}
 
         steps = d1 + d2
         self.log(f"{player.name} würfelt eine {d1} und {d2} (Gesamt: {steps})!")
+
+        def _defer_or_move(move_double: bool, extra: Optional[dict] = None) -> dict:
+            if self.is_manual_mode() and not self.is_auto_controlled(player):
+                self.pending_action = {
+                    "type": "MOVE_TOKEN",
+                    "from": player.position,
+                    "steps": steps,
+                    "to": (player.position + steps) % 40,
+                    "double": move_double,
+                }
+                res = {
+                    "dice": self.dice,
+                    "double": move_double,
+                    "player": player.to_dict(),
+                    "action": self.pending_action,
+                    **extra_power,
+                }
+                if extra:
+                    res.update(extra)
+                return res
+            res = self.move_player(player, steps, move_double)
+            res.update(extra_power)
+            if extra:
+                res.update(extra)
+            return res
 
         # Gefängnis: bis zu max_attempts Würfe pro Runde (Einstellung jail_rolls, Original = 1)
         if player.in_jail:
@@ -691,7 +724,8 @@ class GameRoom:
                     "jail_attempt": attempt,
                     "jail_max_attempts": max_attempts,
                     "player": player.to_dict(),
-                    "action": None
+                    "action": None,
+                    **extra_power,
                 }
             else:
                 if attempt < max_attempts:
@@ -706,7 +740,8 @@ class GameRoom:
                         "jail_attempt": attempt,
                         "jail_max_attempts": max_attempts,
                         "player": player.to_dict(),
-                        "action": None
+                        "action": None,
+                        **extra_power,
                     }
                 else:
                     # Alle Versuche dieser Runde verbraucht
@@ -717,7 +752,7 @@ class GameRoom:
                         player.in_jail = False
                         player.jail_turns = 0
                         self.log(f"🔒 Wieder kein Pasch! Nach der 3. Gefängnis-Runde zahlt {player.name} 50 DM Bußgeld und zieht {steps} Felder weiter!")
-                        return self.move_player(player, steps, False)
+                        return _defer_or_move(False, {"jail_forced_release": True})
                     else:
                         self.log(f"🔒 Kein Pasch! {player.name} bleibt im Gefängnis (Runde {player.jail_turns}/3).")
                         self.pending_action = {"type": "END_TURN"}
@@ -728,7 +763,8 @@ class GameRoom:
                             "jail_attempt": max_attempts,
                             "jail_max_attempts": max_attempts,
                             "player": player.to_dict(),
-                            "action": self.pending_action
+                            "action": self.pending_action,
+                            **extra_power,
                         }
 
         # Doubles counter
@@ -742,12 +778,26 @@ class GameRoom:
                     "dice": self.dice,
                     "double": True,
                     "player": player.to_dict(),
-                    "action": self.pending_action
+                    "action": self.pending_action,
+                    **extra_power,
                 }
         else:
             player.doubles_count = 0
 
-        return self.move_player(player, steps, is_double)
+        return _defer_or_move(is_double)
+
+    def complete_manual_move(self, player_id: str, manual: bool = True) -> dict:
+        """Schließt einen manuell gewürfelten Zug nach der Figurenbewegung ab."""
+        player = self.current_player()
+        if not player or player.id != player_id or self.status != "PLAYING":
+            return {"error": "Du bist nicht am Zug."}
+        if not self.pending_action or self.pending_action.get("type") != "MOVE_TOKEN":
+            return {"error": "Keine offene Figurenbewegung."}
+        steps = int(self.pending_action.get("steps", 0))
+        is_double = bool(self.pending_action.get("double", False))
+        res = self.move_player(player, steps, is_double)
+        res["manual"] = manual
+        return res
 
     def _check_doubles_reroll(self, player: Optional[Player] = None) -> bool:
         curr = player or self.current_player()
@@ -758,7 +808,7 @@ class GameRoom:
             return False
         if curr.money < 0 or self.auction_state:
             return False
-        if self.pending_action and self.pending_action.get("type") in ["BUY_OR_AUCTION", "TAX_CHOICE", "CARD_DRAWN"]:
+        if self.pending_action and self.pending_action.get("type") in ["BUY_OR_AUCTION", "TAX_CHOICE", "CARD_DRAWN", "DRAW_CARD", "MOVE_TOKEN"]:
             return False
         if self.rolled:
             self.rolled = False
@@ -891,43 +941,16 @@ class GameRoom:
             self.send_to_jail(player)
             return {"type": "WENT_TO_JAIL"}
 
-        elif sq_type == "chance":
-            card = self.draw_chance_card(player, roll_sum)
-            self.last_card = {
-                "deck": "Ereignis",
-                "card": card,
-                "text": card.get("text", ""),
-                "image": card.get("image") or card.get("card_image_filename", ""),
-                "player": player.name
-            }
-            card_text = card.get("text") or card.get("text_de", "")
-            self.log(f"🃏 {player.name} zieht eine Ereigniskarte: {card_text}")
-            return {
-                "type": "CARD_DRAWN",
-                "deck": "Ereignis",
-                "card": card,
-                "player": player.name,
-                "roll_sum": roll_sum
-            }
-
-        elif sq_type == "chest":
-            card = self.draw_chest_card(player)
-            self.last_card = {
-                "deck": "Gemeinschaft",
-                "card": card,
-                "text": card.get("text", ""),
-                "image": card.get("image") or card.get("card_image_filename", ""),
-                "player": player.name
-            }
-            card_text = card.get("text") or card.get("text_de", "")
-            self.log(f"🃏 {player.name} zieht eine Gemeinschaftskarte: {card_text}")
-            return {
-                "type": "CARD_DRAWN",
-                "deck": "Gemeinschaft",
-                "card": card,
-                "player": player.name,
-                "roll_sum": roll_sum
-            }
+        elif sq_type in ("chance", "chest"):
+            deck = "Ereignis" if sq_type == "chance" else "Gemeinschaft"
+            if self.is_manual_mode() and not self.is_auto_controlled(player):
+                return {
+                    "type": "DRAW_CARD",
+                    "deck": deck,
+                    "player": player.name,
+                    "roll_sum": roll_sum,
+                }
+            return self._draw_card_for_square(player, deck, roll_sum)
 
         elif sq_type == "parking":
             pot = self.free_parking_pot
@@ -942,6 +965,46 @@ class GameRoom:
             return {"type": "END_TURN"}
 
         return {"type": "END_TURN"}
+
+    def _draw_card_for_square(self, player: Player, deck: str, roll_sum: int) -> dict:
+        """Zieht eine Ereignis- oder Gemeinschaftskarte und aktualisiert last_card + Log."""
+        card = self.draw_chance_card(player, roll_sum) if deck == "Ereignis" else self.draw_chest_card(player)
+        self.last_card = {
+            "deck": deck,
+            "card": card,
+            "text": card.get("text", ""),
+            "image": card.get("image") or card.get("card_image_filename", ""),
+            "player": player.name,
+        }
+        card_text = card.get("text") or card.get("text_de", "")
+        kind_word = "Ereigniskarte" if deck == "Ereignis" else "Gemeinschaftskarte"
+        self.log(f"🃏 {player.name} zieht eine {kind_word}: {card_text}")
+        return {
+            "type": "CARD_DRAWN",
+            "deck": deck,
+            "card": card,
+            "player": player.name,
+            "roll_sum": roll_sum,
+        }
+
+    def draw_pending_card(self, player_id: str) -> dict:
+        """Deckt im manuellen Modus die anstehende Ereignis-/Gemeinschaftskarte auf."""
+        player = self.current_player()
+        if not player or player.id != player_id or self.status != "PLAYING":
+            return {"error": "Du bist nicht am Zug."}
+        if not self.pending_action or self.pending_action.get("type") != "DRAW_CARD":
+            return {"error": "Keine Karte zum Ziehen offen."}
+        deck = self.pending_action.get("deck", "Ereignis")
+        roll_sum = int(self.pending_action.get("roll_sum", sum(self.dice)))
+        action = self._draw_card_for_square(player, deck, roll_sum)
+        self.pending_action = action
+        return {
+            "success": True,
+            "deck": deck,
+            "card": action["card"],
+            "player": player.to_dict(),
+            "action": action,
+        }
 
     def confirm_card(self, player_id: str) -> dict:
         player = self.current_player()
@@ -1700,6 +1763,10 @@ class GameRoom:
             return {"error": "Du musst zuerst würfeln."}
         if self.auction_state:
             return {"error": "Bitte zuerst die laufende Versteigerung beenden."}
+        if self.pending_action and self.pending_action.get("type") == "MOVE_TOKEN" and not player.is_bankrupt:
+            return {"error": "Bitte ziehe zuerst deine Figur auf das Zielfeld."}
+        if self.pending_action and self.pending_action.get("type") == "DRAW_CARD" and not player.is_bankrupt:
+            return {"error": "Bitte ziehe zuerst eine Karte vom Stapel."}
         if self.pending_action and self.pending_action.get("type") == "CARD_DRAWN" and not player.is_bankrupt:
             return {"error": "Bitte bestätige zuerst die gezogene Karte."}
         if self.pending_action and self.pending_action.get("type") == "BUY_OR_AUCTION" and not player.is_bankrupt:

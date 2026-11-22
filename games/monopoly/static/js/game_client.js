@@ -42,6 +42,16 @@
     const Sound = window.MonopolySound;
     const Board3D = window.MonopolyBoard3D;
 
+    // Manueller Spielmodus: lokaler Schritt-Zähler & Würfelbecher-Status
+    let manualMoveKey = null;
+    let manualStepsDone = 0;
+    let manualStepInFlight = false;
+    let diceCupCleanup = null;
+
+    function isManualPlayMode() {
+        return !!(gameState && gameState.settings && gameState.settings.play_mode === 'manual');
+    }
+
     function showYourTurnPopup(titleText = 'DU BIST DRAN!', subText = 'Würfle jetzt oder verwalte deine Straßen') {
         const popup = document.getElementById('your-turn-popup');
         const titleEl = document.getElementById('your-turn-popup-title');
@@ -273,8 +283,8 @@
         if (!isMyTurn || gameState.rolled) return false;
         const myPlayer = gameState.players ? gameState.players.find(p => p.id === playerId) : null;
         if (myPlayer && myPlayer.is_bankrupt) return false;
-        const pendingCard = (gameState.pending_action && gameState.pending_action.type === 'CARD_DRAWN');
-        if (pendingCard || gameState.auction_state) return false;
+        const pendingType = (gameState.pending_action && gameState.pending_action.type) || null;
+        if (pendingType === 'CARD_DRAWN' || pendingType === 'DRAW_CARD' || pendingType === 'MOVE_TOKEN' || gameState.auction_state) return false;
         return true;
     }
 
@@ -286,12 +296,12 @@
         const myPlayer = gameState.players ? gameState.players.find(p => p.id === playerId) : null;
         if (myPlayer && (myPlayer.money < 0 || myPlayer.is_bankrupt)) return false;
         const pendingType = (gameState.pending_action && gameState.pending_action.type) || null;
-        const blockedByPending = (pendingType === 'BUY_OR_AUCTION' || pendingType === 'TAX_CHOICE' || pendingType === 'CARD_DRAWN' || !!gameState.auction_state);
+        const blockedByPending = (pendingType === 'BUY_OR_AUCTION' || pendingType === 'TAX_CHOICE' || pendingType === 'CARD_DRAWN' || pendingType === 'DRAW_CARD' || pendingType === 'MOVE_TOKEN' || !!gameState.auction_state);
         return !blockedByPending;
     }
 
     function getActiveTurnTimerMode() {
-        if (canPlayerRollNow()) return 'ROLL';
+        if (canPlayerRollNow() && !isManualPlayMode()) return 'ROLL';
         if (canPlayerEndTurnNow()) return 'END_TURN';
         return null;
     }
@@ -1134,6 +1144,33 @@
                 handleDiceRollEvent(msg.result);
                 break;
 
+            case 'MOVE_PROGRESS':
+                if (msg.player_id && msg.player_id !== playerId && Board3D) {
+                    const stepFrom = (Number(msg.from) + Number(msg.step) - 1 + 40) % 40;
+                    const stepTo = (Number(msg.from) + Number(msg.step)) % 40;
+                    Board3D.animateMoveToken(msg.player_id, stepFrom, stepTo, null, false);
+                }
+                break;
+
+            case 'TOKEN_MOVED':
+                handleTokenMovedEvent(msg.result);
+                break;
+
+            case 'CARD_DRAWN':
+                if (msg.result && msg.result.action) {
+                    const act = msg.result.action;
+                    const cCard = act.card || msg.result.card || {};
+                    const cDeck = act.deck || msg.result.deck || 'Ereignis';
+                    const cText = cCard.text || '';
+                    const cImg = cCard.image || cCard.card_image_filename || null;
+                    const drawerName = act.player || (msg.result.player && msg.result.player.name) || '';
+                    if (Board3D && Board3D.showDrawnCard) {
+                        Board3D.showDrawnCard(cDeck, cText, cImg);
+                    }
+                    showCardModal(cDeck, cText, cImg, true, drawerName);
+                }
+                break;
+
             case 'CARD_APPLIED':
                 handleCardAppliedEvent(msg.result);
                 break;
@@ -1505,6 +1542,11 @@
 
         if (Board3D) {
             Board3D.rollDice(d1, d2, () => {
+                // Manueller Modus: Figur wird vom Spieler selbst gezogen (MOVE_TOKEN)
+                if (res.action && res.action.type === 'MOVE_TOKEN') {
+                    finalizeLandingSequence();
+                    return;
+                }
                 if (res.old_pos !== undefined && res.new_pos !== undefined) {
                     Board3D.animateMoveToken(res.player.id, res.old_pos, res.new_pos, () => {
                         const finalPos = (res.final_pos !== undefined) ? res.final_pos : (res.player ? res.player.position : res.new_pos);
@@ -1533,6 +1575,57 @@
             }, useCinematicFor(isMyTurn));
         } else {
             finalizeLandingSequence();
+        }
+    }
+
+    function handleTokenMovedEvent(res) {
+        if (!res || res.error) {
+            isTokenInTransit = false;
+            updateHUD();
+            return;
+        }
+        const isMyTurn = (res.player && res.player.id === playerId);
+        const finishMoved = () => {
+            isTokenInTransit = false;
+            if (window.MonopolyBoard3D && gameState) {
+                window.MonopolyBoard3D.syncPlayers(gameState.players);
+            }
+            if (Sound && res.passed_go) {
+                Sound.playPassGo ? Sound.playPassGo() : Sound.playMoney();
+            }
+            if (res.action) {
+                if (res.action.type === 'CARD_DRAWN' || res.action.type === 'CARD') {
+                    const cCard = res.action.card || res.action;
+                    const cDeck = res.action.deck || 'Ereignis';
+                    const cText = (cCard && cCard.text) ? cCard.text : '';
+                    const cImg = cCard ? (cCard.image || cCard.card_image_filename) : null;
+                    const drawerName = res.action.player || (res.player && res.player.name) || '';
+                    if (Board3D && Board3D.showDrawnCard) Board3D.showDrawnCard(cDeck, cText, cImg);
+                    showCardModal(cDeck, cText, cImg, true, drawerName);
+                } else if (res.action.type === 'RENT_PAID') {
+                    showRentPopup(res.action, res.player);
+                } else if (res.action.type === 'BUY_OR_AUCTION') {
+                    if (isMyTurn && res.action.square) showDeedModal(res.action.square.index);
+                } else if (res.action.type === 'TAX_CHOICE') {
+                    if (isMyTurn) showTaxChoiceModal(res.action);
+                } else if (res.action.type === 'WENT_TO_JAIL') {
+                    if (Sound) Sound.playJail();
+                    if (isMyTurn) showYourTurnPopup('🚔 AB INS GEFÄNGNIS!', 'Du wanderst direkt ins Gefängnis!');
+                }
+            }
+            if (isMyTurn && gameState && !gameState.rolled && res.double && !(res.player && res.player.in_jail) && (!res.action || (res.action.type !== 'CARD_DRAWN' && res.action.type !== 'DRAW_CARD'))) {
+                showYourTurnPopup('PASCH! NOCHMAL DRAN!', 'Du hast einen Pasch gewürfelt und darfst direkt nochmal!');
+            }
+            updateHUD();
+            syncEndTurnTimer();
+        };
+
+        // Wenn nicht manuell gezogen (z. B. Timer-Ablauf / Abwesenheit), Figur auf dem Brett animieren
+        if (!res.manual && Board3D && res.old_pos !== undefined && res.new_pos !== undefined) {
+            isTokenInTransit = true;
+            Board3D.animateMoveToken(res.player.id, res.old_pos, res.new_pos, finishMoved, useCinematicFor(isMyTurn));
+        } else {
+            finishMoved();
         }
     }
 
@@ -1868,8 +1961,9 @@
         const btnJailCard = document.getElementById('btn-jail-card');
 
         if (btnRoll) {
-            const pendingCard = (gameState.pending_action && gameState.pending_action.type === 'CARD_DRAWN');
-            const canRoll = isMyTurn && !gameState.rolled && !isTokenInTransit && !pendingCard && !gameState.auction_state && (!myPlayer || !myPlayer.is_bankrupt);
+            const paType = (gameState.pending_action && gameState.pending_action.type) || null;
+            const blockedRoll = (paType === 'CARD_DRAWN' || paType === 'DRAW_CARD' || paType === 'MOVE_TOKEN');
+            const canRoll = isMyTurn && !gameState.rolled && !isTokenInTransit && !blockedRoll && !gameState.auction_state && (!myPlayer || !myPlayer.is_bankrupt);
             btnRoll.disabled = !canRoll;
             btnRoll.classList.toggle('can-roll', canRoll);
         }
@@ -1903,7 +1997,7 @@
 
         if (btnEnd) {
             const pendingType = (gameState.pending_action && gameState.pending_action.type) || null;
-            const blockedByPending = (pendingType === 'BUY_OR_AUCTION' || pendingType === 'TAX_CHOICE' || pendingType === 'CARD_DRAWN' || !!gameState.auction_state);
+            const blockedByPending = (pendingType === 'BUY_OR_AUCTION' || pendingType === 'TAX_CHOICE' || pendingType === 'CARD_DRAWN' || pendingType === 'DRAW_CARD' || pendingType === 'MOVE_TOKEN' || !!gameState.auction_state);
             const inDebt = (myPlayer && myPlayer.money < 0);
             const canEnd = isMyTurn && gameState.rolled && !isTokenInTransit && !blockedByPending && !inDebt;
             btnEnd.disabled = !canEnd;
@@ -1919,8 +2013,269 @@
             btnJailCard.style.display = canCard ? 'inline-flex' : 'none';
         }
 
+        syncManualModeUI(isMyTurn);
         syncBuyOrAuctionTimer();
         syncEndTurnTimer();
+    }
+
+    function triggerManualPromptShake(msgText) {
+        const bar = document.getElementById('manual-prompt-bar');
+        const txt = document.getElementById('manual-prompt-text');
+        if (txt && msgText) txt.textContent = msgText;
+        if (bar) {
+            bar.classList.remove('shake');
+            void bar.offsetWidth;
+            bar.classList.add('shake');
+        }
+        if (navigator.vibrate) navigator.vibrate([40, 40, 40]);
+    }
+
+    function advanceManualStep(toTargetDirectly = false) {
+        if (!gameState || !gameState.pending_action || gameState.pending_action.type !== 'MOVE_TOKEN') return;
+        if (manualStepInFlight || isTokenInTransit) return;
+        const pa = gameState.pending_action;
+        const steps = Number(pa.steps || 0);
+        if (manualStepsDone >= steps) return;
+
+        const fromIdx = (Number(pa.from) + manualStepsDone) % 40;
+        const nextStepsDone = toTargetDirectly ? steps : (manualStepsDone + 1);
+        const toIdx = (Number(pa.from) + nextStepsDone) % 40;
+
+        manualStepInFlight = true;
+        const finishHop = () => {
+            manualStepInFlight = false;
+            manualStepsDone = nextStepsDone;
+            if (navigator.vibrate) navigator.vibrate(manualStepsDone >= steps ? [25, 30, 35] : 15);
+            sendWsMessage({ action: 'MOVE_PROGRESS', step: manualStepsDone });
+            if (manualStepsDone >= steps) {
+                sendWsMessage({ action: 'MOVE_TOKEN' });
+            } else {
+                syncManualModeUI(true);
+            }
+        };
+
+        if (Board3D) {
+            Board3D.animateMoveToken(playerId, fromIdx, toIdx, finishHop, false);
+        } else {
+            finishHop();
+        }
+    }
+
+    function closeDiceCupOverlay() {
+        const overlay = document.getElementById('dice-cup-overlay');
+        if (overlay) overlay.style.display = 'none';
+        if (diceCupCleanup) {
+            diceCupCleanup();
+            diceCupCleanup = null;
+        }
+    }
+
+    function openDiceCupOverlay() {
+        const overlay = document.getElementById('dice-cup-overlay');
+        const cup = document.getElementById('dice-cup-visual');
+        const bar = document.getElementById('dice-cup-meter-bar');
+        const btnHold = document.getElementById('btn-dice-cup-hold');
+        const btnCancel = document.getElementById('btn-dice-cup-cancel');
+        const backdrop = document.getElementById('dice-cup-backdrop');
+        if (!overlay || !cup) {
+            sendWsMessage({ action: 'ROLL_DICE' });
+            return;
+        }
+
+        if (diceCupCleanup) diceCupCleanup();
+        overlay.style.display = 'flex';
+        cup.style.transform = 'translate(0px, 0px) rotate(0deg)';
+        if (bar) bar.style.width = '0%';
+
+        let energy = 0;
+        let peakSpeed = 0;
+        let isDragging = false;
+        let lastPt = null;
+        let holdInterval = null;
+        let gyroActive = false;
+        let gyroStopTimer = null;
+        let lastGyroSample = null;
+        let thrown = false;
+
+        const updateMeter = (pct) => {
+            if (bar) bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+        };
+
+        const throwDice = (power) => {
+            if (thrown) return;
+            thrown = true;
+            const p = Math.max(0.2, Math.min(1.0, Number(power) || 0.7));
+            if (navigator.vibrate) navigator.vibrate([20, 25, 35]);
+            closeDiceCupOverlay();
+            sendWsMessage({ action: 'ROLL_DICE', power: Number(p.toFixed(2)) });
+        };
+
+        const onPointerDown = (e) => {
+            isDragging = true;
+            lastPt = { x: e.clientX, y: e.clientY, t: performance.now() };
+            try { cup.setPointerCapture(e.pointerId); } catch (_) {}
+        };
+
+        const onPointerMove = (e) => {
+            if (!isDragging || !lastPt) return;
+            const now = performance.now();
+            const dt = Math.max(8, now - lastPt.t);
+            const dx = e.clientX - lastPt.x;
+            const dy = e.clientY - lastPt.y;
+            const speed = Math.hypot(dx, dy) / dt; // px/ms
+            lastPt = { x: e.clientX, y: e.clientY, t: now };
+
+            const offX = Math.max(-48, Math.min(48, dx * 0.9));
+            const offY = Math.max(-36, Math.min(36, dy * 0.9));
+            const rot = Math.max(-22, Math.min(22, dx * 0.45));
+            cup.style.transform = `translate(${offX}px, ${offY}px) rotate(${rot}deg)`;
+
+            if (speed > 0.35) {
+                energy = Math.min(100, energy + speed * 8);
+                peakSpeed = Math.max(peakSpeed, speed);
+                updateMeter(energy);
+                if (Sound && Sound.playDiceRattle) Sound.playDiceRattle();
+                if (navigator.vibrate) navigator.vibrate(10);
+            }
+        };
+
+        const onPointerUp = () => {
+            if (!isDragging) return;
+            isDragging = false;
+            cup.style.transform = 'translate(0px, 0px) rotate(0deg)';
+            if (energy >= 20) {
+                throwDice(Math.max(0.3, Math.min(1.0, peakSpeed / 2.4)));
+            }
+        };
+
+        const onDeviceMotion = (e) => {
+            const acc = e.acceleration || e.accelerationIncludingGravity;
+            if (!acc) return;
+            const ax = acc.x || 0;
+            const ay = acc.y || 0;
+            const az = acc.z || 0;
+            let mag = Math.hypot(ax, ay, az);
+            if (!e.acceleration) {
+                // Schwerkraft (~9.81) über Delta herausrechnen
+                if (!lastGyroSample) {
+                    lastGyroSample = { ax, ay, az };
+                    return;
+                }
+                mag = Math.hypot(ax - lastGyroSample.ax, ay - lastGyroSample.ay, az - lastGyroSample.az);
+                lastGyroSample = { ax, ay, az };
+            }
+            if (mag > 6.5) {
+                gyroActive = true;
+                energy = Math.min(100, energy + mag * 1.8);
+                peakSpeed = Math.max(peakSpeed, mag / 22);
+                updateMeter(energy);
+                cup.style.transform = `translate(${(Math.random() - 0.5) * 26}px, ${(Math.random() - 0.5) * 20}px) rotate(${(Math.random() - 0.5) * 26}deg)`;
+                if (Sound && Sound.playDiceRattle) Sound.playDiceRattle();
+                if (navigator.vibrate) navigator.vibrate(12);
+                clearTimeout(gyroStopTimer);
+                gyroStopTimer = setTimeout(() => {
+                    if (gyroActive && energy >= 25) {
+                        throwDice(Math.max(0.35, Math.min(1.0, peakSpeed)));
+                    }
+                }, 360);
+            }
+        };
+
+        const startHold = (e) => {
+            e.preventDefault();
+            clearInterval(holdInterval);
+            energy = Math.max(energy, 15);
+            holdInterval = setInterval(() => {
+                energy = Math.min(100, energy + 6);
+                updateMeter(energy);
+                cup.style.transform = `translate(${(Math.random() - 0.5) * 18}px, ${(Math.random() - 0.5) * 14}px) rotate(${(Math.random() - 0.5) * 18}deg)`;
+                if (Sound && Sound.playDiceRattle) Sound.playDiceRattle();
+            }, 60);
+        };
+        const endHold = () => {
+            if (!holdInterval) return;
+            clearInterval(holdInterval);
+            holdInterval = null;
+            cup.style.transform = 'translate(0px, 0px) rotate(0deg)';
+            throwDice(Math.max(0.25, energy / 100));
+        };
+
+        cup.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('devicemotion', onDeviceMotion);
+        if (btnHold) {
+            btnHold.addEventListener('pointerdown', startHold);
+            btnHold.addEventListener('pointerup', endHold);
+            btnHold.addEventListener('pointercancel', endHold);
+        }
+        if (btnCancel) btnCancel.onclick = closeDiceCupOverlay;
+        if (backdrop) backdrop.onclick = closeDiceCupOverlay;
+
+        diceCupCleanup = () => {
+            cup.removeEventListener('pointerdown', onPointerDown);
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+            window.removeEventListener('devicemotion', onDeviceMotion);
+            clearTimeout(gyroStopTimer);
+            clearInterval(holdInterval);
+            if (btnHold) {
+                btnHold.removeEventListener('pointerdown', startHold);
+                btnHold.removeEventListener('pointerup', endHold);
+                btnHold.removeEventListener('pointercancel', endHold);
+            }
+        };
+    }
+
+    function syncManualModeUI(isMyTurn) {
+        const bar = document.getElementById('manual-prompt-bar');
+        const txt = document.getElementById('manual-prompt-text');
+        const btn = document.getElementById('manual-prompt-btn');
+        const pa = (gameState && gameState.pending_action) ? gameState.pending_action : null;
+        const paType = pa ? pa.type : null;
+
+        if (!isMyTurn || !pa || (paType !== 'MOVE_TOKEN' && paType !== 'DRAW_CARD')) {
+            manualMoveKey = null;
+            manualStepsDone = 0;
+            manualStepInFlight = false;
+            if (bar) bar.style.display = 'none';
+            if (Board3D && Board3D.setManualHighlight) {
+                Board3D.setManualHighlight({ active: false });
+            }
+            return;
+        }
+
+        if (paType === 'MOVE_TOKEN') {
+            const key = `${gameState.turn_counter || 0}_${pa.from}_${pa.steps}_${pa.to}`;
+            if (manualMoveKey !== key) {
+                manualMoveKey = key;
+                manualStepsDone = 0;
+                manualStepInFlight = false;
+            }
+            const steps = Number(pa.steps || 0);
+            if (bar && txt && btn) {
+                bar.style.display = 'flex';
+                txt.textContent = `🎲 Tippe auf deine Figur (${manualStepsDone}/${steps}) oder auf das goldene Zielfeld`;
+                btn.style.display = 'inline-flex';
+                btn.textContent = `Schritt +1 (${manualStepsDone}/${steps})`;
+                btn.onclick = () => advanceManualStep(false);
+            }
+            if (Board3D && Board3D.setManualHighlight) {
+                Board3D.setManualHighlight({ active: true, playerId: playerId, targetIdx: pa.to, drawDeck: null });
+            }
+        } else if (paType === 'DRAW_CARD') {
+            const deck = pa.deck || 'Ereignis';
+            if (bar && txt && btn) {
+                bar.style.display = 'flex';
+                txt.textContent = `🃏 Tippe auf den ${deck}-Stapel auf dem Brett`;
+                btn.style.display = 'inline-flex';
+                btn.textContent = 'Karte aufdecken';
+                btn.onclick = () => sendWsMessage({ action: 'DRAW_CARD' });
+            }
+            if (Board3D && Board3D.setManualHighlight) {
+                Board3D.setManualHighlight({ active: true, playerId: playerId, targetIdx: null, drawDeck: deck });
+            }
+        }
     }
 
     function clearAuctionCountdownTicker() {
@@ -2981,8 +3336,32 @@
             if (btnRoll) {
                 btnRoll.onclick = () => {
                     hideYourTurnPopup();
-                    sendWsMessage({ action: 'ROLL_DICE' });
+                    if (isManualPlayMode()) {
+                        // iOS Safari: Permission muss synchron im Klick-Handler angefragt werden
+                        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+                            DeviceMotionEvent.requestPermission().catch(() => {});
+                        }
+                        openDiceCupOverlay();
+                    } else {
+                        sendWsMessage({ action: 'ROLL_DICE' });
+                    }
                 };
+            }
+
+            if (Board3D && Board3D.setManualCallbacks) {
+                Board3D.setManualCallbacks({
+                    onTokenTap: () => advanceManualStep(false),
+                    onDeckClick: () => sendWsMessage({ action: 'DRAW_CARD' }),
+                    onSquareAction: (sqIdx) => {
+                        const pa = gameState && gameState.pending_action;
+                        if (!pa || pa.type !== 'MOVE_TOKEN') return;
+                        if (sqIdx === pa.to) {
+                            advanceManualStep(true);
+                        } else if (sqIdx !== (pa.from + manualStepsDone) % 40) {
+                            triggerManualPromptShake(`❌ Falsch gezählt! Du hast ${pa.steps} gewürfelt.`);
+                        }
+                    }
+                });
             }
 
             const btnBuy = document.getElementById('btn-buy');

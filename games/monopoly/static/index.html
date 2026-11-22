@@ -106,6 +106,12 @@
             </div>
         </aside>
 
+        <!-- Manual Mode Prompt Bar (above Dock) -->
+        <div id="manual-prompt-bar" class="manual-prompt-bar interactive" style="display:none;">
+            <span id="manual-prompt-text"></span>
+            <button id="manual-prompt-btn" class="btn-action" style="display:none; padding:6px 14px; font-size:13px; background:var(--accent-gold); color:#1a1a1a; font-weight:700; border-radius:12px;"></button>
+        </div>
+
         <!-- Minimalist Floating Bottom Dock (Action Cockpit) -->
         <footer class="bottom-floating-dock interactive">
             <div class="cockpit-wallet" id="dock-wallet" onclick="if(window.MonopolyGame && window.MonopolyGame.showPlayerPortfolio) window.MonopolyGame.showPlayerPortfolio(window.MonopolyGame.getMyPlayerId ? window.MonopolyGame.getMyPlayerId() : null);" title="Klicke für Besitzverwaltung & Finanzen">
@@ -160,6 +166,32 @@
     </div>
 
     <!-- Modals -->
+
+    <!-- Dice Cup Overlay (Manueller Modus) -->
+    <div id="dice-cup-overlay" class="dice-cup-overlay" style="display:none;">
+        <div class="dice-cup-backdrop" id="dice-cup-backdrop"></div>
+        <div class="dice-cup-card">
+            <div class="dice-cup-title">🎲 Würfelbecher schütteln</div>
+            <div class="dice-cup-subtitle" id="dice-cup-hint">Becher greifen &amp; schütteln (Handy: schütteln) – loslassen zum Werfen!</div>
+            <div class="dice-cup-arena" id="dice-cup-arena">
+                <div class="dice-cup-visual" id="dice-cup-visual" role="button" aria-label="Würfelbecher">
+                    <div class="dice-cup-rim"></div>
+                    <div class="dice-cup-body">🎲</div>
+                </div>
+            </div>
+            <div class="dice-cup-meter-wrap">
+                <div class="dice-cup-meter-bar" id="dice-cup-meter-bar"></div>
+            </div>
+            <div class="dice-cup-actions">
+                <button type="button" class="btn-action" id="btn-dice-cup-hold" style="background:var(--accent-gold); color:#1a1a1a; font-weight:700;">
+                    ✊ Gedrückt halten &amp; loslassen
+                </button>
+                <button type="button" class="btn-action" id="btn-dice-cup-cancel" style="background:rgba(255,255,255,0.12); color:#fff;">
+                    Abbrechen
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- 1. Lobby Modal (Step 1: Raum erstellen / beitreten & Step 2: Spiellobby) -->
     <div class="modal-overlay open" id="modal-lobby">

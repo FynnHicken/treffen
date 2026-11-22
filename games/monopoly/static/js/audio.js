@@ -164,6 +164,16 @@
             }, 600);
         },
 
+        // Subtle rattle sound while shaking the manual dice cup
+        playDiceRattle: function() {
+            if (isMuted) return;
+            const now = Date.now();
+            if (this._lastRattleAt && (now - this._lastRattleAt) < 220) return;
+            this._lastRattleAt = now;
+            const r = Math.floor(Math.random() * 5) + 1;
+            playAudioFile(`static/assets/audio/wuerfeln_${r}.wav`, 0.42);
+        },
+
         // Token Movement SFX - Consistent clean hop sound for all pieces
         playTokenMove: function(tokenType) {
             if (isMuted) return;

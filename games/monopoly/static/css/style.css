@@ -1926,3 +1926,117 @@ body.spectator-mode #dock-wallet { display: none !important; }
 @media (max-width: 700px), (max-height: 500px) {
     .header-tools > #btn-cinematic-toggle { display: none; }
 }
+
+/* Manueller Modus: Hinweis-Leiste & Würfelbecher-Overlay */
+.manual-prompt-bar {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 92px;
+    z-index: 65;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    border-radius: 16px;
+    background: rgba(16, 22, 34, 0.92);
+    border: 1px solid rgba(241, 196, 15, 0.55);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    backdrop-filter: blur(8px);
+    max-width: calc(100vw - 24px);
+}
+.manual-prompt-bar.shake {
+    animation: manualShake 0.35s ease;
+    border-color: #e74c3c;
+}
+@keyframes manualShake {
+    0%, 100% { transform: translateX(-50%); }
+    25% { transform: translateX(calc(-50% - 8px)); }
+    50% { transform: translateX(calc(-50% + 8px)); }
+    75% { transform: translateX(calc(-50% - 5px)); }
+}
+@media (max-width: 700px) {
+    .manual-prompt-bar { bottom: 158px; flex-wrap: wrap; justify-content: center; text-align: center; }
+}
+
+.dice-cup-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 260;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+.dice-cup-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(8, 12, 20, 0.72);
+    backdrop-filter: blur(6px);
+}
+.dice-cup-card {
+    position: relative;
+    z-index: 1;
+    width: min(360px, 100%);
+    background: linear-gradient(160deg, #1b2436, #111824);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 22px;
+    padding: 20px;
+    text-align: center;
+    color: #fff;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.55);
+}
+.dice-cup-title { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+.dice-cup-subtitle { font-size: 12px; color: rgba(255,255,255,0.72); margin-bottom: 14px; }
+.dice-cup-arena {
+    height: 150px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    user-select: none;
+    position: relative;
+}
+.dice-cup-visual {
+    width: 88px;
+    height: 108px;
+    border-radius: 14px 14px 28px 28px;
+    background: linear-gradient(145deg, #6b3e26, #3d2113);
+    border: 2px solid #a66a46;
+    box-shadow: 0 12px 24px rgba(0,0,0,0.5), inset 0 6px 12px rgba(255,255,255,0.12);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    transition: transform 0.06s linear;
+}
+.dice-cup-visual:active { cursor: grabbing; }
+.dice-cup-rim {
+    width: 78px;
+    height: 12px;
+    border-radius: 50%;
+    background: #231109;
+    border: 1px solid #8c5332;
+    margin-bottom: 10px;
+}
+.dice-cup-body { font-size: 32px; line-height: 1; }
+.dice-cup-meter-wrap {
+    width: 100%;
+    height: 8px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 999px;
+    overflow: hidden;
+    margin: 8px 0 14px;
+}
+.dice-cup-meter-bar {
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, #f1c40f, #e67e22, #e74c3c);
+    transition: width 0.08s linear;
+}
+.dice-cup-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+

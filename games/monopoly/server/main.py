@@ -434,12 +434,56 @@ async def handle_message(websocket: WebSocket, room_id: str, player_id: str, dat
     elif action == "ROLL_DICE":
         curr = room.current_player()
         if curr and curr.id == player_id:
-            res = room.roll_dice()
+            raw_power = data.get("power")
+            power = None
+            if isinstance(raw_power, (int, float)) and not isinstance(raw_power, bool):
+                power = max(0.1, min(1.0, float(raw_power)))
+            res = room.roll_dice(power=power)
             await broadcast_room(room_id, {
                 "type": "DICE_ROLLED",
                 "result": res,
                 "state": room.to_dict()
             })
+
+    elif action == "MOVE_PROGRESS":
+        curr = room.current_player()
+        pa = room.pending_action or {}
+        if curr and curr.id == player_id and pa.get("type") == "MOVE_TOKEN":
+            try:
+                step = int(data.get("step", -1))
+            except (TypeError, ValueError):
+                step = -1
+            steps = int(pa.get("steps", 0))
+            if 0 <= step <= steps:
+                await broadcast_room(room_id, {
+                    "type": "MOVE_PROGRESS",
+                    "player_id": player_id,
+                    "from": pa.get("from", curr.position),
+                    "step": step,
+                    "steps": steps,
+                })
+
+    elif action == "MOVE_TOKEN":
+        res = room.complete_manual_move(player_id, manual=True)
+        if res.get("error"):
+            await websocket.send_text(json.dumps({"type": "ERROR", "message": res["error"]}))
+            return
+        await broadcast_room(room_id, {
+            "type": "TOKEN_MOVED",
+            "result": res,
+            "state": room.to_dict()
+        })
+
+    elif action == "DRAW_CARD":
+        res = room.draw_pending_card(player_id)
+        if res.get("error"):
+            await websocket.send_text(json.dumps({"type": "ERROR", "message": res["error"]}))
+            return
+        await broadcast_room(room_id, {
+            "type": "CARD_DRAWN",
+            "result": res,
+            "state": room.to_dict()
+        })
 
     elif action == "BUY_PROPERTY":
         sq_idx = data.get("sq_idx")
@@ -865,6 +909,21 @@ async def _bot_step(room_id: str, room: GameRoom, curr) -> tuple:
             return 1.2, not res.get("error")
         await send("STATE_UPDATE")
         return 0.8, True
+
+    # 1b. Offene manuelle Bewegung abschließen (z. B. nach Timer-Ablauf oder Abwesenheit)
+    if pa_type == "MOVE_TOKEN":
+        res = room.complete_manual_move(curr.id, manual=False)
+        await send("TOKEN_MOVED", res)
+        if res.get("error"):
+            return 1.0, False
+        wait = _calc_anim_wait_seconds(room, res.get("old_pos"), res.get("new_pos"), include_dice=False)
+        return wait + card_delay(), True
+
+    # 1c. Offenes Kartenziehen abschließen
+    if pa_type == "DRAW_CARD":
+        res = room.draw_pending_card(curr.id)
+        await send("CARD_DRAWN", res)
+        return 2.4, not res.get("error")
 
     # 2. Offene Karte bestätigen
     if pa_type == "CARD_DRAWN":

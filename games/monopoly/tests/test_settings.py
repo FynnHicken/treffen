@@ -242,6 +242,47 @@ async def main():
     await send("F1", "gast", action="JOIN", name="Gast", token="hat", color=gast.color)
     ok(any(m.get("code") == "TOKEN_TAKEN" for m in srv.connections["F1"]["gast"].sent), "Hinweis kommt per WebSocket beim Spieler an")
 
+    print("== Manueller Spielmodus (play_mode = manual) ==")
+    room = make_room("MAN1", humans=("h1",), bots=("b1",), settings={"play_mode": "manual"})
+    srv.connections["MAN1"] = {"h1": FakeWS()}
+    h1 = room.players[0]
+    # 1. Mensch würfelt -> MOVE_TOKEN pending, Figur bewegt sich noch nicht
+    await send("MAN1", "h1", action="ROLL_DICE", power=0.85)
+    ok(h1.position == 0 and (room.pending_action or {}).get("type") == "MOVE_TOKEN",
+       f"Manuell: Figur bleibt nach Wurf erst stehen ({room.pending_action})")
+    ok(room.end_turn("h1").get("error"), "end_turn während MOVE_TOKEN blockiert")
+    # 2. MOVE_PROGRESS Relay + MOVE_TOKEN auf Gemeinschaftsfeld (Feld 2) -> DRAW_CARD
+    room.dice = [1, 1]
+    room.pending_action = {"type": "MOVE_TOKEN", "from": 0, "steps": 2, "to": 2, "double": True}
+    await send("MAN1", "h1", action="MOVE_PROGRESS", step=1)
+    ok(any(m.get("type") == "MOVE_PROGRESS" and m.get("step") == 1 for m in srv.connections["MAN1"]["h1"].sent),
+       "MOVE_PROGRESS wird als Relay gesendet")
+    await send("MAN1", "h1", action="MOVE_TOKEN")
+    ok(h1.position == 2 and (room.pending_action or {}).get("type") == "DRAW_CARD",
+       f"Nach MOVE_TOKEN auf Feld 2: DRAW_CARD offen ({room.pending_action})")
+    ok(room.end_turn("h1").get("error"), "end_turn während DRAW_CARD blockiert")
+    # 3. DRAW_CARD -> CARD_DRAWN, dann CONFIRM_CARD
+    await send("MAN1", "h1", action="DRAW_CARD")
+    ok((room.pending_action or {}).get("type") == "CARD_DRAWN" and room.last_card is not None,
+       "DRAW_CARD deckt Karte auf")
+    await send("MAN1", "h1", action="CONFIRM_CARD")
+    ok((room.pending_action or {}).get("type") != "CARD_DRAWN", "CONFIRM_CARD wendet Karte an")
+    # 4. Autoplay-Fallback schließt offenes MOVE_TOKEN / DRAW_CARD ab
+    h1.position = 0
+    room.rolled = False
+    room.pending_action = {"type": "MOVE_TOKEN", "from": 0, "steps": 7, "to": 7, "double": False}
+    room.turn_autoplay_id = "h1"
+    async with srv.get_lock("MAN1"):
+        await srv._bot_step("MAN1", room, h1)
+    ok(h1.position == 7 and (room.pending_action or {}).get("type") == "CARD_DRAWN",
+       "Bot-Treiber schließt offenes MOVE_TOKEN ab und zieht bei Autoplay direkt die Karte")
+    room.pending_action = {"type": "DRAW_CARD", "deck": "Ereignis", "player": h1.name, "roll_sum": 7}
+    async with srv.get_lock("MAN1"):
+        await srv._bot_step("MAN1", room, h1)
+    ok((room.pending_action or {}).get("type") == "CARD_DRAWN",
+       "Bot-Treiber schließt offenes DRAW_CARD ab")
+    srv.delete_room("MAN1")
+
     print("== Simulation: 30 Bot-Partien mit gemischten Regeln ==")
     errs = []; ended = {"easy": 0, "normal": 0, "hard": 0}
     for seed in range(30):
@@ -249,7 +290,8 @@ async def main():
         settings = {"bot_difficulty": ["easy", "normal", "hard"][seed % 3],
                     "free_parking_pot": seed % 2 == 0, "double_go": seed % 4 < 2,
                     "jail_rolls": [1, 3][seed % 2], "start_money": [1000, 1500, 2000, 2500][seed % 4],
-                    "build_rule": ["on_group", "anytime"][(seed // 3) % 2]}
+                    "build_rule": ["on_group", "anytime"][(seed // 3) % 2],
+                    "play_mode": ["auto", "manual"][seed % 2]}
         rid = f"SIM{seed}"
         room = make_room(rid, humans=(), bots=tuple(f"b{i}" for i in range(2 + seed % 4)), settings=settings)
         srv.connections[rid] = {"watcher": FakeWS()}

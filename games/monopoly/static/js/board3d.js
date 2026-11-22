@@ -85,6 +85,9 @@
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     let onSquareClickCallback = null;
+    let manualCallbacks = { onTokenTap: null, onDeckClick: null, onSquareAction: null };
+    let manualHighlight = { active: false, playerId: null, targetIdx: null, drawDeck: null };
+    let manualTargetRing = null;
 
     // Deed card texture mapping
     const DEED_CARD_IMAGES = {
@@ -1172,6 +1175,18 @@
                     }
                 }
 
+                // 1b. Click on own token in Manual Mode
+                if (manualHighlight.active && manualHighlight.playerId && manualHighlight.targetIdx !== null) {
+                    const myTok = tokenMeshes[manualHighlight.playerId];
+                    if (myTok) {
+                        const tokHits = raycaster.intersectObject(myTok, true);
+                        if (tokHits.length > 0 && manualCallbacks.onTokenTap) {
+                            manualCallbacks.onTokenTap();
+                            return;
+                        }
+                    }
+                }
+
                 // 2. Click on board card deck or drawn card
                 if (boardDecksGroup && boardDecksGroup.children.length > 0) {
                     const deckHits = raycaster.intersectObjects(boardDecksGroup.children, true);
@@ -1182,6 +1197,10 @@
                         }
                         if (cur && cur.userData && (cur.userData.type === 'board_deck' || cur.userData.type === 'drawn_card')) {
                             const dDeck = cur.userData.deck;
+                            if (manualHighlight.active && manualHighlight.drawDeck === dDeck && manualCallbacks.onDeckClick) {
+                                manualCallbacks.onDeckClick(dDeck);
+                                return;
+                            }
                             const cardEntry = lastDrawnCards[dDeck];
                             const dText = (typeof cardEntry === 'object' && cardEntry) ? cardEntry.text : (cur.userData.text || cardEntry);
                             const dImg = (typeof cardEntry === 'object' && cardEntry) ? cardEntry.image : (cur.userData.cardImage || '');
@@ -1199,7 +1218,7 @@
                 }
 
                 // 2. Click on board square
-                if (boardMesh && onSquareClickCallback) {
+                if (boardMesh && (onSquareClickCallback || (manualHighlight.active && manualHighlight.targetIdx !== null))) {
                     const intersects = raycaster.intersectObjects(boardMesh.children, true);
                     if (intersects.length > 0) {
                         const localPt = worldGroup.worldToLocal(intersects[0].point.clone());
@@ -1214,8 +1233,14 @@
                             }
                         }
                         if (bestDist < 0.95) {
-                            onSquareClickCallback(bestIdx);
-                            if (window.MonopolySound) window.MonopolySound.playClick();
+                            if (manualHighlight.active && manualHighlight.targetIdx !== null && manualCallbacks.onSquareAction) {
+                                manualCallbacks.onSquareAction(bestIdx);
+                                return;
+                            }
+                            if (onSquareClickCallback) {
+                                onSquareClickCallback(bestIdx);
+                                if (window.MonopolySound) window.MonopolySound.playClick();
+                            }
                             return;
                         }
                     }
@@ -2066,8 +2091,54 @@
         showDrawnCard: showDrawnCard,
         hideDrawnCards: hideDrawnCards,
 
+        setManualCallbacks: function(cbs) {
+            manualCallbacks = Object.assign({ onTokenTap: null, onDeckClick: null, onSquareAction: null }, cbs || {});
+        },
+
+        setManualHighlight: function(opts) {
+            manualHighlight = Object.assign({ active: false, playerId: null, targetIdx: null, drawDeck: null }, opts || {});
+            if (!worldGroup) return;
+            if (!manualTargetRing) {
+                const ringGeo = new THREE.RingGeometry(0.42, 0.56, 32);
+                const ringMat = new THREE.MeshBasicMaterial({
+                    color: 0xf1c40f,
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.85,
+                });
+                manualTargetRing = new THREE.Mesh(ringGeo, ringMat);
+                manualTargetRing.rotation.x = -Math.PI / 2;
+                manualTargetRing.visible = false;
+                worldGroup.add(manualTargetRing);
+            }
+            if (manualHighlight.active && manualHighlight.targetIdx !== null && manualHighlight.targetIdx !== undefined) {
+                const sc = getSquareCenter(manualHighlight.targetIdx);
+                manualTargetRing.position.set(sc.x, 0.115, sc.z);
+                manualTargetRing.visible = true;
+            } else {
+                manualTargetRing.visible = false;
+            }
+        },
+
         animate: function() {
             requestAnimationFrame(this.animate.bind(this));
+            const t = performance.now() * 0.004;
+            if (manualTargetRing && manualTargetRing.visible) {
+                const s = 1.0 + Math.sin(t * 2.2) * 0.12;
+                manualTargetRing.scale.set(s, s, 1);
+                manualTargetRing.material.opacity = 0.55 + Math.sin(t * 2.2) * 0.35;
+            }
+            if (boardDecksGroup) {
+                boardDecksGroup.children.forEach(ch => {
+                    if (ch.userData && ch.userData.type === 'board_deck' && ch.userData.baseY !== undefined) {
+                        if (manualHighlight.active && manualHighlight.drawDeck === ch.userData.deck) {
+                            ch.position.y = ch.userData.baseY + Math.abs(Math.sin(t * 2.0)) * 0.08;
+                        } else if (hoveredCard !== ch) {
+                            ch.position.y = ch.userData.baseY;
+                        }
+                    }
+                });
+            }
             if (controls) controls.update();
             if (renderer && scene && camera) {
                 renderer.render(scene, camera);
