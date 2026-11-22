@@ -99,6 +99,31 @@ def build_manifest() -> dict:
                 else:
                     item.update({"viewable": False, "format": "Asobo TMESH (nicht im Browser darstellbar)"})
                 items[h] = item
+    # Umgewandelte Fassungen (z. B. audio_playable/sfx/123.ogg aus audio/sfx/123.wav) ersetzen das
+    # nicht abspielbare Original in der Liste, damit kein Sound doppelt erscheint.
+    playable_by_key = {}
+    for it in items.values():
+        if it["kind"] == "sound" and it.get("playable"):
+            for p in it["paths"]:
+                if "/audio_playable/" in "/" + p:
+                    key = os.path.splitext(p.replace("audio_playable/", "audio/", 1))[0]
+                    playable_by_key[key] = it
+    for h, it in list(items.items()):
+        if it["kind"] == "sound" and not it.get("playable"):
+            # Ein Original kann mehrere identische Pfade haben → alle Umwandlungen zu EINEM Eintrag
+            # zusammenfassen (Ogg-Dateien sind wegen zufälliger Seriennummern nicht byte-gleich).
+            convs = []
+            for p in it["paths"]:
+                c = playable_by_key.get(os.path.splitext(p)[0])
+                if c and c not in convs:
+                    convs.append(c)
+            if convs:
+                keep = convs[0]
+                keep["source"] = it["paths"][0]
+                for extra in convs[1:]:
+                    keep["paths"].extend(extra["paths"])
+                    items.pop(extra["id"], None)
+                del items[h]
     ordered = sorted(items.values(), key=lambda x: (x["kind"], x["folder"], x["file"]))
     return {"generated": time.time(), "roots": list(ROOTS), "items": ordered}
 

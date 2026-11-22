@@ -328,6 +328,7 @@ function showDetail(item) {
   } else warn.style.display = "none";
   const kv = [["Datei", item.file], ["Ordner", item.folder], ["Größe", (item.size / 1024).toFixed(0) + " KB"]];
   if (item.kind === "sound") kv.push(["Format", `${item.codec}${item.rate ? ", " + item.rate + " Hz" : ""}${item.channels ? ", " + item.channels + " Kanal" : ""}`]);
+  if (item.source) kv.push(["Original", item.source]);
   if (item.vertices) kv.push(["Punkte", item.vertices]);
   if (item.paths.length > 1) kv.push(["Auch in", item.paths.slice(1).join("\n")]);
   kv.push(["ID", item.id]);
