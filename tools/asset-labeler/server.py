@@ -207,7 +207,14 @@ def main():
     n_m = len(MANIFEST["items"]) - n_s
     print(f"{n_s} Sounds, {n_m} Modelle (Duplikate zusammengefasst). Labels: {LABELS_PATH}")
     print(f"Öffnen: http://{'127.0.0.1' if args.host in ('0.0.0.0', '127.0.0.1') else args.host}:{args.port}/", flush=True)
-    ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
+    try:
+        server = ThreadingHTTPServer((args.host, args.port), Handler)
+    except OSError as e:
+        if e.errno == 98:  # Address already in use
+            sys.exit(f"Port {args.port} ist schon belegt – läuft der Labeler bereits? Dann einfach "
+                     f"http://127.0.0.1:{args.port}/ öffnen. Oder einen anderen Port wählen: --port {args.port + 1}")
+        raise
+    server.serve_forever()
 
 
 if __name__ == "__main__":
