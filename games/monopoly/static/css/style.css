@@ -1828,3 +1828,101 @@ body.spectator-mode #dock-wallet { display: none !important; }
     font-size: 9px; font-weight: 800; background: rgba(0,0,0,0.75); color: #fff; padding: 1px 5px; border-radius: 6px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .color-dot-pick.taken { opacity: 0.3; cursor: not-allowed; outline: 2px dashed rgba(255,255,255,0.5); outline-offset: 1px; }
+
+
+/* =====================================================================
+   Handy-Layout (Analyse 2026-11-22 mit Playwright-Screenshots):
+   - Header ragte über den rechten Rand → zweizeilig, Werkzeuge im ⋯-Menü
+   - Spielerleiste seitlich wischbar statt abgeschnitten
+   - Protokoll/Chat war unter 900 px komplett ausgeblendet → Bottom-Sheet
+   - Tippflächen ≥ 40 px, kompakteres Dock
+   ===================================================================== */
+.mobile-only { display: none !important; }
+#ui-root { overflow: clip; }
+
+@media (max-width: 700px), (max-height: 500px) {
+    .mobile-only { display: inline-flex !important; }
+    .game-header {
+        height: auto !important;
+        flex-wrap: wrap;
+        align-items: center;
+        row-gap: 6px;
+        padding: max(6px, env(safe-area-inset-top)) 8px 6px !important;
+        position: relative;
+    }
+    .brand-section { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; gap: 6px; }
+    .header-tools { flex: 0 0 auto; gap: 6px; }
+    /* Nur Protokoll, Ton und ⋯ in der Leiste – der Rest im Menü */
+    .header-tools > .cam-toggle-group,
+    .header-tools > #btn-rot-left,
+    .header-tools > #btn-rot-right,
+    .header-tools > #btn-music-toggle,
+    .header-tools > #btn-debug-menu { display: none; }
+    .game-header.tools-open .header-tools {
+        position: absolute; top: 100%; right: 8px; z-index: 70;
+        flex-wrap: wrap; justify-content: flex-end; max-width: calc(100vw - 16px);
+        background: rgba(15, 23, 42, 0.97); border: 1px solid var(--border-color); border-radius: 14px;
+        padding: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    }
+    .game-header.tools-open .header-tools > * { display: inline-flex !important; }
+    .btn-icon { width: 40px; height: 40px; }
+    .btn-cam { min-height: 36px; padding: 6px 12px; }
+    /* Spielerleiste: eigene Zeile, wischbar */
+    .top-player-hud {
+        order: 3; flex: 1 1 100%; max-width: 100%;
+        justify-content: flex-start; overflow-x: auto; overscroll-behavior-x: contain;
+        scrollbar-width: none; padding-bottom: 2px;
+    }
+    .top-player-hud::-webkit-scrollbar { display: none; }
+    .hud-player-pod { flex: 0 0 auto; }
+    .hud-pod-name { max-width: 72px; }
+    .hud-pod-inspect-btn { min-width: 32px; min-height: 32px; }
+    .modal-close { min-width: 40px; min-height: 40px; }
+
+    /* Protokoll & Chat als Panel von unten */
+    .logs-panel {
+        display: flex !important;
+        left: 0; right: 0; top: auto; bottom: 0; width: 100%;
+        max-height: 70vh; height: 70vh;
+        border-radius: 16px 16px 0 0;
+        transform: translateY(105%);
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+    .logs-panel.open { transform: translateY(0); }
+    #btn-close-logs { min-width: 40px; min-height: 40px; }
+    .chat-input { font-size: 16px; } /* iOS zoomt sonst beim Tippen hinein */
+
+}
+
+@media (max-width: 700px) {
+    /* Dock: Kontostand als schmale Zeile, Knöpfe im 3er-Raster */
+    .bottom-floating-dock {
+        flex-direction: column; align-items: stretch; gap: 6px;
+        width: calc(100% - 16px) !important; max-width: none !important;
+        bottom: max(8px, env(safe-area-inset-bottom)) !important;
+        border-radius: 22px; padding: 8px !important;
+    }
+    .bottom-floating-dock .cockpit-wallet { transform: none; justify-content: center; padding: 4px 10px; }
+    .bottom-floating-dock .action-buttons-wrap {
+        display: grid !important; grid-template-columns: repeat(3, 1fr); gap: 6px;
+    }
+    .bottom-floating-dock .btn-action {
+        justify-content: center; min-height: 44px; padding: 8px 6px !important; font-size: 13px !important;
+        border-radius: 14px;
+    }
+    .bottom-floating-dock #btn-roll { grid-column: span 2; font-size: 15px !important; }
+}
+
+/* Querformat-Handy: Dock flach halten, Spielerleiste nicht umbrechen lassen */
+@media (max-height: 500px) and (min-width: 701px) {
+    .bottom-floating-dock { bottom: 6px !important; padding: 4px 10px !important; }
+    .bottom-floating-dock .btn-action { min-height: 38px; padding: 6px 12px !important; font-size: 12px !important; }
+    .bottom-floating-dock .cockpit-wallet { transform: none; }
+    .top-player-hud { order: 0; flex: 1 1 auto; }
+    .game-header { flex-wrap: nowrap; }
+    .logs-panel { height: 80vh; max-height: 80vh; }
+}
+
+@media (max-width: 700px), (max-height: 500px) {
+    .header-tools > #btn-cinematic-toggle { display: none; }
+}

@@ -43,3 +43,4 @@ gtp-postgres-data/
 # Archives
 *.zip
 *.tar.gz
+games/monopoly/tests/ui/shots/

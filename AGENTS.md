@@ -86,6 +86,8 @@ Erledigt und auf `main`:
 8. Playtest-Feedback 1: fremde Züge ohne Zwangs-Popups, Kontostand in der Auktion, Handel mit Kartenbildern
    und Partner-Übersicht, Kartenstapel-Bug, Gefängnis-Pasch befreit nur, Bauregel „nur auf der eigenen Farbe“.
 
+**➡️ Offene Arbeit der letzten Sitzung: [`HANDOFF.md`](HANDOFF.md) (Modus „Manuell“, Handy-Überarbeitung).**
+
 **Als Nächstes:** Browser-Playtest des Gameplay-Pakets durch den Nutzer (Server-Seite ist getestet,
 UI noch nicht von Hand). Weitere Ideen: [`games/monopoly/DEVELOPMENT.md` → Roadmap](games/monopoly/DEVELOPMENT.md#roadmap--status).
 

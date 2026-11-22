@@ -1242,9 +1242,26 @@
             if (!container || !renderer || !camera) return;
             const width = container.clientWidth || window.innerWidth;
             const height = container.clientHeight || window.innerHeight;
+            const prevAspect = camera.aspect;
             camera.aspect = width / height;
             camera.updateProjectionMatrix();
             renderer.setSize(width, height);
+            // Drehen des Handys (hoch ↔ quer): Kamera neu einpassen, sonst ist das Brett angeschnitten
+            if ((prevAspect < 1) !== (camera.aspect < 1) && currentFocusedSeat === null && cameraMode) {
+                this.setCameraPreset(cameraMode);
+            }
+        },
+
+        // Faktor, um den die Kamera weiter weg muss, damit das Brett auch bei schmalem Bildschirm
+        // (Handy hochkant) vollständig sichtbar ist. Referenz: Querformat 16:10 = Faktor 1.
+        getFitMultiplier: function() {
+            if (!camera) return 1.0;
+            const halfV = THREE.MathUtils.degToRad(camera.fov / 2);
+            const tanH = Math.tan(halfV) * camera.aspect;        // horizontale Halbwinkel-Tangente
+            const tanRef = Math.tan(halfV) * 1.6;
+            const horizontal = tanRef / tanH;                   // > 1, wenn schmaler als 16:10
+            const uiPad = (camera.aspect < 1) ? 1.12 : 1.0;      // Platz für Header/Dock im Hochformat
+            return Math.max(1.0, horizontal) * uiPad;
         },
 
         getCameraMode: function() {
@@ -1258,8 +1275,7 @@
             if (bar) bar.style.display = 'none';
             if (!camera || !controls) return;
 
-            const isMobile = window.innerWidth <= 850;
-            const distMult = isMobile ? 1.35 : 1.0;
+            const distMult = this.getFitMultiplier();
 
             let targetPos, minPolar, maxPolar;
 
@@ -1318,7 +1334,8 @@
                     controls.minPolarAngle = minPolar !== undefined ? minPolar : 0;
                     controls.maxPolarAngle = maxPolar !== undefined ? maxPolar : Math.PI / 2;
                     controls.minDistance = 3.5;
-                    controls.maxDistance = 26.0;
+                    // Herauszoomen bis knapp über die Zielposition erlauben (Hochformat braucht mehr Abstand)
+                    controls.maxDistance = Math.max(26.0, camera.position.distanceTo(controls.target) * 1.25);
                     controls.update();
                     isTransitioningCamera = false;
                     if (onDone) onDone();
@@ -1365,8 +1382,7 @@
             const camCardsBtn = document.getElementById('btn-cam-cards');
             if (camCardsBtn) camCardsBtn.classList.add('active');
 
-            const isMobile = window.innerWidth <= 850;
-            const distMult = isMobile ? 1.25 : 1.0;
+            const distMult = Math.min(1.8, this.getFitMultiplier());
 
             const SEAT_CAMERAS = [
                 { pos: new THREE.Vector3(0, 3.8 * distMult, 7.8 * distMult), target: new THREE.Vector3(0, 0, 5.8) },     // Seat 0 (Bottom / Player)

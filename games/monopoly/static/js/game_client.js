@@ -959,6 +959,29 @@
     }
     setInterval(updateHeaderClocks, 1000);
 
+    // Kamerafahrt (Würfel-Nahaufnahme, Kamera folgt der Figur): nur beim EIGENEN Zug und nur,
+    // wenn auf diesem Gerät eingeschaltet. Fremde Züge bewegen die Kamera nie.
+    function cinematicEnabled() {
+        try { return localStorage.getItem('monopoly_cinematic') !== 'off'; } catch (e) { return true; }
+    }
+    function useCinematicFor(isMyTurn) {
+        return !!isMyTurn && cinematicEnabled();
+    }
+    function updateCinematicButton() {
+        const btn = document.getElementById('btn-cinematic-toggle');
+        if (!btn) return;
+        const on = cinematicEnabled();
+        btn.textContent = on ? '🎥' : '📷';
+        btn.title = on ? 'Kamerafahrt bei eigenen Zügen: AN (klicken zum Ausschalten)'
+                       : 'Kamerafahrt bei eigenen Zügen: AUS (klicken zum Einschalten)';
+        btn.classList.toggle('active', on);
+    }
+    window.toggleCinematic = function() {
+        try { localStorage.setItem('monopoly_cinematic', cinematicEnabled() ? 'off' : 'on'); } catch (e) {}
+        updateCinematicButton();
+    };
+    setTimeout(updateCinematicButton, 0);
+
     function sendJoinMessage() {
         sendWsMessage({
             action: 'JOIN',
@@ -1386,7 +1409,7 @@
             isTokenInTransit = true;
             Board3D.animateMoveToken(res.player.id, res.old_pos, res.new_pos, () => {
                 finishAfterCardEffect();
-            }, true);
+            }, useCinematicFor(isMyTurn));
         } else {
             finishAfterCardEffect();
         }
@@ -1493,12 +1516,12 @@
                             } else {
                                 Board3D.animateMoveToken(res.player.id, res.new_pos, finalPos, () => {
                                     finalizeLandingSequence();
-                                }, true);
+                                }, useCinematicFor(isMyTurn));
                             }
                         } else {
                             finalizeLandingSequence();
                         }
-                    }, true);
+                    }, useCinematicFor(isMyTurn));
                 } else {
                     // e.g. 3 doubles in a row -> straight to jail, or stayed in jail
                     if (res.double && res.player && res.player.in_jail) {
@@ -1507,7 +1530,7 @@
                     }
                     finalizeLandingSequence();
                 }
-            }, true);
+            }, useCinematicFor(isMyTurn));
         } else {
             finalizeLandingSequence();
         }
@@ -3030,6 +3053,16 @@
             if (btnStart) {
                 btnStart.onclick = () => sendWsMessage({ action: 'START_GAME' });
             }
+
+            // Handy: ⋯-Menü schließen, wenn daneben getippt oder eine Funktion gewählt wurde
+            document.addEventListener('click', (e) => {
+                const header = document.querySelector('.game-header');
+                if (!header || !header.classList.contains('tools-open')) return;
+                if (e.target.closest('#btn-more-tools')) return;
+                if (!e.target.closest('.header-tools') || e.target.closest('.header-tools button:not(#btn-more-tools)')) {
+                    header.classList.remove('tools-open');
+                }
+            });
 
             // Camera Controls & Active State Indicator
             const camButtons = {

@@ -82,9 +82,11 @@
                 </div>
                 <button class="btn-icon" id="btn-rot-left" title="Brett 90° nach links drehen">↺</button>
                 <button class="btn-icon" id="btn-rot-right" title="Brett 90° nach rechts drehen">↻</button>
+                <button class="btn-icon" id="btn-cinematic-toggle" title="Kamerafahrt bei eigenen Zügen" onclick="window.toggleCinematic && window.toggleCinematic()">🎥</button>
                 <button class="btn-icon" id="btn-toggle-logs" title="Spielprotokoll & Chat">📜</button>
                 <button class="btn-icon" id="btn-music-toggle" title="Hintergrundmusik (Lounge) ein/ausschalten">🎵</button>
                 <button class="btn-icon" id="btn-sound-toggle" title="Ton stummschalten">🔊</button>
+                <button class="btn-icon mobile-only" id="btn-more-tools" title="Weitere Einstellungen (Kamera, Drehen, Musik)" onclick="document.querySelector('.game-header').classList.toggle('tools-open')">⋯</button>
                 <button class="btn-icon" id="btn-debug-menu" title="Debug & Animations-Menü (Passwortgeschützt)" onclick="window.MonopolyGame && window.MonopolyGame.openDebugModal && window.MonopolyGame.openDebugModal()">🛠️</button>
             </div>
         </header>
