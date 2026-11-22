@@ -10,12 +10,13 @@
     <header class="game-header">
         <div class="header-left">
             <span class="brand-badge">Mensch ärgere dich nicht</span>
-            <div class="room-chip" id="room-chip" onclick="navigator.clipboard && navigator.clipboard.writeText(window.location.href); alert('Raum-Link kopiert!');">
+            <div class="room-chip" id="room-chip" onclick="window.MenschGame && window.MenschGame.copyRoomLink()">
                 <span>Raum: <strong id="header-room-code">------</strong></span>
                 <span>📋</span>
             </div>
         </div>
         <div class="header-tools">
+            <button class="tool-btn" id="sound-toggle-btn" title="Ton an/aus">🔊</button>
             <button class="tool-btn" onclick="location.reload()">🔄 Neu laden</button>
         </div>
     </header>
@@ -56,11 +57,15 @@
                 </div>
             </div>
 
-            <!-- Game Logs -->
+            <!-- Game Logs & Chat -->
             <div class="card">
-                <h4 style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">📜 PROTOKOLL</h4>
+                <h4 style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">📜 PROTOKOLL &amp; CHAT</h4>
                 <div class="logs-box" id="logs-box">
                     <div class="log-entry">Willkommen am Spieltisch!</div>
+                </div>
+                <div class="chat-bar">
+                    <input type="text" id="chat-input" class="chat-input" placeholder="Nachricht..." maxlength="120">
+                    <button class="tool-btn" id="chat-send-btn">➤</button>
                 </div>
             </div>
         </aside>
@@ -94,9 +99,17 @@
             <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
                 Warte auf Mitspieler oder füge Computer-Gegner hinzu (2–4 Spieler).
             </p>
-            <div id="lobby-player-list" style="margin-bottom: 16px;">
+            <div id="lobby-player-list" style="margin-bottom: 12px;">
                 <!-- Populated by JS -->
             </div>
+            <div id="lobby-color-picker" class="lobby-color-picker" style="display:none;">
+                <span style="font-size:0.8rem; color:var(--text-muted);">Deine Farbe:</span>
+                <div id="lobby-color-dots" class="lobby-color-dots"></div>
+            </div>
+            <label id="lobby-rule-clear-start-wrap" class="lobby-rule-toggle" style="display:none;">
+                <input type="checkbox" id="lobby-rule-clear-start" checked>
+                <span>Startfeld räumen (solange Figuren im Haus sind)</span>
+            </label>
             <div style="display: flex; gap: 10px;">
                 <button class="roll-btn" id="lobby-start-btn" style="flex: 2;">🎮 Spiel starten</button>
                 <button class="tool-btn" id="lobby-add-bot-btn" style="flex: 1;">🤖 + Bot</button>
@@ -109,12 +122,15 @@
         <div class="modal-box" style="text-align: center;">
             <div style="font-size: 3.5rem; margin-bottom: 10px;">🏆</div>
             <h2 class="modal-title" id="gameover-winner-title">Sieger ermittelt!</h2>
-            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 20px;">
+            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 12px;">
                 Alle 4 Figuren wurden erfolgreich ins Ziel gebracht!
             </p>
+            <div id="gameover-ranking" style="margin-bottom: 18px; text-align:left;"></div>
             <button class="roll-btn" id="gameover-restart-btn">🔄 Zurück zur Lobby</button>
         </div>
     </div>
+
+    <div id="mensch-toast" class="mensch-toast"></div>
 
     <script src="static/js/game_client.js?v=1.2"></script>
     <script>

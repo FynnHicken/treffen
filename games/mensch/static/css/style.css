@@ -403,3 +403,109 @@ body {
     gap: 10px;
     margin-top: 16px;
 }
+
+.target-preview-ring {
+    position: absolute;
+    width: 7.4%;
+    height: 7.4%;
+    border-radius: 50%;
+    border: 3px dashed var(--gold);
+    background: rgba(241, 196, 15, 0.22);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 15;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    animation: targetSpin 2.4s linear infinite;
+}
+.target-preview-ring.beat {
+    border-color: #e74c3c;
+    background: rgba(231, 76, 60, 0.28);
+}
+@keyframes targetSpin {
+    0% { transform: translate(-50%, -50%) scale(0.95); }
+    50% { transform: translate(-50%, -50%) scale(1.1); }
+    100% { transform: translate(-50%, -50%) scale(0.95); }
+}
+
+.dice-face.rolling {
+    animation: diceWobble 0.36s ease-in-out;
+}
+@keyframes diceWobble {
+    0% { transform: rotate(0deg) scale(1); }
+    25% { transform: rotate(-18deg) scale(1.18); }
+    50% { transform: rotate(16deg) scale(1.22); }
+    75% { transform: rotate(-10deg) scale(1.1); }
+    100% { transform: rotate(0deg) scale(1); }
+}
+
+.chat-bar {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+.chat-input {
+    flex: 1;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+    background: rgba(0, 0, 0, 0.32);
+    color: var(--text-main);
+    font-size: 0.85rem;
+}
+
+.lobby-color-picker {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+}
+.lobby-color-dots { display: flex; gap: 8px; }
+.color-dot-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.4);
+    cursor: pointer;
+    transition: transform 0.15s;
+}
+.color-dot-btn.selected {
+    border-color: #fff;
+    box-shadow: 0 0 0 2px var(--gold);
+    transform: scale(1.15);
+}
+.color-dot-btn.taken { opacity: 0.28; cursor: not-allowed; }
+
+.lobby-rule-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+    cursor: pointer;
+}
+
+.mensch-toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid var(--gold);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 200;
+}
+.mensch-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }

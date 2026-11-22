@@ -143,6 +143,7 @@ class GameRoom:
     def __init__(self, room_id: str, host_id: str):
         self.room_id = room_id
         self.host_id = host_id
+        self.host_claimed = False
         self.status = "LOBBY"  # "LOBBY", "PLAYING", "GAME_OVER"
         self.players: List[Player] = []
         self.current_player_idx = 0
@@ -153,6 +154,10 @@ class GameRoom:
         self.logs: List[str] = []
         self.winner: Optional[dict] = None
         self.finishers: List[str] = []
+        self.away_players: set = set()
+        self.settings: Dict[str, Any] = {
+            "clear_start": True,   # Startfeld räumen, solange noch Figuren im Haus sind
+        }
         self.created_at = time.time()
         self.log(f"Raum {room_id} erstellt.")
 
@@ -203,9 +208,59 @@ class GameRoom:
     def remove_player(self, player_id: str):
         self.players = [p for p in self.players if p.id != player_id]
         if self.players and self.host_id == player_id:
-            self.host_id = self.players[0].id
+            human = next((p for p in self.players if not p.is_bot), self.players[0])
+            self.host_id = human.id
         if self.current_player_idx >= len(self.players) and self.players:
             self.current_player_idx = 0
+
+    def remove_bot(self, bot_id: str) -> dict:
+        if self.status != "LOBBY":
+            return {"error": "Bots können nur in der Lobby entfernt werden."}
+        bot = next((p for p in self.players if p.id == bot_id and p.is_bot), None)
+        if not bot:
+            return {"error": "Bot nicht gefunden."}
+        self.players = [p for p in self.players if p.id != bot_id]
+        self.log(f"🤖 {bot.name} wurde entfernt.")
+        return {"success": True}
+
+    def set_player_color(self, player_id: str, color: str) -> dict:
+        if self.status != "LOBBY":
+            return {"error": "Farbe kann nur in der Lobby gewechselt werden."}
+        if color not in COLORS:
+            return {"error": "Ungültige Farbe."}
+        player = self.get_player(player_id)
+        if not player:
+            return {"error": "Spieler nicht gefunden."}
+        if any(other.color == color and other.id != player_id for other in self.players):
+            return {"error": "Diese Farbe ist bereits vergeben."}
+        player.color = color
+        for piece in player.pieces:
+            piece.color = color
+        return {"success": True, "color": color}
+
+    def update_settings(self, changes: dict) -> dict:
+        if self.status != "LOBBY":
+            return {"error": "Regeln können nur in der Lobby geändert werden."}
+        if isinstance(changes, dict) and isinstance(changes.get("clear_start"), bool):
+            self.settings["clear_start"] = changes["clear_start"]
+        return {"success": True, "settings": dict(self.settings)}
+
+    def reset_lobby(self):
+        self.status = "LOBBY"
+        self.winner = None
+        self.finishers = []
+        self.dice = 0
+        self.has_rolled = False
+        self.valid_moves = []
+        for p in self.players:
+            p.won = False
+            p.rank = 0
+            for piece in p.pieces:
+                piece.state = "BASE"
+                piece.track_pos = -1
+                piece.goal_pos = -1
+                piece.steps_taken = 0
+        self.log("🔄 Zurück in der Lobby.")
 
     def start_game(self):
         if len(self.players) < 2:
@@ -231,7 +286,7 @@ class GameRoom:
         else:
             self.rolls_left = 1
 
-    def roll_dice(self, player_id: str) -> dict:
+    def roll_dice(self, player_id: str, forced_val: Optional[int] = None) -> dict:
         curr = self.current_player()
         if not curr or curr.id != player_id or self.status != "PLAYING":
             return {"error": "Nicht dein Zug!"}
@@ -240,7 +295,7 @@ class GameRoom:
         if self.rolls_left <= 0:
             return {"error": "Keine Würfelwürfe übrig!"}
 
-        val = random.randint(1, 6)
+        val = max(1, min(6, int(forced_val))) if forced_val is not None else random.randint(1, 6)
         self.dice = val
         self.has_rolled = True
         self.rolls_left -= 1
@@ -251,8 +306,12 @@ class GameRoom:
         # Check if roll allows next roll or auto-skip
         can_roll_again = False
         if val == 6 and not curr.won:
-            # Rolling a 6 always grants another roll after moving!
+            # Rolling a 6 always grants another roll (after moving, or directly if blocked)
             can_roll_again = True
+            if len(self.valid_moves) == 0:
+                self.has_rolled = False
+                self.rolls_left = max(1, self.rolls_left)
+                self.log(f"Kein Zug mit der 6 möglich – {curr.name} darf noch einmal würfeln!")
         elif len(self.valid_moves) == 0 and self.rolls_left > 0:
             # Missed a 6 when allowed 3 rolls
             can_roll_again = True
@@ -260,7 +319,7 @@ class GameRoom:
             self.log(f"Noch {self.rolls_left}x Versuche übrig, um eine 6 zu würfeln.")
 
         auto_end = False
-        if len(self.valid_moves) == 0 and self.rolls_left <= 0:
+        if len(self.valid_moves) == 0 and self.rolls_left <= 0 and not can_roll_again:
             auto_end = True
 
         return {
@@ -320,10 +379,11 @@ class GameRoom:
                     "description": f"Figur um {roll} Felder vorrücken" + (f" (schlägt {dest_piece.color}!)" if dest_piece else "")
                 })
             elif new_steps <= 43:
-                # Entering or advancing into the home goal (a=0, b=1, c=2, d=3)
+                # Entering or advancing into the home goal (a=0, b=1, c=2, d=3) – kein Überspringen eigener Figuren!
                 goal_target = new_steps - 40
-                existing_in_goal = any(x.state == "GOAL" and x.goal_pos == goal_target for x in player.pieces)
-                if not existing_in_goal:
+                occupied_goals = {x.goal_pos for x in player.pieces if x.state == "GOAL"}
+                blocked_in_goal = any(g in occupied_goals for g in range(0, goal_target + 1))
+                if not blocked_in_goal:
                     # Intermediate track steps up to target entry (steps_taken < 40), then goal steps
                     path = []
                     steps_on_track = 39 - p.steps_taken
@@ -345,12 +405,13 @@ class GameRoom:
                         "description": f"Figur ins Zielfeld {chr(ord('a') + goal_target).upper()} ziehen"
                     })
 
-        # 3. Advancing pieces already in the goal
+        # 3. Advancing pieces already in the goal (kein Überspringen!)
+        occupied_goals = {x.goal_pos for x in player.pieces if x.state == "GOAL"}
         for p in player.pieces_in_goal():
             new_goal_pos = p.goal_pos + roll
             if new_goal_pos <= 3:
-                existing_in_goal = any(x.state == "GOAL" and x.goal_pos == new_goal_pos for x in player.pieces)
-                if not existing_in_goal:
+                blocked_in_goal = any(g in occupied_goals for g in range(p.goal_pos + 1, new_goal_pos + 1))
+                if not blocked_in_goal:
                     path = [
                         {"state": "GOAL", "pos": g}
                         for g in range(p.goal_pos + 1, new_goal_pos + 1)
@@ -367,8 +428,15 @@ class GameRoom:
                         "description": f"Figur im Ziel nach Feld {chr(ord('a') + new_goal_pos).upper()} vorziehen"
                     })
 
-        # "Schlagzwang" / Priority: In traditional rules, if a piece can spawn or strike, it is prioritized
-        # But we offer all valid legal moves to the player, highlighting beat moves!
+        # Startfeld-Räumzwang: Solange noch Figuren im Haus sind und eine eigene Figur auf dem Startfeld steht,
+        # muss diese (falls sie ziehen kann) zuerst bewegt werden.
+        if self.settings.get("clear_start", True) and len(player.pieces_in_base()) > 0:
+            start_piece = self._piece_at_track_pos(start_idx)
+            if start_piece and start_piece.color == player.color:
+                start_moves = [m for m in moves if m["piece_id"] == start_piece.piece_id]
+                if start_moves:
+                    return start_moves
+
         return moves
 
     def _piece_at_track_pos(self, pos: int) -> Optional[Piece]:
@@ -442,6 +510,8 @@ class GameRoom:
 
         return {
             "move": move,
+            "player_color": curr.color,
+            "player_name": curr.name,
             "beaten": beaten_info,
             "roll_again": roll_again,
             "game_over": self.status == "GAME_OVER"
@@ -476,6 +546,39 @@ class GameRoom:
         self._init_turn()
         self.log(f"{self.current_player().name} ist am Zug.")
 
+    def _is_pos_threatened(self, track_pos: int, my_color: str) -> bool:
+        """True, wenn 1..6 Felder hinter track_pos eine gegnerische Figur steht."""
+        for dist in range(1, 7):
+            behind = (track_pos - dist) % 40
+            p = self._piece_at_track_pos(behind)
+            if p and p.color != my_color:
+                return True
+        return False
+
+    def _score_bot_move(self, player: Player, move: dict) -> float:
+        score = 0.0
+        piece = next(p for p in player.pieces if p.piece_id == move["piece_id"])
+        start_idx = COLOR_META[player.color]["start_pos"]
+
+        if move.get("beats_piece"):
+            beaten = move["beats_piece"]
+            score += 120.0 + float(beaten.get("steps_taken", 0)) * 1.2
+        if move["type"] == "ENTER_GOAL":
+            score += 95.0 + move["to_pos"] * 10.0
+        elif move["type"] == "ADVANCE_GOAL":
+            score += 60.0 + move["to_pos"] * 8.0
+        elif move["type"] == "SPAWN":
+            score += 90.0
+        elif move["type"] == "MOVE_TRACK":
+            if move["from_pos"] == start_idx and len(player.pieces_in_base()) > 0:
+                score += 70.0
+            if self._is_pos_threatened(move["from_pos"], player.color):
+                score += 42.0
+            if self._is_pos_threatened(move["to_pos"], player.color):
+                score -= 28.0
+            score += piece.steps_taken * 0.6
+        return score
+
     def auto_bot_turn(self) -> Optional[dict]:
         curr = self.current_player()
         if not curr or not curr.is_bot or self.status != "PLAYING":
@@ -486,32 +589,23 @@ class GameRoom:
             res = self.roll_dice(curr.id)
             if res.get("auto_end"):
                 self.end_turn()
-                return {"type": "BOT_TURN_ENDED", "dice": self.dice}
-            if not self.valid_moves and self.rolls_left > 0:
-                # Will roll again
-                return {"type": "BOT_ROLLED_AGAIN", "dice": self.dice}
+                return {"type": "BOT_TURN_ENDED", "dice": self.dice, "player_color": curr.color}
+            if not self.valid_moves and (self.rolls_left > 0 or res.get("can_roll_again")):
+                return {"type": "BOT_ROLLED_AGAIN", "dice": self.dice, "player_color": curr.color}
 
         if self.valid_moves:
-            # Pick best move:
-            # Priority: 1) Beats an opponent piece, 2) Enters goal, 3) Spawns from base, 4) Move track
-            beat_moves = [m for m in self.valid_moves if m.get("beats_piece")]
-            spawn_moves = [m for m in self.valid_moves if m["type"] == "SPAWN"]
-            goal_moves = [m for m in self.valid_moves if m["type"] in ("ENTER_GOAL", "ADVANCE_GOAL")]
-
-            if beat_moves:
-                chosen = beat_moves[0]
-            elif spawn_moves:
-                chosen = spawn_moves[0]
-            elif goal_moves:
-                chosen = goal_moves[0]
-            else:
-                chosen = random.choice(self.valid_moves)
-
+            chosen = max(self.valid_moves, key=lambda m: self._score_bot_move(curr, m))
             exec_res = self.execute_move(curr.id, chosen["piece_id"])
-            return {"type": "BOT_MOVED", "move": chosen, "result": exec_res}
+            return {
+                "type": "BOT_MOVED",
+                "move": chosen,
+                "player_color": curr.color,
+                "player_name": curr.name,
+                "result": exec_res,
+            }
         else:
             self.end_turn()
-            return {"type": "BOT_PASSED", "dice": self.dice}
+            return {"type": "BOT_PASSED", "dice": self.dice, "player_color": curr.color}
 
     def to_dict(self) -> dict:
         return {
@@ -525,9 +619,11 @@ class GameRoom:
             "has_rolled": self.has_rolled,
             "rolls_left": self.rolls_left,
             "valid_moves": self.valid_moves,
-            "logs": self.logs[-20:],
+            "logs": self.logs[-25:],
             "winner": self.winner,
             "finishers": self.finishers,
+            "away_players": sorted(self.away_players),
+            "settings": dict(self.settings),
             "color_meta": COLOR_META,
             "track_pixels": TRACK_PIXELS,
             "goal_pixels": GOAL_PIXELS
