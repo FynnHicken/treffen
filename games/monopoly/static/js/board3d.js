@@ -377,16 +377,31 @@
     }
 
     // Texture Caches
+    function loadCachedTexture(url) {
+        const tex = new THREE.TextureLoader().load(url, (loaded) => {
+            loaded.needsUpdate = true;
+            loaded.userData.ready = true;
+            const mats = loaded.userData.pendingMaterials || [];
+            mats.forEach(mat => {
+                mat.map = loaded;
+                mat.color.setHex(0xffffff);
+                mat.needsUpdate = true;
+            });
+            loaded.userData.pendingMaterials = [];
+        });
+        tex.colorSpace = THREE.SRGBColorSpace || THREE.sRGBEncoding;
+        tex.generateMipmaps = true;
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.userData = { ready: false, pendingMaterials: [] };
+        return tex;
+    }
+
     const cardTextureCache = {};
     function getDeedTexture(sqIdx) {
         if (!cardTextureCache[sqIdx]) {
             const url = DEED_CARD_IMAGES[sqIdx];
             if (url) {
-                const tex = new THREE.TextureLoader().load(url);
-                tex.colorSpace = THREE.SRGBColorSpace || THREE.sRGBEncoding;
-                tex.generateMipmaps = true;
-                tex.minFilter = THREE.LinearMipmapLinearFilter;
-                cardTextureCache[sqIdx] = tex;
+                cardTextureCache[sqIdx] = loadCachedTexture(url);
             }
         }
         return cardTextureCache[sqIdx];
@@ -397,11 +412,7 @@
         const key = (cardIdx % 2 === 1) ? 'gemeinschaft_16' : 'ereignis_16';
         if (!jailFreeTextureCache[key]) {
             const url = `static/assets/chance_chest/cards/${key}.png`;
-            const tex = new THREE.TextureLoader().load(url);
-            tex.colorSpace = THREE.SRGBColorSpace || THREE.sRGBEncoding;
-            tex.generateMipmaps = true;
-            tex.minFilter = THREE.LinearMipmapLinearFilter;
-            jailFreeTextureCache[key] = tex;
+            jailFreeTextureCache[key] = loadCachedTexture(url);
         }
         return jailFreeTextureCache[key];
     }
@@ -409,13 +420,16 @@
     let banknoteTexture = null;
     function getBanknoteTexture() {
         if (!banknoteTexture) {
-            const tex = new THREE.TextureLoader().load('static/assets/bills/geldschein_100.png');
-            tex.colorSpace = THREE.SRGBColorSpace || THREE.sRGBEncoding;
-            tex.generateMipmaps = true;
-            tex.minFilter = THREE.LinearMipmapLinearFilter;
-            banknoteTexture = tex;
+            banknoteTexture = loadCachedTexture('static/assets/bills/geldschein_100.png');
         }
         return banknoteTexture;
+    }
+
+    function preloadTableCardTextures() {
+        Object.keys(DEED_CARD_IMAGES).forEach(sqIdx => getDeedTexture(sqIdx));
+        getJailFreeTexture(0);
+        getJailFreeTexture(1);
+        getBanknoteTexture();
     }
 
     // Load authentic High-Res German Board Texture from ROM (2048x2048)
@@ -977,6 +991,8 @@
             worldGroup.add(tableCardsGroup);
             worldGroup.add(tableBillsGroup);
             worldGroup.add(boardTabsGroup);
+
+            preloadTableCardTextures();
 
             // Camera
             camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
@@ -2042,12 +2058,17 @@
                             : getDeedTexture(item.sqIdx);
                         if (!tex) return;
 
+                        const texReady = !!(tex.userData && tex.userData.ready) || !!tex.image;
                         const cardFrontMat = new THREE.MeshStandardMaterial({
-                            map: tex,
+                            map: texReady ? tex : null,
+                            color: texReady ? 0xffffff : 0xf4f1ea,
                             roughness: 0.32,
                             metalness: 0.04,
                             side: THREE.DoubleSide
                         });
+                        if (!texReady && tex.userData && tex.userData.pendingMaterials) {
+                            tex.userData.pendingMaterials.push(cardFrontMat);
+                        }
 
                         const geomToUse = (item.kind === 'jail') ? jailCardGeo : cardGeo;
                         const cardMesh = new THREE.Mesh(geomToUse, cardFrontMat);
