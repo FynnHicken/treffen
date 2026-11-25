@@ -8,15 +8,22 @@ const SOLO_ROOM_TTL_MS = 60000; // 60 seconds for unused rooms with <= 1 player
 // Profilfelder kommen vom Client und landen bei allen anderen im DOM –
 // daher hier hart begrenzen (Defense in depth, der Client escaped zusätzlich).
 const COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
+const AVATAR_DATA_URL_RE = /^data:image\/(png|webp);base64,[A-Za-z0-9+/=]{1,32768}$/;
 function cleanText(value, maxLen, fallback) {
     if (typeof value !== 'string') return fallback;
     const cleaned = value.replace(/[<>"'`&\u0000-\u001f]/g, '').trim().slice(0, maxLen);
     return cleaned || fallback;
 }
+function cleanAvatar(value) {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    if (AVATAR_DATA_URL_RE.test(trimmed)) return trimmed;
+    return cleanText(trimmed, 8, undefined);
+}
 function sanitizeProfile(user) {
     return {
         name: cleanText(user.name, 24, undefined),
-        avatar: cleanText(user.avatar, 8, undefined),
+        avatar: cleanAvatar(user.avatar),
         color: typeof user.color === 'string' && COLOR_RE.test(user.color) ? user.color : undefined,
         status: cleanText(user.status, 32, undefined)
     };
@@ -103,7 +110,7 @@ class Room {
         const player = {
             id: user.id,
             name: profile.name || "Gast",
-            avatar: profile.avatar || "🐶",
+            avatar: profile.avatar || "",
             color: profile.color || "#6366f1",
             isHost: isHost,
             isReady: user.isReady ?? true,
@@ -352,9 +359,10 @@ const server = http.createServer((req, res) => {
                     activeRooms.push({
                         code: code,
                         hostName: host ? host.name : 'Host',
-                        hostAvatar: host ? host.avatar : '👑',
+                        hostAvatar: host ? host.avatar : '',
+                        hostColor: host ? host.color : '#6366f1',
                         playerCount: playerList.length,
-                        players: playerList.map(p => ({ name: p.name, avatar: p.avatar })),
+                        players: playerList.map(p => ({ name: p.name, avatar: p.avatar, color: p.color })),
                         activeGame: room.activeGame ? room.activeGame.gameId : null,
                         expiresAt: room.expiresAt,
                         remainingMs: room.expiresAt ? Math.max(0, room.expiresAt - now) : null,

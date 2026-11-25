@@ -57,7 +57,7 @@
                 🗳️ Abstimmung
             </button>
             <div class="user-badge" id="currentUserBadge" title="Profil bearbeiten (Klicken)">
-                <div class="avatar-small" id="userAvatar">🐶</div>
+                <div class="avatar-small" id="userAvatar"></div>
                 <div class="user-info">
                     <span class="user-name" id="userNameDisplay">Lukas</span>
                     <span class="user-role host" id="userRoleDisplay">👑 Party-Host</span>
@@ -539,8 +539,8 @@
                 </div>
 
                 <div class="welcome-field">
-                    <label>Wähle deinen Avatar:</label>
-                    <div id="welcomeAvatarPicker" class="avatar-picker-grid welcome-avatar-grid">
+                    <label>Gestalte deinen Avatar:</label>
+                    <div id="welcomeAvatarPicker" class="avatar-editor-host">
                         <!-- Populated dynamically -->
                     </div>
                 </div>
@@ -615,8 +615,8 @@
                     <input type="text" id="profileNameInput" name="player_edit_alias" maxlength="16" placeholder="Dein Name..." autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-form-type="other" data-lpignore="true" data-1p-ignore="true" style="width: 100%; padding: 10px 14px; border: var(--ink-border); border-radius: 12px; font-family: var(--font-body); font-size: 1.1rem; background: var(--bg-surface); color: var(--ink);">
                 </div>
                 <div>
-                    <label style="font-weight: 700; display: block; margin-bottom: 8px;">Wähle deinen Avatar:</label>
-                    <div id="profileAvatarPicker" class="avatar-picker-grid">
+                    <label style="font-weight: 700; display: block; margin-bottom: 8px;">Gestalte deinen Avatar:</label>
+                    <div id="profileAvatarPicker" class="avatar-editor-host">
                         <!-- Populated dynamically -->
                     </div>
                 </div>
@@ -631,6 +631,7 @@
     <!-- Toast Notification -->
     <div class="toast" id="toast">Link kopiert!</div>
 
+    <script src="avatar.js?v=1"></script>
     <script src="app.js?v=slot3"></script>
 </body>
 </html>

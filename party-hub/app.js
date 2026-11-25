@@ -52,8 +52,8 @@ function saveGlobalProfile(profile) {
     try {
         localStorage.setItem(GLOBAL_PROFILE_KEY, JSON.stringify({
             name: profile.name || "Gast",
-            avatar: profile.avatar || "🐶",
-            color: profile.color || "#6366f1"
+            avatar: isSafeAvatarDataUrl(profile.avatar) ? profile.avatar : "",
+            color: sanitizeAvatarColor(profile.color)
         }));
     } catch (e) {}
 }
@@ -274,8 +274,8 @@ const partyState = {
     }
 };
 
-let tempSelectedAvatar = null;
-let tempWelcomeAvatar = "🐶";
+let welcomeAvatarEditor = null;
+let profileAvatarEditor = null;
 
 // ==========================================================================
 // Welcome Overlay & Entry Management
@@ -295,39 +295,23 @@ function showWelcomeOverlay(opts = {}) {
     const choiceActions = document.getElementById("welcomeChoiceActions");
     const directActions = document.getElementById("welcomeDirectActions");
 
-    // Load existing global profile or choose unused preset
+    // Load existing global profile or choose random body color
     const globalProfile = getGlobalProfile();
-    let chosenName = globalProfile ? globalProfile.name : "";
-    let chosenAvatar = globalProfile ? globalProfile.avatar : null;
+    const chosenName = globalProfile ? globalProfile.name : "";
+    const chosenFace = globalProfile && isSafeAvatarDataUrl(globalProfile.avatar) ? globalProfile.avatar : "";
+    const chosenColor = globalProfile && globalProfile.color
+        ? sanitizeAvatarColor(globalProfile.color)
+        : AVATAR_BODY_COLORS[Math.floor(Math.random() * AVATAR_BODY_COLORS.length)];
 
-    if (!chosenAvatar) {
-        let roster = getRosterFromStorage();
-        const activeNames = Object.values(roster).map(p => p.name);
-        const availablePresets = AVATAR_POOL.filter(p => !activeNames.includes(p.name));
-        const poolToChooseFrom = availablePresets.length > 0 ? availablePresets : AVATAR_POOL;
-        const chosenPreset = poolToChooseFrom[Math.floor(Math.random() * poolToChooseFrom.length)];
-        chosenAvatar = chosenPreset.avatar;
-    }
-
-    tempWelcomeAvatar = chosenAvatar || "🐶";
     if (nameInput) {
         nameInput.value = chosenName || "";
         setTimeout(() => nameInput.focus(), 150);
     }
 
-    // Render avatar choices
     if (picker) {
-        picker.innerHTML = "";
-        ALL_AVATARS.forEach(emoji => {
-            const item = document.createElement("div");
-            item.className = `avatar-pick-item ${emoji === tempWelcomeAvatar ? 'selected' : ''}`;
-            item.innerText = emoji;
-            item.onclick = () => {
-                document.querySelectorAll("#welcomeAvatarPicker .avatar-pick-item").forEach(el => el.classList.remove("selected"));
-                item.classList.add("selected");
-                tempWelcomeAvatar = emoji;
-            };
-            picker.appendChild(item);
+        welcomeAvatarEditor = createAvatarEditor(picker, {
+            initialColor: chosenColor,
+            initialFace: chosenFace
         });
     }
 
@@ -446,7 +430,7 @@ window.refreshOpenRooms = async function() {
                 const targetTs = hasExpiry ? (now + r.remainingMs) : 0;
                 const remSec = hasExpiry ? Math.ceil(r.remainingMs / 1000) : 0;
                 const pct = hasExpiry ? Math.max(0, Math.min(100, (r.remainingMs / ttl) * 100)) : 100;
-                const playersText = (r.players || []).map(p => `${escapeHtml(p.avatar || '🎮')} ${escapeHtml(p.name)}`).join(", ");
+                const playersText = (r.players || []).map(p => `<span class="open-room-player-chip">${renderAvatarHtml(p.avatar, p.color, "treffen-avatar-xs")} ${escapeHtml(p.name)}</span>`).join("");
                 const expiryBadge = hasExpiry
                     ? `<span class="room-expiry-sec" style="font-size: 0.74rem; font-weight: 800; color: #f59e0b; background: rgba(245,158,11,0.14); padding: 2px 6px; border-radius: 6px;">⏳ ${remSec}s</span>`
                     : "";
@@ -461,10 +445,10 @@ window.refreshOpenRooms = async function() {
                             <div style="display: flex; flex-direction: column; gap: 2px;">
                                 <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                                     <strong style="font-family: monospace; font-size: 0.95rem; letter-spacing: 0.08em;">#${escapeHtml(r.code)}</strong>
-                                    <span style="font-size: 0.78rem; color: var(--ink-light);">👑 ${escapeHtml(r.hostAvatar || '🐶')} ${escapeHtml(r.hostName || 'Host')}</span>
+                                    <span class="open-room-host-chip" style="font-size: 0.78rem; color: var(--ink-light); display: inline-flex; align-items: center; gap: 4px;">👑 ${renderAvatarHtml(r.hostAvatar, r.hostColor, "treffen-avatar-xs")} ${escapeHtml(r.hostName || 'Host')}</span>
                                     ${expiryBadge}
                                 </div>
-                                <span style="font-size: 0.75rem; color: var(--ink-light);">👥 ${Number(r.playerCount) || 0} Spieler (${playersText})</span>
+                                <span style="font-size: 0.75rem; color: var(--ink-light); display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">👥 ${Number(r.playerCount) || 0} Spieler: ${playersText}</span>
                             </div>
                             <button type="button" class="action-btn-sm" data-room-code="${escapeHtml(r.code)}" onclick="quickJoinOpenRoom(this.dataset.roomCode)" style="padding: 6px 12px; font-size: 0.82rem;">Beitreten →</button>
                         </div>
@@ -512,9 +496,8 @@ window.switchToWelcomeChoiceMode = function() {
 window.handleWelcomeCreateParty = function() {
     const nameInput = document.getElementById("welcomeNicknameInput");
     const nickname = (nameInput && nameInput.value.trim()) ? nameInput.value.trim() : "Host";
-    const avatar = tempWelcomeAvatar || "🐶";
-    const preset = AVATAR_POOL.find(p => p.name.toLowerCase() === nickname.toLowerCase() || p.avatar === avatar);
-    const color = preset ? preset.color : "#6366f1";
+    const avatar = welcomeAvatarEditor ? welcomeAvatarEditor.getFaceDataUrl() : "";
+    const color = welcomeAvatarEditor ? welcomeAvatarEditor.getColor() : "#6366f1";
 
     const profile = { name: nickname, avatar, color };
     saveGlobalProfile(profile);
@@ -551,9 +534,8 @@ window.handleWelcomeJoinParty = function(e) {
 
     const nameInput = document.getElementById("welcomeNicknameInput");
     const nickname = (nameInput && nameInput.value.trim()) ? nameInput.value.trim() : "Gast";
-    const avatar = tempWelcomeAvatar || "🐶";
-    const preset = AVATAR_POOL.find(p => p.name.toLowerCase() === nickname.toLowerCase() || p.avatar === avatar);
-    const color = preset ? preset.color : "#6366f1";
+    const avatar = welcomeAvatarEditor ? welcomeAvatarEditor.getFaceDataUrl() : "";
+    const color = welcomeAvatarEditor ? welcomeAvatarEditor.getColor() : "#6366f1";
 
     const codeInput = document.getElementById("welcomeCodeInput");
     const rawInputCode = (codeInput ? codeInput.value : "").trim().toUpperCase();
@@ -600,9 +582,8 @@ window.handleWelcomeDirectJoin = function() {
 
     const nameInput = document.getElementById("welcomeNicknameInput");
     const nickname = (nameInput && nameInput.value.trim()) ? nameInput.value.trim() : "Gast";
-    const avatar = tempWelcomeAvatar || "🐶";
-    const preset = AVATAR_POOL.find(p => p.name.toLowerCase() === nickname.toLowerCase() || p.avatar === avatar);
-    const color = preset ? preset.color : "#6366f1";
+    const avatar = welcomeAvatarEditor ? welcomeAvatarEditor.getFaceDataUrl() : "";
+    const color = welcomeAvatarEditor ? welcomeAvatarEditor.getColor() : "#6366f1";
 
     const profile = { name: nickname, avatar, color };
     saveGlobalProfile(profile);
@@ -715,8 +696,8 @@ function initUserSession() {
             savedUser = {
                 id: "p_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 6),
                 name: globalProfile.name,
-                avatar: globalProfile.avatar || "🐶",
-                color: globalProfile.color || "#6366f1",
+                avatar: isSafeAvatarDataUrl(globalProfile.avatar) ? globalProfile.avatar : "",
+                color: sanitizeAvatarColor(globalProfile.color),
                 isHost: asHost,
                 isCreator: asHost,
                 status: "Bereit",
@@ -809,7 +790,7 @@ function updateHeaderUserBadge() {
     const nameEl = document.getElementById("userNameDisplay");
     const roleEl = document.getElementById("userRoleDisplay");
 
-    if (avatarEl) avatarEl.innerText = partyState.currentUser.avatar;
+    if (avatarEl) avatarEl.innerHTML = renderAvatarHtml(partyState.currentUser.avatar, partyState.currentUser.color);
     if (nameEl) nameEl.innerText = partyState.currentUser.name;
     if (roleEl) {
         if (partyState.currentUser.isHost) {
@@ -852,7 +833,7 @@ function renderPlayerRoster() {
 
         card.innerHTML = `
             <div class="player-card-avatar" style="background: ${safeColor(p.color)}22; border: 2.5px solid ${safeColor(p.color)};">
-                ${escapeHtml(p.avatar)}
+                ${renderAvatarHtml(p.avatar, p.color)}
                 <span class="status-dot"></span>
             </div>
             <div class="player-card-details">
@@ -1099,21 +1080,12 @@ window.openProfileModal = function() {
     const picker = document.getElementById("profileAvatarPicker");
     if (!modal) return;
 
-    tempSelectedAvatar = partyState.currentUser.avatar;
     if (nameInput) nameInput.value = partyState.currentUser.name;
 
     if (picker) {
-        picker.innerHTML = "";
-        ALL_AVATARS.forEach(emoji => {
-            const item = document.createElement("div");
-            item.className = `avatar-pick-item ${emoji === tempSelectedAvatar ? 'selected' : ''}`;
-            item.innerText = emoji;
-            item.onclick = () => {
-                document.querySelectorAll(".avatar-pick-item").forEach(el => el.classList.remove("selected"));
-                item.classList.add("selected");
-                tempSelectedAvatar = emoji;
-            };
-            picker.appendChild(item);
+        profileAvatarEditor = createAvatarEditor(picker, {
+            initialColor: partyState.currentUser.color,
+            initialFace: partyState.currentUser.avatar
         });
     }
 
@@ -1131,8 +1103,9 @@ window.saveProfileModal = function() {
     if (newName) {
         partyState.currentUser.name = newName;
     }
-    if (tempSelectedAvatar) {
-        partyState.currentUser.avatar = tempSelectedAvatar;
+    if (profileAvatarEditor) {
+        partyState.currentUser.avatar = profileAvatarEditor.getFaceDataUrl();
+        partyState.currentUser.color = profileAvatarEditor.getColor();
     }
 
     try {
@@ -1149,7 +1122,7 @@ window.saveProfileModal = function() {
     broadcast({ type: "PRESENCE_PING" });
 
     closeProfileModal();
-    showToast(`Profil gespeichert: ${partyState.currentUser.name} ${partyState.currentUser.avatar}`);
+    showToast(`Profil gespeichert: ${partyState.currentUser.name}`);
 };
 
 // ==========================================================================
@@ -1660,7 +1633,7 @@ function ensureCurrentUser() {
             partyState.currentUser = {
                 id: "p_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 6),
                 name: "Spieler",
-                avatar: "🐶",
+                avatar: "",
                 color: "#6366f1",
                 isHost: true,
                 status: "Bereit",
@@ -1849,7 +1822,7 @@ window.renderModalReadiness = function() {
 
         item.innerHTML = `
             <div class="mini-avatar ${isReady ? 'is-ready' : ''}" style="border-color: ${safeColor(p.color)};">
-                ${escapeHtml(p.avatar)}
+                ${renderAvatarHtml(p.avatar, p.color)}
                 <span class="mini-ready-check">${isReady ? '✓' : '…'}</span>
             </div>
             <span class="mini-player-name">${escapeHtml(p.name)} ${isMe ? '(Du)' : ''} ${p.isHost ? '👑' : ''}</span>

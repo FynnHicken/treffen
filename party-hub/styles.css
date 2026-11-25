@@ -2823,4 +2823,259 @@ body {
     box-shadow: none;
 }
 
+/* ==========================================================================
+   Treffen Avatar & Freehand Face Editor (Skribbl-Style)
+   ========================================================================== */
+
+.treffen-avatar {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+}
+
+.treffen-avatar-body {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.treffen-avatar-face {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+}
+
+.treffen-avatar-xs {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    border: 1.5px solid var(--ink);
+    background: var(--bg-surface);
+}
+
+.open-room-player-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-surface-elevated);
+    padding: 1px 6px 1px 3px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.avatar-editor-host {
+    width: 100%;
+}
+
+.avatar-editor {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    background: var(--bg-surface-elevated);
+    border: var(--ink-border);
+    border-radius: 16px;
+    padding: 14px;
+}
+
+.avatar-editor-stage-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.avatar-editor-stage {
+    position: relative;
+    width: 156px;
+    height: 156px;
+    border-radius: 20px;
+    background: var(--bg-surface);
+    border: 2px solid var(--ink);
+    box-shadow: 3px 3px 0px var(--ink);
+    overflow: hidden;
+}
+
+.avatar-draw-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.avatar-editor-hint {
+    font-size: 0.72rem;
+    color: var(--ink-light);
+    font-weight: 700;
+    text-align: center;
+}
+
+.avatar-editor-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+
+.ae-section {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.ae-label {
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-light);
+}
+
+.ae-color-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ae-color-swatch {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid var(--ink);
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    padding: 0;
+}
+
+.ae-color-swatch:hover {
+    transform: scale(1.14);
+}
+
+.ae-color-swatch.selected {
+    transform: scale(1.18);
+    box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--primary);
+}
+
+.ae-pen-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.ae-pen-colors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.ae-pen-swatch {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: 2px solid var(--ink);
+    cursor: pointer;
+    transition: transform 0.12s ease;
+    padding: 0;
+}
+
+.ae-pen-swatch.selected {
+    transform: scale(1.16);
+    box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--primary);
+}
+
+.ae-brush-sizes {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.ae-brush-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    border: 2px solid var(--ink);
+    background: var(--bg-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+}
+
+.ae-brush-btn span {
+    display: block;
+    border-radius: 50%;
+    background: var(--ink);
+}
+
+.ae-brush-btn.selected {
+    background: var(--primary);
+    border-color: var(--ink);
+}
+
+.ae-brush-btn.selected span {
+    background: #ffffff;
+}
+
+.ae-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ae-tool-btn {
+    padding: 5px 9px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    border-radius: 8px;
+    border: 2px solid var(--ink);
+    background: var(--bg-surface);
+    color: var(--ink);
+    cursor: pointer;
+    transition: transform 0.1s ease, background 0.1s ease;
+}
+
+.ae-tool-btn:hover {
+    transform: translateY(-1px);
+}
+
+.ae-tool-btn.active {
+    background: var(--primary);
+    color: #ffffff;
+}
+
+@media (max-width: 600px) {
+    .avatar-editor {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 10px;
+        gap: 10px;
+    }
+
+    .avatar-editor-stage {
+        width: 140px;
+        height: 140px;
+    }
+
+    .ae-color-swatch {
+        width: 26px;
+        height: 26px;
+    }
+}
+
+
 
