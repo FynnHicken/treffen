@@ -263,6 +263,7 @@ const partyState = {
         monopoly: 0
     },
     userVotedGame: null,
+    hubSettings: { anyoneCanVote: false },
     activeModalGameId: null,
     currentLobbyId: null,
     skribblSettings: {
@@ -927,8 +928,71 @@ window.transferHostTo = function(targetPlayerId, targetName) {
     showToast(`👑 Du hast die Party-Leitung an ${displayName} übergeben.`);
 };
 
+function canToggleVoting() {
+    return !!partyState.isHost || !!(partyState.hubSettings && partyState.hubSettings.anyoneCanVote);
+}
+
+// Texte zu den Raum-Einstellungen. Schlüssel müssen in HUB_SETTINGS_SCHEMA (party-server/server.js) stehen.
+const HUB_SETTING_LABELS = {
+    anyoneCanVote: {
+        title: "🗳️ Jeder kann Abstimmungen starten",
+        desc: "Aus: Nur der Host startet und beendet Abstimmungen. Abstimmen dürfen immer alle."
+    }
+};
+
+function renderHubSettings() {
+    const list = document.getElementById("hubSettingsList");
+    if (!list) return;
+    const isHost = !!partyState.isHost;
+    list.innerHTML = Object.entries(HUB_SETTING_LABELS).map(([key, label]) => `
+        <label class="hub-setting-row">
+            <span>
+                <strong>${escapeHtml(label.title)}</strong>
+                <small>${escapeHtml(label.desc)}</small>
+            </span>
+            <input type="checkbox" data-hub-setting="${escapeHtml(key)}" ${partyState.hubSettings[key] ? "checked" : ""} ${isHost ? "" : "disabled"}>
+        </label>
+    `).join("");
+    list.querySelectorAll("input[data-hub-setting]").forEach(input => {
+        input.addEventListener("change", () => {
+            if (!partyState.isHost) return;
+            const key = input.dataset.hubSetting;
+            partyState.hubSettings[key] = input.checked;
+            sendSocketMessage({ type: "HUB_SETTINGS_UPDATE", settings: { [key]: input.checked } });
+            applyHubSettingsUI();
+        });
+    });
+}
+
+function applyHubSettingsUI() {
+    const settingsBtn = document.getElementById("hubSettingsBtn");
+    if (settingsBtn) settingsBtn.style.display = partyState.isHost ? "" : "none";
+    const allowed = canToggleVoting();
+    const toggleBtn = document.getElementById("toggleVoteBtn");
+    if (toggleBtn) toggleBtn.style.display = allowed ? "" : "none";
+    const closeBtn = document.getElementById("closeVoteBtn");
+    if (closeBtn) closeBtn.style.display = allowed ? "" : "none";
+    const modal = document.getElementById("hubSettingsModal");
+    if (modal && modal.style.display !== "none") {
+        if (partyState.isHost) renderHubSettings(); else modal.style.display = "none";
+    }
+}
+
+window.openHubSettingsModal = function() {
+    if (!partyState.isHost) return;
+    renderHubSettings();
+    const modal = document.getElementById("hubSettingsModal");
+    if (modal) modal.style.display = "flex";
+};
+
+window.closeHubSettingsModal = function() {
+    const modal = document.getElementById("hubSettingsModal");
+    if (modal) modal.style.display = "none";
+};
+
 function updateHostPermissionsUI() {
     const isHost = !!partyState.isHost;
+    applyHubSettingsUI();
 
     // 1. Update Game Card buttons
     document.querySelectorAll(".game-card:not(.roulette-card) .play-btn").forEach(btn => {
@@ -1147,6 +1211,10 @@ function handleServerMessage(data) {
             }
             updateExpiryAnimations();
 
+            if (data.hubSettings && typeof data.hubSettings === "object") {
+                partyState.hubSettings = { ...partyState.hubSettings, ...data.hubSettings };
+            }
+
             // Signiertes Spiel-Ticket (Host-Nachweis für Spiele wie Monopoly), kommt pro Person
             if (typeof data.gameTicket === "string") partyState.gameTicket = data.gameTicket;
 
@@ -1221,6 +1289,21 @@ function handleServerMessage(data) {
                         }
                     }
                 }
+            }
+            break;
+
+        case "JOIN_REJECTED":
+            // ID gehört serverseitig einem anderen Browser-Secret (z. B. Website-Daten gelöscht) →
+            // still eine neue ID nehmen und erneut beitreten, statt unsichtbar im Raum zu hängen
+            if (partyState.currentUser && !partyState._rejoinedOnce) {
+                partyState._rejoinedOnce = true;
+                partyState.currentUser.id = "p_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 6);
+                partyState.currentUser.isHost = false;
+                partyState.currentUser.isCreator = false;
+                try { sessionStorage.setItem(STORAGE_KEY_USER, JSON.stringify(partyState.currentUser)); } catch (e) {}
+                sendSocketMessage({ type: "JOIN", room: ROOM_CODE, user: partyState.currentUser });
+            } else {
+                showToast("⚠️ Beitritt abgelehnt – bitte Seite neu laden.");
             }
             break;
 
@@ -1317,6 +1400,9 @@ function handleServerMessage(data) {
             if (data.isVotingActive !== undefined) {
                 partyState.isVotingActive = !!data.isVotingActive;
             }
+            if (!partyState.isVotingActive) partyState.userVotedGame = null;
+            if (data.denied) showToast("🔒 Nur der Host kann Abstimmungen starten oder beenden.");
+            saveVotesToStorage();
             applyVoteStateUI();
             break;
 
@@ -1442,6 +1528,7 @@ function setupEventListeners() {
     if (changeRoomBtn) changeRoomBtn.addEventListener("click", openCodeModal);
 
     document.getElementById("toggleVoteBtn").addEventListener("click", toggleVoteMode);
+    document.getElementById("hubSettingsBtn").addEventListener("click", window.openHubSettingsModal);
     document.getElementById("closeVoteBtn").addEventListener("click", toggleVoteMode);
     document.getElementById("backToHubBtn").addEventListener("click", exitActiveGame);
     
@@ -2061,6 +2148,10 @@ function saveVotesToStorage() {
 }
 
 function toggleVoteMode() {
+    if (!canToggleVoting()) {
+        showToast("🔒 Nur der Host kann Abstimmungen starten oder beenden.");
+        return;
+    }
     partyState.isVotingActive = !partyState.isVotingActive;
     saveVotesToStorage();
     sendSocketMessage({

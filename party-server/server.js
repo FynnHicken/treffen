@@ -47,13 +47,25 @@ function sanitizeProfile(user) {
     };
 }
 
+// Raum-Einstellungen, die nur der Host ändert. Neue Einstellung = ein Eintrag hier
+// (+ Text im Hub unter HUB_SETTING_LABELS in party-hub/app.js). Nur boolesche Schalter.
+const HUB_SETTINGS_SCHEMA = {
+    anyoneCanVote: { default: false }   // false = nur der Host startet/beendet Abstimmungen
+};
+function defaultHubSettings() {
+    return Object.fromEntries(Object.entries(HUB_SETTINGS_SCHEMA).map(([k, v]) => [k, v.default]));
+}
+
+const KNOWN_GAME_IDS = ['skribbol', 'uno', 'codenames', 'price_guess', 'monopoly'];
+
 class Room {
     constructor(code) {
         this.code = code;
         this.players = new Map(); // id -> player object
         this.sockets = new Map(); // id -> WebSocket
         this.socketToPlayerId = new Map(); // ws -> playerId
-        this.votes = { skribbol: 0, uno: 0, codenames: 0, price_guess: 0, monopoly: 0 };
+        this.votes = Object.fromEntries(KNOWN_GAME_IDS.map(id => [id, 0]));
+        this.hubSettings = defaultHubSettings();
         this.userVotes = new Map(); // playerId -> gameId
         this.isVotingActive = false;
         this.activeModalGameId = null;
@@ -233,7 +245,7 @@ class Room {
     }
 
     recalcVotes() {
-        const counts = { skribbol: 0, uno: 0, codenames: 0, price_guess: 0, monopoly: 0 };
+        const counts = Object.fromEntries(KNOWN_GAME_IDS.map(id => [id, 0]));
         for (const gameId of this.userVotes.values()) {
             if (counts[gameId] !== undefined) {
                 counts[gameId]++;
@@ -243,7 +255,7 @@ class Room {
     }
 
     castVote(playerId, gameId) {
-        if (!this.isVotingActive) return;
+        if (!this.isVotingActive || !KNOWN_GAME_IDS.includes(gameId)) return;
         const current = this.userVotes.get(playerId);
         if (current === gameId) {
             this.userVotes.delete(playerId);
@@ -252,6 +264,22 @@ class Room {
         }
         this.recalcVotes();
         this.broadcastVotes();
+    }
+
+    broadcastVotes() {
+        this.broadcast({ type: "VOTE_UPDATE", votes: this.votes, isVotingActive: this.isVotingActive });
+    }
+
+    canToggleVoting(ws) {
+        return this.isSenderHost(ws) || (this.hubSettings.anyoneCanVote && this.socketToPlayerId.has(ws));
+    }
+
+    updateHubSettings(changes) {
+        if (!changes || typeof changes !== 'object') return;
+        for (const [key, value] of Object.entries(changes)) {
+            if (HUB_SETTINGS_SCHEMA[key] && typeof value === 'boolean') this.hubSettings[key] = value;
+        }
+        this.broadcastRoster();
     }
 
     toggleVoting(isActive) {
@@ -310,6 +338,7 @@ class Room {
             activeModalGameId: this.activeModalGameId,
             activeGame: this.activeGame,
             gameSettings: this.gameSettings,
+            hubSettings: this.hubSettings,
             expiresAt: this.expiresAt,
             remainingMs: this.expiresAt ? Math.max(0, this.expiresAt - now) : null,
             ttlTotalMs: SOLO_ROOM_TTL_MS
@@ -529,7 +558,16 @@ wss.on('connection', (ws, req) => {
                     break;
 
                 case 'VOTE_TOGGLE':
-                    room.toggleVoting(data.isVotingActive);
+                    if (room.canToggleVoting(ws)) {
+                        room.toggleVoting(data.isVotingActive);
+                    } else if (ws.readyState === WebSocket.OPEN) {
+                        // Client hat optimistisch umgeschaltet → echten Stand zurückschicken
+                        ws.send(JSON.stringify({ type: 'VOTE_UPDATE', votes: room.votes, isVotingActive: room.isVotingActive, denied: true }));
+                    }
+                    break;
+
+                case 'HUB_SETTINGS_UPDATE':
+                    if (room.isSenderHost(ws)) room.updateHubSettings(data.settings);
                     break;
 
                 case 'LAUNCH_GAME': {

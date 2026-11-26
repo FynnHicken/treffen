@@ -1,4 +1,6 @@
-fastapi>=0.100.0
-uvicorn[standard]>=0.23.0
-websockets>=11.0.0
-pillow>=10.0.0
+# Exakt gepinnt, damit ein neuer Docker-Build nicht ungefragt neue Versionen zieht.
+# Update: Version hier ändern, tests/run_tests.sh laufen lassen, dann committen.
+fastapi==0.165.0
+uvicorn[standard]==0.54.0
+websockets==17.4
+pillow==13.0.0

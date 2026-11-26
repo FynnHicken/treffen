@@ -3079,3 +3079,34 @@ body {
 
 
 
+
+
+/* ===== Raum-Einstellungen (Host) ===== */
+.action-btn.hub-settings-btn {
+    padding: 6px 10px;
+    min-width: 40px;
+}
+.hub-settings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.hub-setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 14px;
+    border: var(--ink-border, 1.5px solid currentColor);
+    border-radius: 12px;
+    background: var(--bg-surface, transparent);
+    cursor: pointer;
+}
+.hub-setting-row strong { display: block; }
+.hub-setting-row small { opacity: 0.75; }
+.hub-setting-row input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    cursor: pointer;
+}

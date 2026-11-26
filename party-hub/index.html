@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Treffen – Dein Spieleabend</title>
-    <link rel="stylesheet" href="styles.css?v=2.5">
+    <link rel="stylesheet" href="styles.css?v=2.6">
     <link rel="stylesheet" href="themes.css?v=2.5">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -53,6 +53,9 @@
                     </div>
                 </div>
             </div>
+            <button class="action-btn hub-settings-btn" id="hubSettingsBtn" title="Raum-Einstellungen (nur Host)" style="display: none;">
+                ⚙️
+            </button>
             <button class="action-btn vote-mode-btn" id="toggleVoteBtn">
                 🗳️ Abstimmung
             </button>
@@ -628,10 +631,30 @@
         </div>
     </div>
 
+    <!-- Raum-Einstellungen (nur Host ändert, Liste kommt aus HUB_SETTING_LABELS in app.js) -->
+    <div class="modal-backdrop" id="hubSettingsModal" style="display: none;">
+        <div class="modal-card" style="max-width: 480px;">
+            <button class="close-modal-btn" onclick="closeHubSettingsModal()">✕</button>
+            <div class="modal-header">
+                <span class="modal-game-icon">⚙️</span>
+                <div>
+                    <h2>Raum-Einstellungen</h2>
+                    <span class="modal-meta">Gelten für alle in diesem Raum</span>
+                </div>
+            </div>
+            <div class="modal-content hub-settings-list" id="hubSettingsList">
+                <!-- Populated dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary-launch" onclick="closeHubSettingsModal()">Fertig</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification -->
     <div class="toast" id="toast">Link kopiert!</div>
 
     <script src="avatar.js?v=1"></script>
-    <script src="app.js?v=slot3"></script>
+    <script src="app.js?v=settings1"></script>
 </body>
 </html>

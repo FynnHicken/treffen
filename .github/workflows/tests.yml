@@ -1,0 +1,87 @@
+# Läuft bei jedem Push und Pull Request. Rot = bitte nicht deployen, erst reparieren.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  monopoly:
+    name: Monopoly (Regeln, Auth, Bots, Einstellungen)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Testsuite (Docker)
+        run: ./games/monopoly/tests/run_tests.sh
+
+  mensch:
+    name: Mensch ärgere dich nicht
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: games/mensch/requirements.txt
+      - run: pip install -r games/mensch/requirements.txt
+      - name: Tests
+        working-directory: /tmp
+        run: python -I "$GITHUB_WORKSPACE/games/mensch/tests/test_mensch.py"
+
+  hub:
+    name: Hub (Sync-Server, JS-Syntax)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: party-server/package-lock.json
+      - name: Sync-Server-Tests
+        working-directory: party-server
+        run: npm ci && npm test
+      - name: JS-Syntax (Hub + Monopoly-Client)
+        run: |
+          for f in party-hub/*.js games/monopoly/static/js/*.js games/mensch/static/js/*.js; do
+            [ -f "$f" ] || continue
+            node --check "$f" || { echo "::error file=$f::Syntaxfehler"; exit 1; }
+          done
+
+  build:
+    name: Docker-Images & Nginx-Konfiguration
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose-Datei gültig
+        run: |
+          docker compose -f docker-compose.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.caddy.yml config -q
+      - name: Hub-Nginx-Konfiguration (nginx -t)
+        run: |
+          docker build -q -t treffen-hub-test party-hub
+          docker run --rm treffen-hub-test nginx -t
+      - name: Alle Images bauen
+        run: docker compose -f docker-compose.yml build
+      - name: Hub im Browser (Beitreten, Host-Einstellungen, Abstimmung)
+        run: |
+          docker compose -f docker-compose.yml up -d party-server partyhub
+          docker build -q -t treffen-ui-test -f games/monopoly/tests/ui/Containerfile games/monopoly/tests/ui
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/ >/dev/null && break; sleep 1; done
+          docker run --rm --network=host -v "$PWD/party-hub/tests":/t:ro treffen-ui-test python -u /t/browser_smoke.py http://127.0.0.1:8000
+      - name: Logs bei Fehler
+        if: failure()
+        run: docker compose -f docker-compose.yml logs --tail=80 party-server partyhub
+      - name: Shell-Skripte (Syntax)
+        run: for f in start.sh stop.sh fly_entrypoint.sh party-hub/40-enable-ssl.sh party-hub/15-treffen-resolver.sh; do bash -n "$f"; done

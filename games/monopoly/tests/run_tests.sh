@@ -5,13 +5,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."            # -> games/monopoly
 ENGINE=$(command -v podman || command -v docker)
-IMAGE=localhost/mono-test-deps
+# Image-Tag hängt am Inhalt von requirements.txt → nach einem Versions-Update wird automatisch neu gebaut
+REQ_HASH=$( (shasum -a 256 2>/dev/null || sha256sum) < requirements.txt | cut -c1-12)
+IMAGE=localhost/mono-test-deps:$REQ_HASH
 
-# Image bauen, falls nicht vorhanden oder requirements.txt neuer ist
-if ! $ENGINE image exists "$IMAGE" 2>/dev/null; then
+if ! $ENGINE image inspect "$IMAGE" >/dev/null 2>&1; then
     echo "== Baue Test-Image $IMAGE"
     tmp=$(mktemp -d); cp requirements.txt tests/Containerfile "$tmp/"
     $ENGINE build -q -t "$IMAGE" -f "$tmp/Containerfile" "$tmp" >/dev/null; rm -rf "$tmp"
+    $ENGINE tag "$IMAGE" localhost/mono-test-deps:latest  # für den Dev-Server-Befehl in DEVELOPMENT.md
 fi
 
 run_ws_test() {  # $1 = Testdatei, $2 = optionaler Ticket-Schlüssel; startet einen frischen Server im selben Container

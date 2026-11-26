@@ -44,6 +44,11 @@ Räumen, Host, Abstimmung, synchronem Start) bettet mehrere Multiplayer-Spiele p
 
 ## Bewusste Entscheidungen des Nutzers (nicht eigenmächtig ändern)
 
+- **Ziel des Nutzers (2026-11-26):** sicherer werden, Spiele leichter hinzufügen, Updates sollen die Seite
+  nicht mehr so leicht kaputt machen. Bugs dürfen behoben werden; bei Änderungen, die das **Konzept**
+  der Seite berühren, vorher fragen.
+- Freiheiten für Mitspieler („jeder kann …“) sind **Host-Einstellungen, Standard aus**.
+
 - **Monopoly-Assets** (`games/monopoly/static/assets/`, inkl. `rom/`) bleiben unverändert.
   Kartentexte werden deshalb im Server überschrieben (`CARD_TEXTS_DE` in `game_state.py`), nicht im JSON.
 - **Debug-Passwort `admin123`** (Monopoly, steht auch im Client) bleibt vorerst so – „später ändern“.
@@ -54,6 +59,9 @@ Räumen, Host, Abstimmung, synchronem Start) bettet mehrere Multiplayer-Spiele p
   bereinigt** und im Client **vor `innerHTML` escaped** (`escapeHtml()` im Hub, `esc()` in Monopoly).
 - Hub (`party-server/server.js`): Spieler-ID ist per Client-Secret an den Browser gebunden;
   Host-/Spieleraktionen nutzen nur die **an den Socket gebundene** ID, nie Felder aus der Nachricht.
+- **Raum-Einstellungen des Hubs** (⚙️, nur Host): `HUB_SETTINGS_SCHEMA` in `server.js` + Texte in
+  `HUB_SETTING_LABELS` in `party-hub/app.js`. Neue Einstellung = je ein Eintrag dort, der Server erzwingt sie.
+  Bisher: `anyoneCanVote` (Standard aus → nur der Host startet/beendet Abstimmungen).
 - Monopoly: Aktionen prüfen Zug/Host/Mitgliedschaft serverseitig; Raum-/Spieler-IDs `[A-Za-z0-9_-]{1,40}`.
   Erste WebSocket-Nachricht ist `AUTH {secret}` – die Spieler-ID ist daran gebunden; `bot_`-IDs sind gesperrt.
 - **Spiel-Tickets**: Der Party-Server signiert pro Person ein Ticket (`gameTicket` in `ROSTER_SYNC`,
@@ -69,9 +77,17 @@ Räumen, Host, Abstimmung, synchronem Start) bettet mehrere Multiplayer-Spiele p
 
 ## Testen
 
+**CI** (`.github/workflows/tests.yml`) läuft bei jedem Push auf `main` und bei Pull Requests: Monopoly-Suite,
+Mensch-Tests, Hub-Sync-Server-Tests, JS-Syntax, `docker compose config`, `nginx -t`, alle Images bauen und
+ein Browser-Rauchtest des Hubs. **Rot = nicht deployen.** Status: `gh run list --limit 5`.
+
 - **Monopoly**: `games/monopoly/tests/run_tests.sh` (Podman oder Docker, nichts auf dem Host
   installieren). Details in DEVELOPMENT.md. Vor jedem Push laufen lassen.
-- Hub: kein automatisierter Test im Repo; manuell `node --check` und Compose-Start.
+- **Hub-Sync-Server**: `party-server/test/server.test.mjs` (`node --test`). Lokal ohne Node auf dem Host:
+  `podman run --rm -v "$PWD/party-server":/app:ro,z docker.io/library/node:20-alpine sh -c 'cp -r /app /s && cd /s && npm ci --silent && npm test'`
+- **Hub im Browser**: `party-hub/tests/browser_smoke.py` (Playwright; Hub muss laufen, Aufruf im Dateikopf).
+- **Abhängigkeiten sind exakt gepinnt** (`requirements.txt`, `package-lock.json`). Updates bewusst machen:
+  Version ändern → Tests → committen.
 - Auf diesem Rechner ist **kein Node/npm auf dem Host** – JS-Syntax per
   `podman run --rm -v .:/j:ro,Z docker.io/library/node:20-alpine node --check /j/<datei>.js`.
 
@@ -95,8 +111,12 @@ Erledigt und auf `main`:
 9. Sicherheit S1 (2026-11-26): Monopoly-Identität per Client-Secret, keine Bot-Übernahme, Host per
    signiertem Hub-Ticket (siehe Sicherheitsmodell oben).
 
+10. Stabilität (2026-11-26): CI, Hub-Tests, gepinnte Abhängigkeiten, Raum-Einstellungen im Hub (⚙️),
+    Abstimmung über Geräte hinweg repariert (`broadcastVotes` fehlte), Nginx-Resolver aus `resolv.conf`
+    (feste, teils nicht existierende Resolver ließen Anfragen alle 10 s bis zu 5 s hängen).
+
 **Umbau-Plan (mit dem Nutzer am 2026-11-26 abgestimmt, Schritt für Schritt):** 1. ✅ Monopoly-Verbindungen
-absichern · 2. Monopoly-Spielstände in SQLite speichern · 3. Vite + TypeScript, `game_client.js` in Module
+absichern · 1b. ✅ CI + Hub-Tests · 2. Monopoly-Spielstände in SQLite speichern · 3. Vite + TypeScript, `game_client.js` in Module
 zerlegen · 4. Hub-Client: Server als einzige Wahrheit (localStorage/BroadcastChannel-Abgleich raus), Spiele
 als Plug-ins mit Manifest statt fest verdrahtet · 5. Design/Handy. Performance-Notizen für später:
 `broadcast_room` sendet seriell unter dem Raum-Lock (langsamer Client bremst alle), volle `to_dict()` bei
