@@ -35,6 +35,8 @@ const STEP = 1 / 240;
 const RECORD_EVERY = 2;                 // → 120 Bilder/s Aufnahme
 const MAX_SECONDS = 6;
 const GRAVITY = -60;                    // Tisch-Einheiten/s² (1 Einheit ≈ 1,6 cm → wirkt wie echte Schwerkraft)
+const AUTO_SHAKE_SECONDS = 0.6;       // Computer/Würfeln-Knopf: so lange wird der Becher vorher geschüttelt
+const TIP_ANGLE = 1.9;                 // Becher kippt beim Auswerfen um ~110°
 
 export class DiceLayer {
     private dice: THREE.Mesh[] = [];
@@ -59,7 +61,10 @@ export class DiceLayer {
     /** Würfel werden gerade vom Tisch in einen Becher eingesammelt */
     private gather: { seat: number; t: number; from: THREE.Vector3[]; fromQ: THREE.Quaternion[] } | null = null;
     /** Wurf, der nach dem Einsammeln abgespielt wird */
-    private queued: { values: number[]; thr: { power: number; seed: number; seat: number } } | null = null;
+    private queued: { values: number[]; thr: { power: number; seed: number; seat: number }; shake: number } | null = null;
+    /** Wann ich zuletzt selbst den Becher geschüttelt (und losgelassen) habe */
+    private lastHandShake = -Infinity;
+    private lastRattle = 0;
     /** In wessen Becher liegen die Würfel gerade (unsichtbar)? */
     private inCup: number | null = null;
     private readonly size: number;
@@ -179,10 +184,16 @@ export class DiceLayer {
             this.table.invalidate();
             return;
         }
+        // Wurde vorher nicht von Hand geschüttelt (Computer, Würfeln-Knopf)? Dann kurz schütteln, wie ein Mensch.
+        const now = performance.now();
+        const shook = thr.seat === this.client.me?.seat
+            ? now - this.lastHandShake < 1500
+            : now - (this.shakingOthers.get(thr.seat) ?? -Infinity) < 1500;
+        const shake = shook ? 0 : AUTO_SHAKE_SECONDS;
         // Erst muss der Becher beim Werfenden sein und die Würfel vom Tisch darin liegen
         const onTable = this.dice.some(d => d.visible);
-        if (this.gather || this.travel || this.cupSeat !== thr.seat || (onTable && this.inCup !== thr.seat)) {
-            this.queued = { values, thr };
+        if (shake || this.gather || this.travel || this.cupSeat !== thr.seat || (onTable && this.inCup !== thr.seat)) {
+            this.queued = { values, thr, shake };
             this.moveCupTo(thr.seat);
             this.gatherInto(thr.seat);
             this.animate();
@@ -398,6 +409,7 @@ export class DiceLayer {
         const h = this.holding;
         if (h) window.removeEventListener('devicemotion', h.motion);
         this.holding = null;
+        if (h) this.lastHandShake = performance.now();
         this.client.roll(power ?? h?.power ?? 0.55);
         this.animate();
     }
@@ -481,15 +493,24 @@ export class DiceLayer {
             }
             // Wartender Wurf: Becher ist da → Würfel einsammeln (falls nötig) → werfen
             const q = this.queued;
+            let autoShake = false;
             if (q && !this.travel && !this.gather && this.cupSeat === q.thr.seat) {
                 if (this.dice.some(d => d.visible) && this.inCup !== q.thr.seat) this.gatherInto(q.thr.seat);
-                else { this.queued = null; this.startPlayback(q.values, q.thr); }
+                else if (q.shake > 0) {
+                    // kurz schütteln (Computer/Knopf), mit Rasseln
+                    q.shake -= dt;
+                    autoShake = true;
+                    if (now - this.lastRattle > 85 + Math.random() * 60) {
+                        this.lastRattle = now;
+                        knock(0.2 + Math.random() * 0.12, 2.4 + Math.random() * 0.6);
+                    }
+                } else { this.queued = null; this.startPlayback(q.values, q.thr); }
                 busy = true;
             }
             const base = this.cupBase;
             const seat = this.cupSeat;
             const mine = seat !== null && seat === this.client.me?.seat;
-            const shaking = (mine && this.holding) || (seat !== null && now - (this.shakingOthers.get(seat) ?? 0) < 400);
+            const shaking = autoShake || (mine && this.holding) || (seat !== null && now - (this.shakingOthers.get(seat) ?? 0) < 400);
             cup.rotation.set(0, 0, 0);
             if (shaking) {
                 const amp = mine && this.holding ? 0.04 + this.holding.power * 0.08 : 0.08;
@@ -500,9 +521,12 @@ export class DiceLayer {
                 const t = (this.tipT += dt / 0.9);
                 const dir = this.table.seatDirection(seat);
                 const k = t < 0.35 ? t / 0.35 : t < 0.65 ? 1 : Math.max(0, 1 - (t - 0.65) / 0.35);
-                cup.position.set(base.x, 0.35 * k, base.z);
+                const angle = k * TIP_ANGLE;
+                // So hoch, dass der gekippte Becher nie in den Tisch taucht; startet aus der Schüttelhöhe
+                const fromShake = t < 0.35 ? 0.55 * (1 - t / 0.35) : 0;
+                cup.position.set(base.x, cupClearance(angle) + 0.15 * k + fromShake, base.z);
                 // um die Achse „zum Spieler“ kippen: Öffnung zeigt nach links, dorthin rollen die Würfel
-                cup.quaternion.setFromAxisAngle(dir, k * 1.9);
+                cup.quaternion.setFromAxisAngle(dir, angle);
                 if (t >= 1) { this.tipT = null; cup.position.copy(base); cup.rotation.set(0, 0, 0); }
                 busy = true;
             } else {
@@ -553,4 +577,16 @@ function angleOf(p: THREE.Vector3): number {
 /** „Eckiger“ Betrag: Weg des Bechers als abgerundetes Quadrat (bleibt neben dem Brett) */
 function pnorm(x: number, z: number): number {
     return Math.pow(Math.pow(Math.abs(x), 8) + Math.pow(Math.abs(z), 8), 1 / 8);
+}
+
+/**
+ * Wie hoch der Becher (Drehpunkt = Bodenmitte) mindestens schweben muss, damit er bei dieser Neigung
+ * nicht in den Tisch ragt: tiefster Punkt seines Umrisses (Radius 0,445, Höhe 0,8) plus etwas Luft.
+ */
+function cupClearance(angle: number): number {
+    if (angle <= 0) return 0;
+    const s = Math.sin(angle), c = Math.cos(angle);
+    let min = 0;
+    for (const u of [-0.445, 0.445]) for (const v of [0, 0.8]) min = Math.min(min, u * s + v * c);
+    return -min + 0.03 * Math.min(1, angle);
 }

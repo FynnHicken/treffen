@@ -31,7 +31,7 @@ EMPTY_ROOM_TTL_SEC = 30 * 60
 PRESENCE_MAX_PER_SEC = 30
 AWAY_GRACE_SEC = float(__import__("os").environ.get("TABLETOP_AWAY_GRACE_SEC", "20"))  # danach spielt der Computer
 BOT_ROLL_DELAY = 1.1          # Computer „greift zum Becher“
-BOT_THINK_DELAY = 2.2         # nach dem Wurf (Würfel rollen) bis zum Zug
+BOT_THINK_DELAY = 2.9         # nach dem Wurf bis zum Zug: Becher schütteln (~0,6 s), Würfel rollen, kurz schauen
 BOT_STEP_DELAY = 0.24         # je Feld, das eine Figur hüpft
 TABLE_EXTENT = 10.0              # Zeiger-Koordinaten müssen auf/um den Tisch liegen
 
@@ -107,7 +107,7 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None) -> FastAPI:
                         return
                     if room.rules.wants_roll(room, m.seat):
                         events = room.roll(m.id, 0.45 + random.random() * 0.4, auto=True)
-                        delay = BOT_THINK_DELAY if room.game and room.game.get("phase") == "move" else BOT_ROLL_DELAY + 0.6
+                        delay = BOT_THINK_DELAY       # auch vor dem nächsten Versuch: erst muss der Würfel liegen
                         if not events:
                             delay = 0.5                     # Sperre nach letztem Wurf → kurz warten
                     else:
