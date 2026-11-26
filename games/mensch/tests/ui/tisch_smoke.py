@@ -55,6 +55,52 @@ async def main():
         ok(await anna.evaluate("__tisch.presence.visibleCount") == 1, "Annas Bildschirm zeigt Bens Zeiger")
         await anna.screenshot(path=f"{OUT}/desktop-anna.png")
 
+        # ---- M2: Figuren ----
+        await anna.wait_for_function("__tisch.pieces.isResting()", timeout=5000)
+        n = await anna.evaluate("Object.keys(__tisch.client.state.pieces).length")
+        ok(n == 16, f"16 Figuren auf dem Brett ({n})")
+        start = await anna.evaluate("__tisch.pieces.screenPos('p-yellow-0')")
+        target = await anna.evaluate("__tisch.pieces.fieldScreenPos('t0')")
+        await anna.mouse.move(start["x"], start["y"])
+        await anna.mouse.down()
+        steps = 14
+        for i in range(1, steps + 1):
+            await anna.mouse.move(start["x"] + (target["x"] - start["x"]) * i / steps,
+                                  start["y"] + (target["y"] - start["y"]) * i / steps)
+            await anna.wait_for_timeout(35)
+        await ben.wait_for_timeout(300)
+        ok(await ben.evaluate("__tisch.pieces.modeOf('p-yellow-0')") == "held", "Ben sieht Annas Figur in der Luft (wird gehalten)")
+        await anna.screenshot(path=f"{OUT}/desktop-anna-zieht.png")
+        await anna.mouse.up()
+        await anna.wait_for_timeout(900)
+        f_anna = await anna.evaluate("__tisch.client.state.pieces['p-yellow-0'].field")
+        f_ben = await ben.evaluate("__tisch.client.state.pieces['p-yellow-0'].field")
+        ok(f_anna == "t0" and f_ben == "t0", f"Figur auf Startfeld A (Anna: {f_anna}, Ben: {f_ben})")
+        async def resting(page):
+            try:
+                await page.wait_for_function("__tisch.pieces.isResting()", timeout=5000)
+                return True
+            except Exception:
+                return False
+        ok(await resting(ben), "Bei Ben steht die Figur wieder ruhig")
+        # Ben (Grün) versucht Annas gelbe Figur zu greifen → geht nicht, Kamera dreht stattdessen
+        bp = await ben.evaluate("__tisch.pieces.screenPos('p-yellow-1')")
+        await ben.mouse.move(bp["x"], bp["y"]); await ben.mouse.down(); await ben.mouse.move(bp["x"] + 60, bp["y"]); await ben.mouse.up()
+        await anna.wait_for_timeout(500)
+        ok(await anna.evaluate("__tisch.client.state.pieces['p-yellow-1'].held_by") is None, "Fremde Figur nicht greifbar")
+        # Auf besetztes Feld ziehen → zurück
+        p1 = await anna.evaluate("__tisch.pieces.screenPos('p-yellow-1')")
+        t0 = await anna.evaluate("__tisch.pieces.fieldScreenPos('t0')")
+        await anna.mouse.move(p1["x"], p1["y"]); await anna.mouse.down()
+        for i in range(1, 11):
+            await anna.mouse.move(p1["x"] + (t0["x"] - p1["x"]) * i / 10, p1["y"] + (t0["y"] - p1["y"]) * i / 10)
+            await anna.wait_for_timeout(30)
+        await anna.mouse.up()
+        await anna.wait_for_timeout(1000)
+        ok(await anna.evaluate("__tisch.client.state.pieces['p-yellow-1'].field") == "h-yellow-1", "Auf besetztes Feld nicht möglich – Figur bleibt im Häuschen")
+        ok(await resting(anna), "…und ist zurückgeglitten")
+        await anna.screenshot(path=f"{OUT}/desktop-anna-brett.png")
+
         # Ben setzt sich auf einen anderen freien Platz (Klick auf Schild)
         await ben.evaluate("__tisch.client.sit(2)")
         await anna.wait_for_timeout(600)

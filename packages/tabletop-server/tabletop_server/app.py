@@ -180,6 +180,16 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None) -> FastAPI:
                         await broadcast(room_id, room.sit(member_id, data.get("seat")))
                     elif action == "STAND":
                         await broadcast(room_id, room.stand_up(member_id))
+                    elif action == "GRAB":
+                        await broadcast(room_id, room.grab(member_id, data.get("piece")))
+                    elif action == "RELEASE":
+                        await broadcast(room_id, room.release(member_id, data.get("piece")))
+                    elif action == "DROP":
+                        events = room.drop(member_id, data.get("piece"), data.get("field"))
+                        await broadcast(room_id, events)
+                        if events and events[-1]["event"]["type"] == "PIECE_RELEASED":
+                            await send(websocket, {"type": "ERROR", "code": "DROP_REJECTED",
+                                                   "piece": data.get("piece"), "message": "Dort kann die Figur nicht hin."})
         except WebSocketDisconnect:
             pass
         except Exception as e:

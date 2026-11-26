@@ -11,12 +11,16 @@ sys.path.insert(0, os.environ.get("TABLETOP_SERVER_PATH", str(ROOT / "packages" 
 
 from tabletop_server import GameDef, create_app  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from layout import COLORS, LAYOUT, PALETTE  # noqa: E402
+
 GAME = GameDef(
     "mensch",
     "Mensch ärgere dich nicht",
     # Sitzplätze im Uhrzeigersinn = Zugreihenfolge: Gelb, Grün, Rot, Schwarz
-    seat_colors=["#f1c40f", "#27ae60", "#e74c3c", "#2c3e50"],
+    seat_colors=[PALETTE[c] for c in COLORS],
     min_players=2,
+    layout=LAYOUT,
 )
 CLIENT_DIST = Path(os.environ.get("MENSCH_CLIENT_DIST", Path(__file__).resolve().parents[1] / "static3d"))
 

@@ -1,0 +1,347 @@
+/**
+ * Figuren auf dem Tisch: darstellen, greifen, ziehen, einrasten, hüpfen – und sehen, was die anderen tun.
+ *
+ *  - Eigene Figur antippen/greifen → hebt sich an (Klack, kurze Vibration), folgt dem Finger, neigt sich in
+ *    Zugrichtung. Über einem freien Feld erscheint ein Einrast-Ring. Loslassen → hüpft aufs Feld.
+ *  - Der Server entscheidet: lehnt er ab (DROP_REJECTED), gleitet die Figur zurück.
+ *  - Hält ein anderer eine Figur, schwebt sie bei allen und folgt seinem Zeiger (Präsenz mit `hold`).
+ *
+ * Spielneutral: Welche Figur wie aussieht, kommt per `createMesh` vom Spiel.
+ */
+import * as THREE from 'three';
+import type { TableScene } from '../engine/TableScene';
+import type { TableClient } from '../net/TableClient';
+import type { FieldSpec, Layout, PieceSpec, TableState } from '../net/state';
+import { knock, lift, vibrate } from '../audio/sfx';
+
+export interface PieceLayerOptions {
+    /** Höhe der Oberfläche, auf der Figuren stehen (z. B. Brettoberkante) */
+    surfaceY: number;
+    /** 3D-Objekt für eine Figur (Ursprung = Mitte des Fußes) */
+    createMesh: (id: string, spec: PieceSpec, layout: Layout) => THREE.Object3D;
+    /** Wie hoch eine gehaltene Figur schwebt */
+    liftHeight?: number;
+}
+
+type Mode = 'rest' | 'drag' | 'held' | 'hop';
+
+interface Vis {
+    id: string;
+    obj: THREE.Object3D;
+    mode: Mode;
+    pos: THREE.Vector3;         // aktuelle Position (Fuß)
+    goal: THREE.Vector3;        // Ziel beim Folgen (drag/held)
+    hop?: { from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number; height: number; sound: boolean };
+    pendingField?: string;      // eigener Drop, auf Bestätigung wartend
+    tilt: THREE.Vector2;
+}
+
+const HOP_DURATION = 0.32;
+
+export class PieceLayer {
+    private vis = new Map<string, Vis>();
+    private group = new THREE.Group();
+    private snapRing: THREE.Mesh;
+    private snapField: string | null = null;
+    private dragging: Vis | null = null;
+    private animating = false;
+    private layout: Layout | null = null;
+    private lastState: TableState | null = null;
+    private readonly lift: number;
+    private spacing = 0.8;
+
+    constructor(private table: TableScene, private client: TableClient, private opts: PieceLayerOptions) {
+        this.lift = opts.liftHeight ?? 0.5;
+        table.scene.add(this.group);
+
+        this.snapRing = new THREE.Mesh(
+            new THREE.RingGeometry(0.3, 0.37, 40),
+            new THREE.MeshBasicMaterial({ color: 0xfff2d0, transparent: true, opacity: 0.85, depthWrite: false })
+        );
+        this.snapRing.rotation.x = -Math.PI / 2;
+        this.snapRing.visible = false;
+        table.scene.add(this.snapRing);
+
+        client.onState(s => this.syncState(s));
+        client.onEvent(ev => {
+            if (ev.type === 'PIECE_MOVED') this.onMoved(ev.piece, ev.to, ev.by);
+            else if (ev.type === 'PIECE_GRABBED' && ev.by !== client.you) this.onGrabbedByOther(ev.piece);
+            else if (ev.type === 'PIECE_RELEASED') this.onReleased(ev.piece);
+        });
+        client.onPresence((from, p) => {
+            if (!p?.hold) return;
+            const v = this.vis.get(p.hold);
+            if (v && v.mode === 'held' && this.lastState?.pieces[p.hold]?.held_by === from) {
+                v.goal.set(p.x, this.opts.surfaceY + this.lift, p.z);
+                this.kick();
+            }
+        });
+        client.onError(err => {
+            if (err.code === 'DROP_REJECTED' && typeof err.piece === 'string') this.rejectDrop(err.piece);
+        });
+
+        // Zeiger: im Capture-Durchlauf am Container, damit die Kamera-Steuerung beim Greifen nicht mitdreht
+        const container = table.renderer.domElement.parentElement!;
+        container.addEventListener('pointerdown', ev => this.onPointerDown(ev), { capture: true });
+    }
+
+    // ---------- Zustand ----------
+    private syncState(s: TableState): void {
+        if (s.layout !== this.layout) this.build(s.layout);
+        this.lastState = s;
+        for (const [id, ps] of Object.entries(s.pieces)) {
+            const v = this.vis.get(id);
+            if (!v || v === this.dragging || v.mode === 'hop' || v.pendingField) continue;
+            if (ps.held_by && ps.held_by !== this.client.you) {
+                if (v.mode !== 'held') this.onGrabbedByOther(id);
+            } else if (v.mode !== 'rest') {
+                this.flyTo(v, this.fieldPos(ps.field), false);
+            } else {
+                v.pos.copy(this.fieldPos(ps.field));
+                this.place(v);
+            }
+        }
+        this.table.invalidate();
+    }
+
+    private build(layout: Layout): void {
+        this.layout = layout;
+        this.spacing = layout.board?.spacing ?? 0.8;
+        for (const v of this.vis.values()) this.group.remove(v.obj);
+        this.vis.clear();
+        for (const [id, spec] of Object.entries(layout.pieces)) {
+            const obj = this.opts.createMesh(id, spec, layout);
+            // Großzügige, unsichtbare Trefferfläche (für Finger)
+            const hit = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.34, 0.34, 0.85, 12),
+                new THREE.MeshBasicMaterial({ visible: false })
+            );
+            hit.position.y = 0.42;
+            obj.add(hit);
+            obj.userData.pieceId = id;
+            obj.traverse(o => { o.userData.pieceId = id; });
+            const pos = this.fieldPos(spec.field);
+            const v: Vis = { id, obj, mode: 'rest', pos, goal: pos.clone(), tilt: new THREE.Vector2() };
+            this.place(v);
+            this.group.add(obj);
+            this.vis.set(id, v);
+        }
+    }
+
+    fieldPos(fieldId: string): THREE.Vector3 {
+        const f: FieldSpec | undefined = this.layout?.fields[fieldId];
+        return new THREE.Vector3(f?.x ?? 0, this.opts.surfaceY, f?.z ?? 0);
+    }
+
+    private place(v: Vis): void {
+        v.obj.position.copy(v.pos);
+        v.obj.rotation.set(v.tilt.y, 0, -v.tilt.x);
+    }
+
+    // ---------- Eingabe ----------
+    private canTouch(id: string): boolean {
+        const s = this.lastState, me = this.client.me;
+        const spec = s?.layout.pieces[id], ps = s?.pieces[id];
+        if (!s || !me || me.seat === null || !spec || !ps) return false;
+        return spec.seat === me.seat && (ps.held_by === null || ps.held_by === this.client.you);
+    }
+
+    private onPointerDown(ev: PointerEvent): void {
+        if (this.dragging || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
+        const hits = this.table.pickObjects(ev.clientX, ev.clientY, [...this.vis.values()].map(v => v.obj));
+        const id = hits.map(h => h.object.userData.pieceId as string | undefined).find(x => x && this.canTouch(x));
+        if (!id) return;                                   // nichts Greifbares → Kamera darf drehen
+        ev.stopPropagation();
+        ev.preventDefault();
+        const v = this.vis.get(id)!;
+        this.dragging = v;
+        v.mode = 'drag';
+        v.goal.copy(v.pos).setY(this.opts.surfaceY + this.lift);
+        this.client.grab(id);
+        lift();
+        vibrate(8);
+        this.kick();
+
+        const el = this.table.renderer.domElement;
+        try { el.setPointerCapture(ev.pointerId); } catch { /* egal */ }
+        const move = (e: PointerEvent) => this.onDragMove(e);
+        const up = (e: PointerEvent) => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+            window.removeEventListener('pointercancel', up);
+            this.onDragEnd(e.type === 'pointercancel');
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+        window.addEventListener('pointercancel', up);
+    }
+
+    private onDragMove(ev: PointerEvent): void {
+        const v = this.dragging;
+        if (!v) return;
+        const p = this.table.pickPlane(ev.clientX, ev.clientY, this.opts.surfaceY);
+        if (!p) return;
+        const lim = this.table.tableSize / 2 - 0.4;
+        p.x = THREE.MathUtils.clamp(p.x, -lim, lim);
+        p.z = THREE.MathUtils.clamp(p.z, -lim, lim);
+        v.goal.set(p.x, this.opts.surfaceY + this.lift, p.z);
+        this.updateSnap(v, p);
+        this.client.sendPresence({ x: p.x, z: p.z, down: true, hold: v.id });
+        this.kick();
+    }
+
+    private updateSnap(v: Vis, p: THREE.Vector3): void {
+        const s = this.lastState;
+        let best: string | null = null, bestD = this.spacing * 0.55;
+        if (s) {
+            const occupied = new Set(Object.entries(s.pieces).filter(([id]) => id !== v.id).map(([, ps]) => ps.field));
+            for (const [fid, f] of Object.entries(s.layout.fields)) {
+                if (occupied.has(fid)) continue;
+                const d = Math.hypot(f.x - p.x, f.z - p.z);
+                if (d < bestD) { bestD = d; best = fid; }
+            }
+        }
+        if (best !== this.snapField) {
+            this.snapField = best;
+            if (best) {
+                const fp = this.fieldPos(best);
+                this.snapRing.position.set(fp.x, this.opts.surfaceY + 0.006, fp.z);
+                vibrate(4);
+            }
+            this.snapRing.visible = !!best;
+            this.table.invalidate();
+        }
+    }
+
+    private onDragEnd(cancelled: boolean): void {
+        const v = this.dragging;
+        this.dragging = null;
+        this.snapRing.visible = false;
+        if (!v) return;
+        const field = cancelled ? null : this.snapField;
+        this.snapField = null;
+        const current = this.lastState?.pieces[v.id]?.field;
+        if (field && field !== current) {
+            v.pendingField = field;
+            this.client.drop(v.id, field);
+            this.flyTo(v, this.fieldPos(field), true);
+            vibrate(14);
+        } else {
+            this.client.release(v.id);
+            this.flyTo(v, this.fieldPos(current ?? ''), true);
+        }
+        this.table.invalidate();
+    }
+
+    // ---------- Server-Ereignisse ----------
+    private onMoved(id: string, to: string, by: string): void {
+        const v = this.vis.get(id);
+        if (!v) return;
+        if (by === this.client.you && v.pendingField === to) {
+            v.pendingField = undefined;          // bestätigt – Animation läuft schon
+            return;
+        }
+        v.pendingField = undefined;
+        this.flyTo(v, this.fieldPos(to), true);
+    }
+
+    private onGrabbedByOther(id: string): void {
+        const v = this.vis.get(id);
+        if (!v || v === this.dragging) return;
+        v.mode = 'held';
+        v.goal.copy(v.pos).setY(this.opts.surfaceY + this.lift);
+        this.kick();
+    }
+
+    private onReleased(id: string): void {
+        const v = this.vis.get(id);
+        if (!v || v === this.dragging || v.pendingField) return;
+        if (v.mode === 'held') {
+            const field = this.lastState?.pieces[id]?.field;
+            if (field) this.flyTo(v, this.fieldPos(field), false);
+        }
+    }
+
+    private rejectDrop(id: string): void {
+        const v = this.vis.get(id);
+        if (!v) return;
+        v.pendingField = undefined;
+        const field = this.lastState?.pieces[id]?.field;
+        if (field) this.flyTo(v, this.fieldPos(field), false);
+        vibrate([20, 40, 20]);
+    }
+
+    // ---------- Animation ----------
+    private flyTo(v: Vis, to: THREE.Vector3, sound: boolean): void {
+        const dist = Math.hypot(to.x - v.pos.x, to.z - v.pos.z);
+        v.mode = 'hop';
+        v.hop = {
+            from: v.pos.clone(), to: to.clone(), t: 0,
+            dur: HOP_DURATION + Math.min(0.35, dist * 0.04),
+            height: Math.max(0.15, Math.min(0.6, dist * 0.12)) + Math.max(0, v.pos.y - this.opts.surfaceY) * 0.4,
+            sound
+        };
+        this.kick();
+    }
+
+    private kick(): void {
+        if (this.animating) return;
+        this.animating = true;
+        this.table.addAnimator(dt => {
+            let busy = false;
+            for (const v of this.vis.values()) {
+                if (v.mode === 'rest') continue;
+                busy = true;
+                if (v.mode === 'hop' && v.hop) {
+                    const h = v.hop;
+                    h.t = Math.min(1, h.t + dt / h.dur);
+                    const k = 1 - Math.pow(1 - h.t, 2.2);                    // weich abbremsen
+                    v.pos.lerpVectors(h.from, h.to, k);
+                    v.pos.y = THREE.MathUtils.lerp(h.from.y, h.to.y, k) + Math.sin(Math.PI * h.t) * h.height;
+                    v.tilt.multiplyScalar(Math.max(0, 1 - dt * 10));
+                    if (h.t >= 1) {
+                        v.mode = 'rest';
+                        v.hop = undefined;
+                        v.tilt.set(0, 0);
+                        if (h.sound) knock(0.55);
+                    }
+                } else {
+                    // drag/held: weich dem Ziel folgen und in Bewegungsrichtung neigen
+                    const before = v.pos.clone();
+                    v.pos.lerp(v.goal, 1 - Math.exp(-dt * (v.mode === 'drag' ? 22 : 12)));
+                    const vel = v.pos.clone().sub(before).divideScalar(Math.max(dt, 1e-3));
+                    const tx = THREE.MathUtils.clamp(vel.x * 0.05, -0.35, 0.35);
+                    const tz = THREE.MathUtils.clamp(vel.z * 0.05, -0.35, 0.35);
+                    v.tilt.lerp(new THREE.Vector2(tx, tz), 1 - Math.exp(-dt * 10));
+                }
+                this.place(v);
+            }
+            this.animating = busy;
+            return busy;
+        });
+    }
+
+    // ---------- Für Tests ----------
+    /** Bildschirmposition einer Figur (Mitte des Körpers) */
+    screenPos(id: string): { x: number; y: number } | null {
+        const v = this.vis.get(id);
+        if (!v) return null;
+        const p = v.pos.clone().setY(v.pos.y + 0.3).project(this.table.camera);
+        const rect = this.table.renderer.domElement.getBoundingClientRect();
+        return { x: rect.left + (p.x + 1) / 2 * rect.width, y: rect.top + (1 - p.y) / 2 * rect.height };
+    }
+
+    fieldScreenPos(fieldId: string): { x: number; y: number } {
+        const p = this.fieldPos(fieldId).project(this.table.camera);
+        const rect = this.table.renderer.domElement.getBoundingClientRect();
+        return { x: rect.left + (p.x + 1) / 2 * rect.width, y: rect.top + (1 - p.y) / 2 * rect.height };
+    }
+
+    isResting(): boolean {
+        return [...this.vis.values()].every(v => v.mode === 'rest');
+    }
+
+    modeOf(id: string): Mode | undefined {
+        return this.vis.get(id)?.mode;
+    }
+}

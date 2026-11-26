@@ -2,7 +2,10 @@
  * Mensch ärgere dich nicht – 3D-Spieltisch. M1: leerer Tisch mit Sitzplätzen und Präsenz.
  */
 import './app.css';
-import { Presence, SeatLabels, TableClient, TableScene } from '@treffen/tabletop';
+import {
+    createPawn, isTouchDevice, PieceLayer, Presence, SeatLabels, TableClient, TableScene, unlockAudioOnGesture
+} from '@treffen/tabletop';
+import { BOARD_THICKNESS, createBoard } from './board';
 
 const params = new URLSearchParams(location.search);
 const NAME_KEY = 'mensch_name';
@@ -61,13 +64,30 @@ async function start(): Promise<void> {
     const client = new TableClient({ namespace: 'mensch', room, name });
     const presence = new Presence(table, client);
     new SeatLabels(table, client);
+    unlockAudioOnGesture();
+
+    // Brett, sobald das Layout vom Server da ist
+    let boardBuilt = false;
+    client.onState(s => {
+        if (boardBuilt || !s.layout?.board) return;
+        boardBuilt = true;
+        table.scene.add(createBoard(s.layout, table.renderer.capabilities.getMaxAnisotropy(), !isTouchDevice()));
+        table.invalidate();
+    });
+    const pieces = new PieceLayer(table, client, {
+        surfaceY: BOARD_THICKNESS,
+        createMesh: (_id, spec, layout) => createPawn(layout.palette?.[spec.color ?? ''] ?? '#999')
+    });
+    client.onError(err => {
+        if (err.code === 'DROP_REJECTED') toast('Dort kann die Figur nicht hin.');
+    });
 
     const dot = document.getElementById('conn-dot')!;
     client.onConnection(ok => dot.classList.toggle('ok', ok));
     setTimeout(() => document.getElementById('hint')?.classList.add('fade'), 6000);
 
     // Für Tests und Fehlersuche
-    (window as any).__tisch = { table, client, presence };
+    (window as any).__tisch = { table, client, presence, pieces };
 }
 
 start();

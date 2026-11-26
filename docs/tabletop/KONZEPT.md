@@ -1,6 +1,6 @@
 # Treffen-Spieltisch – Konzept
 
-> Stand: 2026-11-26 · Status: **abgestimmt · M1 ✅ fertig · als Nächstes M2** · Erstes Spiel: Mensch ärgere dich nicht
+> Stand: 2026-11-26 · Status: **abgestimmt · M1 ✅ · M2 ✅ · als Nächstes M3 (Würfel)** · Erstes Spiel: Mensch ärgere dich nicht
 
 ## 1. Ziel
 
@@ -125,7 +125,7 @@ Typen, Figuren (Modell, Farben), Würfel-Anzahl, Sitzplätze. Der Tisch baut dar
 | Meilenstein | Ergebnis (jeweils spielbar/vorführbar) |
 |---|---|
 | **M1 Leerer Tisch** ✅ | 3D-Tisch, Sitzplätze, Kamera mit Gesten, zwei Browser sehen sich (Präsenz-Zeiger), Hub-Ticket |
-| **M2 Gegenstände** | Mensch-Brett + Figuren: greifen, ziehen, einrasten, Sync über Server (noch ohne Regeln) |
+| **M2 Gegenstände** ✅ | Mensch-Brett + Figuren: greifen, ziehen, einrasten, Sync über Server (noch ohne Regeln) |
 | **M3 Würfel** | Becher, Physik-Würfel, Ergebnis vom Server, Klang + Vibration |
 | **M4 Regeln** | Regel-Schnittstelle, Mensch-Regeln portiert, Zielvorschau, „gleitet zurück“, Bots |
 | **M5 Fertig** | Lobby, Einstellungen, Persistenz, Zuschauer, Handy-Feinschliff → ersetzt das heutige 2D-Mensch im Hub |

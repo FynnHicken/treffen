@@ -73,6 +73,12 @@ def apply(state, ev):
         state["members"] = [m for m in state["members"] if m["id"] != ev["id"]]
     elif t == "HOST_CHANGED":
         state["host_id"] = ev["host_id"]
+    elif t == "PIECE_GRABBED":
+        state["pieces"][ev["piece"]]["held_by"] = ev["by"]
+    elif t == "PIECE_RELEASED":
+        state["pieces"][ev["piece"]]["held_by"] = None
+    elif t == "PIECE_MOVED":
+        state["pieces"][ev["piece"]].update(field=ev["to"], held_by=None)
 
 
 async def settle(t=0.3):
@@ -157,7 +163,41 @@ async def main():
     await b2.send(action="SYNC")
     await settle()
     ok(b2.msgs[-1]["type"] == "SNAPSHOT", "SYNC liefert neuen Snapshot")
-    for c in (a, b2, h, g, x):
+    print("== Figuren greifen & absetzen (M2, ohne Regeln) ==")
+    piece = lambda c, pid: c.state["pieces"][pid]
+    await a.send(action="GRAB", piece="p1")            # gehört Platz 1 (Bob)
+    await settle()
+    ok(piece(a, "p1")["held_by"] is None, "Fremde Figur kann nicht gegriffen werden")
+    await x.send(action="GRAB", piece="p0")            # Zuschauer
+    await settle()
+    ok(piece(a, "p0")["held_by"] is None, "Zuschauer kann nichts greifen")
+    await a.send(action="GRAB", piece="p0")
+    await settle()
+    ok(piece(b2, "p0")["held_by"] == "alice", "Eigene Figur greifen – alle sehen, wer sie hält")
+    await a.send(action="DROP", piece="p0", field="f1")   # f1 ist besetzt (p1)
+    await settle()
+    ok(piece(b2, "p0")["field"] == "h0" and piece(b2, "p0")["held_by"] is None, "Besetztes Feld → losgelassen, bleibt stehen")
+    ok(any(m.get("code") == "DROP_REJECTED" for m in a.msgs), "Absender bekommt DROP_REJECTED (Figur gleitet zurück)")
+    await a.send(action="GRAB", piece="p0")
+    await a.send(action="DROP", piece="p0", field="gibtsnicht")
+    await settle()
+    ok(piece(b2, "p0")["field"] == "h0", "Unbekanntes Feld abgelehnt")
+    await a.send(action="GRAB", piece="p0")
+    await a.send(action="DROP", piece="p0", field="f2")
+    await settle()
+    ok(piece(b2, "p0")["field"] == "f2", "Absetzen auf freies Feld")
+    moved = [m for m in b2.msgs if m["type"] == "EVENT" and m["event"]["type"] == "PIECE_MOVED"]
+    ok(moved and moved[-1]["event"]["from"] == "h0" and moved[-1]["event"]["by"] == "alice", "PIECE_MOVED mit from/to/by")
+    await b2.send(action="DROP", piece="p0", field="f3")
+    await settle()
+    ok(piece(a, "p0")["field"] == "f2", "Nur wer hält, kann absetzen")
+    await a.send(action="GRAB", piece="p0")
+    await settle()
+    await a.close()
+    await settle(0.4)
+    ok(piece(b2, "p0")["held_by"] is None, "Trennen lässt gehaltene Figur los")
+    ok(not b2.gap, "Ereignisnummern lückenlos")
+    for c in (b2, h, g, x):
         await c.close()
 
     print()
@@ -166,7 +206,11 @@ async def main():
 
 
 def run():
-    app = create_app(GameDef("test", "Test", ["#f1c40f", "#27ae60", "#e74c3c", "#2c3e50"]))
+    layout = {
+        "fields": {f: {"x": i * 0.8, "z": 0, "kind": "track"} for i, f in enumerate(["h0", "f1", "f2", "f3"])},
+        "pieces": {"p0": {"kind": "pawn", "seat": 0, "field": "h0"}, "p1": {"kind": "pawn", "seat": 1, "field": "f1"}},
+    }
+    app = create_app(GameDef("test", "Test", ["#f1c40f", "#27ae60", "#e74c3c", "#2c3e50"], layout=layout))
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="warning"))
     t = threading.Thread(target=server.run, daemon=True)
     t.start()

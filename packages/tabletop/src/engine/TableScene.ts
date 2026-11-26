@@ -238,13 +238,31 @@ export class TableScene {
         return hit ? hit.point : null;
     }
 
+    private ndc(clientX: number, clientY: number): THREE.Vector2 {
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        return new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    }
+
+    /** Schnittpunkt mit der waagrechten Ebene in Höhe y (z. B. Brettoberfläche) – auch außerhalb des Tisches. */
+    pickPlane(clientX: number, clientY: number, y: number): THREE.Vector3 | null {
+        this.raycaster.setFromCamera(this.ndc(clientX, clientY), this.camera);
+        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -y);
+        return this.raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+    }
+
+    /** Getroffene Objekte unter Bildschirmkoordinaten (nächstes zuerst). */
+    pickObjects(clientX: number, clientY: number, objects: THREE.Object3D[]): THREE.Intersection[] {
+        this.raycaster.setFromCamera(this.ndc(clientX, clientY), this.camera);
+        return this.raycaster.intersectObjects(objects, true);
+    }
+
     // ---------- Platzsets in Spielerfarbe ----------
     setSeatColor(seat: number, color: string | null): void {
         const mat = this.placemats[seat]?.material as THREE.MeshStandardMaterial | undefined;
         if (!mat) return;
         // Gedeckter Filz: Spielerfarbe Richtung Holzton gemischt
-        mat.color.set(color ?? '#6b5a4a').lerp(new THREE.Color('#5a3a22'), color ? 0.35 : 0);
-        mat.opacity = color ? 0.85 : 0.25;
+        mat.color.set(color ?? '#6b5a4a').lerp(new THREE.Color('#4a2e1a'), color ? 0.55 : 0);
+        mat.opacity = color ? 0.7 : 0.22;
         this.invalidate();
     }
 

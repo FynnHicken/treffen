@@ -25,6 +25,7 @@ export class TableClient {
     private eventListeners = new Set<Listener<TableEvent>>();
     private presenceListeners = new Set<(from: string, p: PresenceData | null) => void>();
     private connectionListeners = new Set<Listener<boolean>>();
+    private errorListeners = new Set<(err: any) => void>();
     private lastPresenceSent = 0;
     private pendingPresence: PresenceData | null = null;
     private presenceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -79,6 +80,24 @@ export class TableClient {
         this.connectionListeners.add(fn);
         fn(this.connected);
         return () => this.connectionListeners.delete(fn);
+    }
+
+    grab(piece: string): void {
+        this.socket.send({ action: 'GRAB', piece });
+    }
+
+    release(piece: string): void {
+        this.socket.send({ action: 'RELEASE', piece });
+    }
+
+    drop(piece: string, field: string): void {
+        this.socket.send({ action: 'DROP', piece, field });
+    }
+
+    /** Server-Fehler (z. B. DROP_REJECTED) */
+    onError(fn: (err: { code: string; message: string; [k: string]: unknown }) => void): () => void {
+        this.errorListeners.add(fn);
+        return () => this.errorListeners.delete(fn);
     }
 
     sit(seat: number): void {
@@ -136,6 +155,7 @@ export class TableClient {
                 break;
             case 'ERROR':
                 console.warn('Server:', msg.code, msg.message);
+                for (const fn of this.errorListeners) fn(msg);
                 break;
         }
     }

@@ -28,14 +28,20 @@ export class SeatLabels {
         client.onState(s => this.render(s));
     }
 
-    /** Schilder an der Tischkante; hochkant rücken die seitlichen nach innen, damit sie nicht abgeschnitten werden. */
+    /**
+     * Schilder an der Tischkante. Hochkant (Handy) ist links/rechts kein Platz neben dem Brett –
+     * die seitlichen Schilder wandern dann in den freien Streifen vor einem, auf ihre Seite.
+     */
     private place(): void {
         const portrait = this.table.isPortrait;
         const own = this.table.seatDirection(this.table.ownSeatIndex);
+        const half = this.table.tableSize / 2;
         this.labels.forEach((obj, s) => {
-            // „seitlich“ = aus Sicht des eigenen Platzes links/rechts
-            const sideways = Math.abs(this.table.seatDirection(s).dot(own)) < 0.5;
-            const p = this.table.seatPosition(s, portrait && sideways ? 2.6 : 0.85);
+            const dir = this.table.seatDirection(s);
+            const sideways = Math.abs(dir.dot(own)) < 0.5;      // aus Sicht des eigenen Platzes links/rechts
+            const p = portrait && sideways
+                ? own.clone().multiplyScalar(half - 0.85).add(dir.clone().multiplyScalar(half - 3.0))
+                : this.table.seatPosition(s, 0.85);
             obj.position.set(p.x, 0.05, p.z);
         });
         this.table.invalidate();

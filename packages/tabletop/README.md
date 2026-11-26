@@ -11,7 +11,10 @@ Wird als Quellcode vom Vite-Build eines Spiels eingebunden (Alias `@treffen/tabl
 | `net/TableClient.ts` | Verbindung (über `@treffen/boardgame-kit`), SNAPSHOT + nummerierte EVENTs, bei Lücke `SYNC`, gedrosselte Präsenz |
 | `net/state.ts` | Zustand + `applyEvent` (Gegenstück: `packages/tabletop-server/tabletop_server/rooms.py`) |
 | `presence/Presence.ts` | Eigener Zeiger → Server; fremde Zeiger als Ring + Name in Spielerfarbe, weich nachgezogen |
-| `ui/SeatLabels.ts` | Namensschilder an den Plätzen (Host-Krone, getrennt, „Hinsetzen“) |
+| `ui/SeatLabels.ts` | Namensschilder an den Plätzen (Host-Krone, getrennt, „Hinsetzen“; hochkant unter dem Brett) |
+| `objects/PieceLayer.ts` | Figuren: greifen (Capture vor der Kamera-Steuerung), ziehen mit Neigung, Einrast-Ring, Hüpfen aufs Feld, Zurückgleiten bei Ablehnung, fremde gehaltene Figuren folgen deren Zeiger |
+| `objects/pawn.ts` | Klassische Spielfigur als Drehkörper, lackiertes Holz (`createPawn(color)`) |
+| `audio/sfx.ts` | Synthetische Tisch-Geräusche (Holz-Klack, Aufnehmen) + Vibration |
 
 Regeln für den Code hier: kein Spielwissen (keine Mensch-/Monopoly-Begriffe), TypeScript `strict`,
 alles Zeichnen über `invalidate()`/Animatoren (nie eine Dauerschleife), Handy zuerst.
