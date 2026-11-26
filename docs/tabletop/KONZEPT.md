@@ -1,6 +1,6 @@
 # Treffen-Spieltisch – Konzept
 
-> Stand: 2026-11-26 · Status: **Entwurf zur Abstimmung** (Nutzer + Fynn) · Erstes Spiel: Mensch ärgere dich nicht
+> Stand: 2026-11-26 · Status: **abgestimmt · M1 ✅ fertig · als Nächstes M2** · Erstes Spiel: Mensch ärgere dich nicht
 
 ## 1. Ziel
 
@@ -124,18 +124,31 @@ Typen, Figuren (Modell, Farben), Würfel-Anzahl, Sitzplätze. Der Tisch baut dar
 
 | Meilenstein | Ergebnis (jeweils spielbar/vorführbar) |
 |---|---|
-| **M1 Leerer Tisch** | 3D-Tisch, Sitzplätze, Kamera mit Gesten, zwei Browser sehen sich (Präsenz-Zeiger), Hub-Ticket |
+| **M1 Leerer Tisch** ✅ | 3D-Tisch, Sitzplätze, Kamera mit Gesten, zwei Browser sehen sich (Präsenz-Zeiger), Hub-Ticket |
 | **M2 Gegenstände** | Mensch-Brett + Figuren: greifen, ziehen, einrasten, Sync über Server (noch ohne Regeln) |
 | **M3 Würfel** | Becher, Physik-Würfel, Ergebnis vom Server, Klang + Vibration |
 | **M4 Regeln** | Regel-Schnittstelle, Mensch-Regeln portiert, Zielvorschau, „gleitet zurück“, Bots |
 | **M5 Fertig** | Lobby, Einstellungen, Persistenz, Zuschauer, Handy-Feinschliff → ersetzt das heutige 2D-Mensch im Hub |
 | später | Karten/Hand/Stapel, Geld/Marker, freier Modus (Einstellung), weitere Spiele, Monopoly v2 |
 
-## 10. Offene Fragen an den Nutzer
+## 10. Lokal ausprobieren (ohne Python/Node auf dem Host)
 
-1. **Optik:** realistisch (Holztisch, echtes Licht, Material) oder stilisiert/bunt? Vorschlag: realistisch-warm
-   wie ein Spieleabend am Küchentisch.
-2. **Mensch-Material:** Figuren/Brett selbst modellieren (einfache, saubere Formen – Vorschlag) oder vorhandene
-   Modelle/Texturen verwenden (Herkunft/Lizenz klären)?
-3. **Spielerzahl:** klassisch 4, oder auch die 6er-Variante vorsehen?
-4. **Server:** neues gemeinsames Python-Paket für alle Tisch-Spiele (Vorschlag) – ok?
+```bash
+# Client bauen (Repo-Wurzel)
+podman run --rm -v "$PWD":/repo:z -w /repo/games/mensch/client docker.io/library/node:22-alpine sh -c 'npm ci && npm run build'
+# Server starten → http://127.0.0.1:8095/  (zweites Fenster/Handy mit gleichem ?room=… öffnen)
+podman run -d --name tisch-dev -p 8095:8095 -v "$PWD":/repo:ro,z localhost/mono-test-deps sh -c 'cd /tmp && exec python -u /repo/games/mensch/server3d/main.py'
+# Browser-Test (zwei Spieler, Präsenz, Leerlauf ohne Rendern) mit Screenshots
+podman run --rm --network=host -v "$PWD/games/mensch":/work:z -w /work localhost/mono-ui-test python tests/ui/tisch_smoke.py http://127.0.0.1:8095 /work/tests/ui/shots
+```
+
+## 11. Entscheidungen (Nutzer, 2026-11-26)
+
+| Frage | Entscheidung |
+|---|---|
+| Regeln | Spielgefühl hat Vorrang, Regeln prüft der Server automatisch mit. Freier Modus (wie Tabletop Simulator) evtl. später als Einstellung |
+| Erstes Spiel | Mensch ärgere dich nicht (einfache Regeln, schnell gespielt) |
+| Optik | **Realistisch-warm**: Holztisch, weiches Licht, echte Materialien – Spieleabend am Küchentisch |
+| Material | **Selbst modellieren** (einfache, saubere Formen per Code), keine fremden Assets → keine Lizenzfragen |
+| Spielerzahl Mensch | **Klassisch 4**; 6er-Brett später als zweites Brett möglich |
+| Server | **Gemeinsames Python-Paket** für alle Tisch-Spiele (`packages/tabletop-server`) |

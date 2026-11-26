@@ -63,6 +63,48 @@ jobs:
             node --check "$f" || { echo "::error file=$f::Syntaxfehler"; exit 1; }
           done
 
+  tabletop:
+    name: Spieltisch (Server, Client, Browser)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: packages/tabletop-server/requirements.txt
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: games/mensch/client/package-lock.json
+      - run: pip install -r packages/tabletop-server/requirements.txt
+      - name: Server-Tests (Sitzplätze, Host, Präsenz, Reconnect)
+        working-directory: /tmp
+        run: python -I "$GITHUB_WORKSPACE/packages/tabletop-server/tests/test_tabletop_ws.py"
+      - name: Mensch-3D-Client (TypeScript-Prüfung + Vite-Build)
+        working-directory: games/mensch/client
+        run: npm ci && npm run build
+      - name: Browser-Rauchtest (zwei Spieler, Präsenz, Render-on-Demand)
+        run: |
+          (cd /tmp && python -u "$GITHUB_WORKSPACE/games/mensch/server3d/main.py" > /tmp/tisch.log 2>&1 &)
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8095/api/health >/dev/null && break; sleep 1; done
+          docker build -q -t treffen-ui-test -f games/monopoly/tests/ui/Containerfile games/monopoly/tests/ui
+          mkdir -p /tmp/tisch-shots
+          docker run --rm --network=host -v "$PWD/games/mensch":/work:ro -v /tmp/tisch-shots:/shots -w /work treffen-ui-test \
+            python -u tests/ui/tisch_smoke.py http://127.0.0.1:8095 /shots
+      - name: Screenshots hochladen
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: spieltisch-screenshots
+          path: /tmp/tisch-shots
+          if-no-files-found: ignore
+      - name: Server-Log bei Fehler
+        if: failure()
+        run: tail -60 /tmp/tisch.log
+
   build:
     name: Docker-Images & Nginx-Konfiguration
     runs-on: ubuntu-latest

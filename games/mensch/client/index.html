@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#17100b">
+    <title>Mensch ärgere dich nicht</title>
+</head>
+<body>
+    <div id="table"></div>
+
+    <header class="hud">
+        <button class="hud-room" id="room-btn" title="Link zum Raum kopieren">
+            <span class="hud-dot" id="conn-dot"></span>
+            Raum <strong id="room-code">——</strong>
+            <span class="hud-copy">🔗</span>
+        </button>
+        <div class="hud-title">Mensch ärgere dich nicht</div>
+    </header>
+
+    <p class="hint" id="hint">Ziehen: drehen · Zwei Finger/Mausrad: zoomen · Doppeltipp: zurück zu deinem Platz</p>
+
+    <div class="welcome" id="welcome" hidden>
+        <form class="welcome-card" id="welcome-form">
+            <h1>Mensch ärgere dich nicht</h1>
+            <p>Wie heißt du?</p>
+            <input id="name-input" maxlength="24" autocomplete="nickname" placeholder="Dein Name" required>
+            <button type="submit">An den Tisch setzen</button>
+        </form>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+
+    <script type="module" src="./src/main.ts"></script>
+</body>
+</html>

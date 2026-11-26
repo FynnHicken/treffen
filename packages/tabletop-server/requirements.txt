@@ -1,0 +1,5 @@
+# Exakt gepinnt, damit ein neuer Docker-Build nicht ungefragt neue Versionen zieht.
+# Gleiche Versionen wie Monopoly (games/monopoly/requirements.txt).
+fastapi==0.165.0
+uvicorn[standard]==0.54.0
+websockets==17.4

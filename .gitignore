@@ -49,3 +49,5 @@ gtp-postgres-data/
 *.tar.gz
 games/monopoly/tests/ui/shots/
 static/dist/
+games/mensch/static3d/
+games/mensch/tests/ui/shots/
