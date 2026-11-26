@@ -13,12 +13,16 @@ Die Roadmap am Ende ist die **Arbeitsliste**: Status pflegen, wenn du etwas erle
 | `server/main.py` | FastAPI-App: HTTP-API, WebSocket-Endpunkt, Nachrichten-Handler, **Raum-Lock**, Bot-Treiber, Auktions-Timer, Abwesenheit, Aufräumen |
 | `server/game_state.py` | Reine Spiellogik: `SQUARES`, Karten, `Player`, `GameRoom` (Regeln, Zahlungen, Auktion, Handel, Bankrott, Debug) |
 | `server/bot_ai.py` | Bot-Entscheidungen als reine Funktionen (kaufen, bieten, bauen, ablösen, Schulden, Gefängnis, Handel) |
-| `static/index.html` | Markup: Header, Aktions-Dock, Modals (Lobby, Urkunde, Auktion, Handel, Game-Over, Debug …) |
-| `static/js/game_client.js` | Gesamte Client-Logik (IIFE, `window.MonopolyGame`): WebSocket, State, HUD, Modals |
-| `static/js/board3d.js` | Three.js-Szene (`window.MonopolyBoard3D`): Brett, Figuren, Würfel, Häuser, Karten auf dem Tisch |
-| `static/js/asset_config.js` | Zentrale Asset-Registry (Texturen, Modelle, Sounds) |
-| `static/js/audio.js` | Soundeffekte + Hintergrundmusik |
-| `static/assets/` | Assets – **nicht verändern** (Entscheidung des Nutzers, siehe AGENTS.md) |
+| `client/` | **Vite + TypeScript-Projekt** des Clients. Build → `static/dist/` (gitignored, im Docker-Image automatisch) |
+| `client/index.html` | Markup: Header, Aktions-Dock, Modals (Lobby, Urkunde, Auktion, Handel, Game-Over, Debug …) |
+| `client/src/main.ts` | Einstieg: lädt CSS, Three.js (`three-global.ts`) und die Module unten, startet das Spiel |
+| `client/src/legacy/game_client.js` | Client-Logik (`window.MonopolyGame`): State, HUD, Modals. Verbindung/Identität kommen aus dem Baukasten |
+| `client/src/legacy/board3d.js` | Three.js-Szene (`window.MonopolyBoard3D`): Brett, Figuren, Würfel, Häuser, Karten auf dem Tisch |
+| `client/src/legacy/asset_config.js` | Zentrale Asset-Registry (Texturen, Modelle, Sounds) |
+| `client/src/legacy/audio.js` | Soundeffekte + Hintergrundmusik |
+| `client/src/style.css` | Gesamtes CSS (Handy-Layout am Ende) |
+| `../../packages/boardgame-kit/` | **Gemeinsamer Brettspiel-Baukasten** (TypeScript): Identität, WebSocket, HTML-Escaping, später 3D – siehe dessen README |
+| `static/assets/` | Assets – **nicht verändern** (Entscheidung des Nutzers, siehe AGENTS.md). Werden zur Laufzeit geladen, nicht gebündelt |
 | `tests/` | Testskripte + `run_tests.sh` (siehe Abschnitt 3) |
 
 Im Hub wird Monopoly unter `/monopoly/` per iframe eingebettet:
@@ -26,14 +30,32 @@ Im Hub wird Monopoly unter `/monopoly/` per iframe eingebettet:
 
 ## 2. Lokal starten
 
-Auf dem Entwicklungsrechner gibt es kein Python-Setup auf dem Host – alles läuft in Podman:
+Auf dem Entwicklungsrechner gibt es kein Python/Node auf dem Host – alles läuft in Podman.
+
+**Client bauen** (nach jeder Client-Änderung, oder stattdessen den Vite-Dev-Server unten nutzen):
+
+```bash
+cd <repo>   # Wurzel, weil der Client packages/boardgame-kit mitbaut
+podman run --rm -v "$PWD":/repo:z -w /repo/games/monopoly/client docker.io/library/node:22-alpine \
+    sh -c 'npm ci && npm run build'          # TypeScript-Prüfung + Build nach static/dist
+```
+
+**Vite-Dev-Server** (Änderungen sofort im Browser, Hot Reload; braucht den Python-Server auf 8090):
+
+```bash
+podman run --rm -it -p 5173:5173 -v "$PWD":/repo:z -w /repo/games/monopoly/client \
+    -e MONOPOLY_BACKEND=http://host.containers.internal:8090 docker.io/library/node:22-alpine \
+    sh -c 'npm ci && npx vite --host 0.0.0.0'   # → http://127.0.0.1:5173/
+```
+
+**Python-Server:**
 
 ```bash
 cd games/monopoly
 # einmalig: Image mit Abhängigkeiten (macht run_tests.sh automatisch)
 podman build -t localhost/mono-test-deps -f tests/Containerfile .
-# Dev-Server (Code wird read-only gemountet → Client-Änderungen = Browser-Reload,
-# Server-Änderungen = Container neu starten; laufende Partien gehen dabei verloren)
+# Dev-Server (Code wird read-only gemountet → nach Client-Build Browser-Reload,
+# Server-Änderungen = Container neu starten). Liefert static/dist aus → vorher Client bauen.
 podman run -d --name treffen-monopoly-dev -p 8090:8090 -v .:/src:ro,z \
     localhost/mono-test-deps sh -c 'cd /src && exec python -u server/main.py'
 podman restart treffen-monopoly-dev     # nach Server-Änderungen
@@ -211,7 +233,7 @@ Ticket (`base64url(JSON{v,room,pid,name,host,exp}).base64url(HMAC-SHA256)`, 30 m
 nach `TRADE_TIMEOUT_SEC` (60 s); Spieldauer abgelaufen → `finish_by_time()` **sofort** (bzw. direkt
 nach einer laufenden Versteigerung); Zug-Timer abgelaufen → `turn_autoplay_id` setzen, Treiber anstoßen.
 
-## 8. Client (`game_client.js`) – Einstiegspunkte
+## 8. Client (`client/src/legacy/game_client.js`) – Einstiegspunkte
 
 `connectWebSocket` / `sendJoinMessage` / `sendWsMessage` · `handleServerMessage` (setzt
 `gameState`, dann `switch(msg.type)`) · `updateLobbyUI` · `updateHUD` (Spielerlisten, Dock,

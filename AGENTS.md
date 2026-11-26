@@ -20,7 +20,9 @@ Räumen, Host, Abstimmung, synchronem Start) bettet mehrere Multiplayer-Spiele p
 | Guess The Price | `games/guess-the-price/` | React/Vite + Express/Prisma (SQLite) | 8088 / 3005 | `/price-guess/`, `/price-guess-api/`, `/price-guess-socket/` |
 | **Monopoly 3D** | `games/monopoly/` | Python FastAPI + Three.js | 8090 | `/monopoly/` |
 
-**Fokus des Nutzers: Monopoly perfektionieren.** → [`games/monopoly/DEVELOPMENT.md`](games/monopoly/DEVELOPMENT.md)
+**Fokus des Nutzers: Monopoly perfektionieren – und daraus einen Brettspiel-Baukasten machen**, damit weitere
+Brettspiele möglichst viel Code (Rendering, Verbindung, UI) übernehmen: [`packages/boardgame-kit/README.md`](packages/boardgame-kit/README.md).
+Der Monopoly-Client ist ein Vite-Projekt (`games/monopoly/client/`), das vor dem Deployen gebaut wird (passiert im Docker-Image). → [`games/monopoly/DEVELOPMENT.md`](games/monopoly/DEVELOPMENT.md)
 
 ## Deployment-Varianten
 
@@ -115,11 +117,15 @@ Erledigt und auf `main`:
     Abstimmung über Geräte hinweg repariert (`broadcastVotes` fehlte), Nginx-Resolver aus `resolv.conf`
     (feste, teils nicht existierende Resolver ließen Anfragen alle 10 s bis zu 5 s hängen).
 
+12. Monopoly-Client auf Vite + TypeScript (2026-11-26): `games/monopoly/client/`, Three.js r128 aus npm
+    (identisch zur vorherigen Kopie), Build im Docker-Image, gemeinsamer Baukasten `packages/boardgame-kit/`
+    (Identität, WebSocket, Escaping). Optik pixelgenau unverändert (Screenshot-Vergleich).
+
 11. Monopoly-Spielstände in SQLite (2026-11-26): Partien überstehen Neustart/Update, Volume `./data/monopoly`.
 
 **Umbau-Plan (mit dem Nutzer am 2026-11-26 abgestimmt, Schritt für Schritt):** 1. ✅ Monopoly-Verbindungen
-absichern · 1b. ✅ CI + Hub-Tests · 2. ✅ Monopoly-Spielstände in SQLite speichern · 3. Vite + TypeScript, `game_client.js` in Module
-zerlegen · 4. Hub-Client: Server als einzige Wahrheit (localStorage/BroadcastChannel-Abgleich raus), Spiele
+absichern · 1b. ✅ CI + Hub-Tests · 2. ✅ Monopoly-Spielstände in SQLite speichern · 3. 🚧 Vite + TypeScript
+(✅ Build-Pipeline + Baukasten angelegt; als Nächstes legacy-Module in `packages/boardgame-kit` herauslösen) · 4. Hub-Client: Server als einzige Wahrheit (localStorage/BroadcastChannel-Abgleich raus), Spiele
 als Plug-ins mit Manifest statt fest verdrahtet · 5. Design/Handy. Performance-Notizen für später:
 `broadcast_room` sendet seriell unter dem Raum-Lock (langsamer Client bremst alle), volle `to_dict()` bei
 jedem Event, Hub schickt Avatare (bis 32 KB) bei jedem `ROSTER_SYNC`, 3D rendert dauerhaft mit Soft-Shadows,

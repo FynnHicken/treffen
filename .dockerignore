@@ -1,0 +1,11 @@
+# Gilt für Builds mit dem Repo als Kontext (Monopoly-Image, Dockerfile.fly)
+.git
+**/node_modules
+**/__pycache__
+**/*.pyc
+data
+letsencrypt
+.env
+games/monopoly/static/dist
+games/monopoly/tests/ui/shots
+games/monopoly/images

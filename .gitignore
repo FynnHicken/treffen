@@ -48,3 +48,4 @@ gtp-postgres-data/
 *.zip
 *.tar.gz
 games/monopoly/tests/ui/shots/
+static/dist/

@@ -8,7 +8,7 @@ Dieses Dokument dient als vollständige Referenz für Entwickler und nachfolgend
 
 - **Backend**: Python FastAPI mit asynchronem WebSocket-Server (`server/main.py`).
 - **Standard-Port**: `8090` (konfigurierbar über Umgebungsvariable `PORT`).
-- **Frontend**: Three.js WebGL 3D-Engine (`static/js/board3d.js`) + Reaktive HTML5/CSS3 Touch-Benutzeroberfläche (`static/js/game_client.js`).
+- **Frontend**: Three.js WebGL 3D-Engine (`client/src/legacy/board3d.js`) + Reaktive HTML5/CSS3 Touch-Benutzeroberfläche (`client/src/legacy/game_client.js`).
 - **Assets**: 100% originale Assets direkt aus der **Monopoly 2012 ROM** extrahiert:
   - Hochauflösendes deutsches Spielbrett (`2048x2048`).
   - Alle 28 offiziellen deutschen Besitzrechtkarten (`static/assets/cards/`).

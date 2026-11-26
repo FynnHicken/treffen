@@ -47,13 +47,18 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: party-server/package-lock.json
+          cache-dependency-path: |
+            party-server/package-lock.json
+            games/monopoly/client/package-lock.json
       - name: Sync-Server-Tests
         working-directory: party-server
         run: npm ci && npm test
-      - name: JS-Syntax (Hub + Monopoly-Client)
+      - name: Monopoly-Client (TypeScript-Prüfung + Vite-Build)
+        working-directory: games/monopoly/client
+        run: npm ci && npm run build
+      - name: JS-Syntax (Hub)
         run: |
-          for f in party-hub/*.js games/monopoly/static/js/*.js games/mensch/static/js/*.js; do
+          for f in party-hub/*.js games/mensch/static/js/*.js; do
             [ -f "$f" ] || continue
             node --check "$f" || { echo "::error file=$f::Syntaxfehler"; exit 1; }
           done
@@ -80,8 +85,22 @@ jobs:
           docker build -q -t treffen-ui-test -f games/monopoly/tests/ui/Containerfile games/monopoly/tests/ui
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/ >/dev/null && break; sleep 1; done
           docker run --rm --network=host -v "$PWD/party-hub/tests":/t:ro treffen-ui-test python -u /t/browser_smoke.py http://127.0.0.1:8000
+      - name: Monopoly im Browser über den Hub-Pfad /monopoly/ (Lobby, Bots, Würfeln, Menüs)
+        run: |
+          docker compose -f docker-compose.yml up -d monopoly
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/monopoly/ >/dev/null && break; sleep 1; done
+          mkdir -p /tmp/shots
+          docker run --rm --network=host -v "$PWD/games/monopoly":/work:ro -v /tmp/shots:/shots -w /work treffen-ui-test \
+            python -u tests/ui/walkthrough.py http://127.0.0.1:8000/monopoly /shots desktop,handy --check
+      - name: Screenshots hochladen
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: monopoly-screenshots
+          path: /tmp/shots
+          if-no-files-found: ignore
       - name: Logs bei Fehler
         if: failure()
-        run: docker compose -f docker-compose.yml logs --tail=80 party-server partyhub
+        run: docker compose -f docker-compose.yml logs --tail=80 party-server partyhub monopoly
       - name: Shell-Skripte (Syntax)
         run: for f in start.sh stop.sh fly_entrypoint.sh party-hub/40-enable-ssl.sh party-hub/15-treffen-resolver.sh; do bash -n "$f"; done

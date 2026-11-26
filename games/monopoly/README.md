@@ -125,16 +125,14 @@ web_game/
 ├── server/
 │   ├── main.py              # FastAPI Web- & WebSocket-Server, REST-Endpoints & Bot-Runner
 │   └── game_state.py        # Monopoly-Spiellogik (40 Felder, Bank, Runden, Karten, Bots)
+├── client/                  # Vite + TypeScript (Build → static/dist), nutzt packages/boardgame-kit
+│   ├── index.html           # HUD & Modals
+│   └── src/
+│       ├── main.ts          # Einstieg
+│       ├── style.css        # UI, Responsive Mobile/Desktop
+│       └── legacy/          # audio.js, board3d.js, game_client.js, asset_config.js (werden schrittweise zerlegt)
 ├── static/
-│   ├── index.html           # Minimalistisches Konsolen-HUD & Modals
-│   ├── css/
-│   │   └── style.css        # Clean Console UI, Glassmorphism, Responsive Mobile/Desktop
-│   ├── js/
-│   │   ├── three.min.js     # Three.js 3D WebGL Library (r128)
-│   │   ├── OrbitControls.js # 3D-Kamerasteuerung (angepasst für fixe 2.5D & 3D Orbit)
-│   │   ├── audio.js         # Web Audio API Synthesizer + Fallback für Original-WAVs
-│   │   ├── board3d.js       # 3D-Engine: Spielfeld, Meshes, Hüpfen, Decks, Tischkarten
-│   │   └── game_client.js   # Client-Logik, WebSocket-Handler, UI-Binds, postMessage
+│   ├── dist/                # gebauter Client (nicht im Git)
 │   └── assets/
 │       ├── models/          # 8 Original 3D-Figuren (.obj), Haus, Hotel
 │       ├── textures/        # Deutsches Spielbrett 2048x2048, Holz, Geldnoten, Würfel

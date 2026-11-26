@@ -10,7 +10,7 @@ Sammelt außerdem Konsolenfehler und Elemente, die über den Bildschirmrand rage
 import asyncio, json, os, sys
 from playwright.async_api import async_playwright
 
-BASE, OUT = sys.argv[1], sys.argv[2]
+BASE, OUT = [a for a in sys.argv[1:] if not a.startswith("--")][:2]
 os.makedirs(OUT, exist_ok=True)
 
 DEVICES = {
@@ -67,7 +67,15 @@ async def run(pw, dev_name, opts):
         await page.wait_for_timeout(1000)
     await page.click("#btn-roll"); await page.wait_for_timeout(5000)
     await shot(page, f"{dev_name}-4-nach-wurf", report)
-    await page.evaluate("window.MonopolyGame.closeModal && ['modal-deed','modal-card','modal-tax'].forEach(m=>window.MonopolyGame.closeModal(m))")
+    # Pflicht-Entscheidungen nach dem Wurf erledigen (sonst öffnet sich das Fenster gleich wieder)
+    await page.evaluate("""(() => {
+      const g = window.MonopolyGame, pa = (g.getState && g.getState() || {}).pending_action || {};
+      if (pa.type === 'TAX_CHOICE') g.payIncomeTax('flat');
+      if (pa.type === 'CARD_DRAWN' && g.confirmCard) g.confirmCard();
+      ['modal-deed','modal-card','modal-tax'].forEach(m => g.closeModal && g.closeModal(m));
+    })()""")
+    await page.wait_for_timeout(1200)
+    await page.evaluate("['modal-deed','modal-card','modal-tax'].forEach(m => window.MonopolyGame.closeModal(m))")
     await page.click("#btn-portfolio"); await shot(page, f"{dev_name}-5-besitz", report)
     await page.evaluate("window.MonopolyGame.closeModal('modal-portfolio')")
     await page.click("#btn-trade"); await shot(page, f"{dev_name}-6-handel", report)
@@ -78,7 +86,8 @@ async def run(pw, dev_name, opts):
     return report
 
 async def main():
-    which = sys.argv[3].split(",") if len(sys.argv) > 3 else list(DEVICES)
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    which = args[2].split(",") if len(args) > 2 else list(DEVICES)
     async with async_playwright() as pw:
         result = {}
         for name in which:
@@ -88,5 +97,13 @@ async def main():
                 result[name] = {"abbruch": repr(e)[:400]}
         json.dump(result, open(f"{OUT}/report.json", "w"), ensure_ascii=False, indent=1)
         print(json.dumps(result, ensure_ascii=False, indent=1))
+        # --check (CI): Abbruch oder Konsolenfehler → Exit-Code 1
+        if "--check" in sys.argv:
+            bad = {k: v.get("abbruch") or v.get("console_errors") for k, v in result.items()
+                   if v.get("abbruch") or v.get("console_errors")}
+            if bad:
+                print("❌ UI-Durchlauf fehlgeschlagen:", json.dumps(bad, ensure_ascii=False))
+                sys.exit(1)
+            print("✅ UI-Durchlauf ohne Fehler")
 
 asyncio.run(main())

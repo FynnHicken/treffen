@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Monopoly 3D - Wii Edition</title>
-    <link rel="stylesheet" href="static/css/style.css?v=3.9">
     <link rel="icon" href="static/assets/textures/board_wt_cl_go_cm.png">
     <script>
         (function() {
@@ -636,38 +635,7 @@
         }
     </style>
 
-    <!-- Scripts with Cache Busting -->
-    <script src="static/js/three.min.js"></script>
-    <script src="static/js/OrbitControls.js"></script>
-    <script src="static/js/asset_config.js?v=4.4"></script>
-    <script src="static/js/audio.js?v=4.4"></script>
-    <script src="static/js/board3d.js?v=4.4"></script>
-    <script src="static/js/game_client.js?v=4.4"></script>
-
-    <script>
-        function launchMonopoly() {
-            console.log('Starting Monopoly Web Edition...');
-            try {
-                if (window.MonopolyGame) {
-                    window.MonopolyGame.init();
-                }
-            } catch (err) {
-                console.error('MonopolyGame.init error:', err);
-            }
-            try {
-                if (window.MonopolyBoard3D) {
-                    window.MonopolyBoard3D.init('canvas-container');
-                }
-            } catch (err) {
-                console.error('MonopolyBoard3D.init error:', err);
-            }
-        }
-
-        if (document.readyState === 'complete' || document.readyState === 'interactive') {
-            launchMonopoly();
-        } else {
-            window.addEventListener('DOMContentLoaded', launchMonopoly);
-        }
-    </script>
+    <!-- Vite bündelt Three.js, den Monopoly-Code und das CSS (Dateinamen mit Hash → kein ?v= mehr nötig) -->
+    <script type="module" src="./src/main.ts"></script>
 </body>
 </html>

@@ -128,8 +128,9 @@ services:
   # =========================================================================
   monopoly:
     build:
-      context: ./games/monopoly
-      dockerfile: Dockerfile
+      # Repo als Kontext: das Image baut den Client mit packages/boardgame-kit
+      context: .
+      dockerfile: games/monopoly/Dockerfile
     container_name: monopoly
     restart: unless-stopped
     environment:

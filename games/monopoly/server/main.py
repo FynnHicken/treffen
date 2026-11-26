@@ -18,7 +18,8 @@ SERVER_DIR = Path(__file__).resolve().parent
 if str(SERVER_DIR) not in sys.path:
     sys.path.insert(0, str(SERVER_DIR))
 STATIC_DIR = BASE_DIR / "static"
-INDEX_HTML = STATIC_DIR / "index.html"
+DIST_DIR = STATIC_DIR / "dist"            # vom Vite-Build erzeugt (client/ → npm run build)
+INDEX_HTML = DIST_DIR / "index.html"
 
 from game_state import GameRoom, TOKEN_OPTIONS, PLAYER_COLORS, SQUARES, MAX_PLAYERS, clean_text
 import bot_ai
@@ -40,6 +41,9 @@ async def cache_static_assets(request, call_next):
     response = await call_next(request)
     if request.url.path.startswith("/static/assets/"):
         response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+    elif request.url.path.startswith("/assets/"):
+        # Vite-Dateinamen enthalten einen Inhalts-Hash → dürfen ewig im Cache bleiben
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     return response
 
 SOLO_ROOM_TTL_SEC = 60.0
@@ -1050,9 +1054,16 @@ async def bot_answer_trade(room_id: str, trade_id: str):
 
 # Mount static files dynamically
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+if (DIST_DIR / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="client-assets")
+else:
+    print("⚠️  Client nicht gebaut (static/dist fehlt) – cd games/monopoly/client && npm ci && npm run build")
 
 @app.get("/")
 async def root():
+    if not INDEX_HTML.is_file():
+        return JSONResponse({"error": "Client nicht gebaut: cd games/monopoly/client && npm ci && npm run build"},
+                            status_code=503)
     return FileResponse(
         str(INDEX_HTML),
         headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"}

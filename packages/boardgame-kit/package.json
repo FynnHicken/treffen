@@ -1,0 +1,7 @@
+{
+  "name": "@treffen/boardgame-kit",
+  "private": true,
+  "type": "module",
+  "description": "Gemeinsamer Baukasten für die Brettspiele in Treffen (wird als Quellcode von Vite eingebunden)",
+  "main": "src/index.ts"
+}

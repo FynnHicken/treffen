@@ -16,7 +16,7 @@ Zuerst `AGENTS.md`, dann `games/monopoly/DEVELOPMENT.md` lesen. Dieser Bericht b
   localStorage `monopoly_cinematic`). Früher habe ich dem Nutzer fälschlich gesagt, es gäbe keine Kamerafahrt.
 - **Kamera passt sich dem Seitenverhältnis an:** `Board3D.getFitMultiplier()`, `maxDistance` dynamisch,
   Neu-Einpassen beim Drehen des Handys (`onResize`).
-- **Handy-Layout** (CSS am Ende von `static/css/style.css`, Block „Handy-Layout“): zweizeiliger Header,
+- **Handy-Layout** (CSS am Ende von `client/src/style.css`, Block „Handy-Layout“): zweizeiliger Header,
   Werkzeuge im ⋯-Menü (`#btn-more-tools`, `.game-header.tools-open`), Spielerleiste wischbar,
   Protokoll/Chat als Bottom-Sheet (war < 900 px komplett `display:none`!), Dock als 3er-Raster,
   Tippflächen ≥ 40 px, Querformat-Regeln (`max-height: 500px`).

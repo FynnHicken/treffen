@@ -2,23 +2,19 @@
  * Monopoly 3D Web Edition - Client Controller & WebSocket Protocol
  * Handles lobby, gameplay events, responsive UI interaction, and 3D board synchronization.
  */
+import { loadIdentity, GameSocket, escapeHtml } from '@treffen/boardgame-kit';
 
 (function(window) {
     'use strict';
 
     // Global client state
-    let socket = null;
+    let identity = null;       // Spieler-ID, Client-Secret, Hub-Ticket (boardgame-kit)
+    let socket = null;         // GameSocket (boardgame-kit): AUTH, Wiederverbinden, 4003
     let roomId = null;
     let playerId = null;
-    let clientSecret = null;   // bindet playerId serverseitig an diesen Browser (AUTH)
-    let hubTicket = null;      // vom Hub signiertes Ticket (Host-Recht), kommt per #ticket=…
 
     // Spielernamen, Chat und Log kommen von anderen Clients → vor innerHTML escapen
-    function esc(value) {
-        return String(value ?? '')
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    }
+    const esc = escapeHtml;
     let playerName = 'Spieler';
     let selectedToken = 'dog';
     let selectedColor = '#e74c3c';
@@ -568,50 +564,19 @@
     }
 
     // Helper: Local Storage & URL params for seamless Game Hub Party embedding
-    function newPlayerId() {
-        return 'p_' + randomToken(10);
-    }
-
-    function randomToken(bytes) {
-        const arr = new Uint8Array(bytes);
-        (window.crypto || window.msCrypto).getRandomValues(arr);
-        return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
-    }
-
-    function initClientSecret() {
-        try {
-            clientSecret = localStorage.getItem('monopoly_client_secret');
-            if (!clientSecret || !/^[A-Za-z0-9_-]{16,128}$/.test(clientSecret)) {
-                clientSecret = randomToken(24);
-                localStorage.setItem('monopoly_client_secret', clientSecret);
-            }
-        } catch (e) {
-            clientSecret = clientSecret || randomToken(24);
-        }
-        // Ticket steht im Fragment (#ticket=…), damit es nicht in Server-Logs landet
-        try {
-            const hashParams = new URLSearchParams(window.location.hash.slice(1));
-            const t = hashParams.get('ticket');
-            if (t) {
-                sessionStorage.setItem('monopoly_hub_ticket', t);
-                history.replaceState(null, '', window.location.pathname + window.location.search);
-            }
-            hubTicket = t || sessionStorage.getItem('monopoly_hub_ticket');
-        } catch (e) {}
-    }
-
     function initPlayerIdentity() {
-        initClientSecret();
-        try {
-            let storedId = sessionStorage.getItem('monopoly_player_id');
-            if (!storedId) {
-                storedId = newPlayerId();
-                sessionStorage.setItem('monopoly_player_id', storedId);
-            }
-            playerId = storedId;
-        } catch (e) {
-            playerId = newPlayerId();
-        }
+        identity = loadIdentity('monopoly');
+        playerId = identity.playerId;
+        socket = new GameSocket({
+            identity,
+            onOpen: () => {
+                console.log('WebSocket connected to room', roomId);
+                sendJoinMessage();
+            },
+            onMessage: handleServerMessage,
+            onDisconnect: () => console.log('WebSocket getrennt – verbinde neu …'),
+            onPlayerIdChanged: (id) => { playerId = id; }
+        });
 
         try {
             const urlName = getQueryParam('name') || getQueryParam('user') || getQueryParam('player');
@@ -754,13 +719,7 @@
     }
 
     function showRoomSelector() {
-        if (socket) {
-            try {
-                socket.onclose = null;
-                socket.close();
-            } catch (e) {}
-            socket = null;
-        }
+        if (socket) socket.disconnect();
         roomId = null;
         gameState = null;
         window.__INITIAL_ROOM_ID__ = null;
@@ -830,13 +789,7 @@
             try { localStorage.setItem('monopoly_player_name', playerName); } catch (e) {}
         }
 
-        if (socket) {
-            try {
-                socket.onclose = null;
-                socket.close();
-            } catch (e) {}
-            socket = null;
-        }
+        if (socket) socket.disconnect();
 
         roomId = cleanCode;
         window.__INITIAL_ROOM_ID__ = roomId;
@@ -868,41 +821,8 @@
 
     // Connect WebSocket
     function connectWebSocket() {
-        if (!roomId) return;
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        let basePath = window.location.pathname;
-        if (!basePath.endsWith('/')) {
-            basePath = basePath.substring(0, basePath.lastIndexOf('/') + 1);
-        }
-        const wsUrl = `${protocol}//${window.location.host}${basePath}ws/${roomId}/${playerId}`;
-
-        socket = new WebSocket(wsUrl);
-
-        socket.onopen = function() {
-            console.log('WebSocket connected to room', roomId);
-            socket.send(JSON.stringify({ action: 'AUTH', secret: clientSecret }));
-            sendJoinMessage();
-        };
-
-        socket.onmessage = function(event) {
-            try {
-                const data = JSON.parse(event.data);
-                handleServerMessage(data);
-            } catch (err) {
-                console.error('WebSocket parse error:', err);
-            }
-        };
-
-        socket.onclose = function(ev) {
-            if (!roomId) return;
-            if (ev && ev.code === 4003) {
-                // ID gehört (z. B. nach gelöschtem localStorage) einem anderen Secret → neue ID
-                playerId = newPlayerId();
-                try { sessionStorage.setItem('monopoly_player_id', playerId); } catch (e) {}
-            }
-            console.log('WebSocket disconnected, reconnecting in 2s...');
-            setTimeout(connectWebSocket, 2000);
-        };
+        if (!roomId || !socket) return;
+        socket.connect(roomId);
     }
 
     // ===== Gameplay-Paket: Raum-Einstellungen, Uhren, Zuschauer =====
@@ -1040,14 +960,12 @@
             token: selectedToken,
             color: selectedColor,
             is_host: (getQueryParam('host') === '1'),
-            ticket: hubTicket || undefined
+            ticket: (identity && identity.hubTicket) || undefined
         });
     }
 
     function sendWsMessage(msg) {
-        if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify(msg));
-        }
+        if (socket) socket.send(msg);
     }
 
     // Message Dispatcher
@@ -3694,6 +3612,11 @@
 
         passAuction: function() {
             sendWsMessage({ action: 'AUCTION_PASS' });
+        },
+
+        // Aktueller Spielstand (für Tests und Debugging, nur lesen)
+        getState: function() {
+            return gameState;
         },
 
         payIncomeTax: function(mode) {
