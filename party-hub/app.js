@@ -252,6 +252,15 @@ const partyState = {
             maxPlayers: 8,
             desc: "Der legendäre Brettspiel-Klassiker in 3D mit deutscher 2012 ROM-Ausstattung, Straßenhandel, Häuserbau und Computergegnern!",
             embedUrl: "/monopoly/"
+        },
+        mensch: {
+            id: "mensch",
+            title: "Mensch ärgere dich nicht",
+            icon: "🎲",
+            minPlayers: 1,
+            maxPlayers: 4,
+            desc: "Der Klassiker am 3D-Spieltisch: Becher schütteln, Figuren ziehen, rauswerfen. Freie Plätze übernehmen Computer, weitere Gäste schauen zu.",
+            embedUrl: "/mensch/"
         }
     },
     isVotingActive: false,
@@ -260,7 +269,8 @@ const partyState = {
         uno: 0,
         codenames: 0,
         price_guess: 0,
-        monopoly: 0
+        monopoly: 0,
+        mensch: 0
     },
     userVotedGame: null,
     hubSettings: { anyoneCanVote: false },
@@ -2072,6 +2082,10 @@ function getGameUrl(game, lobbyId) {
         // Ticket im Fragment (#…): geht nicht an den Server und landet so nicht in Access-Logs
         const ticket = partyState.gameTicket ? `#ticket=${encodeURIComponent(partyState.gameTicket)}` : "";
         return `/monopoly/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}${ticket}`;
+    } else if (game.id === "mensch") {
+        // Host-Recht kommt nur über das signierte Ticket (im Fragment, nicht in Server-Logs)
+        const ticket = partyState.gameTicket ? `#ticket=${encodeURIComponent(partyState.gameTicket)}` : "";
+        return `/mensch/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}${ticket}`;
     } else if (game.id === "price_guess") {
         return `/price-guess/`;
     }
@@ -2087,7 +2101,7 @@ function startGameView(game, lobbyId) {
     hudIcon.innerText = game.icon;
     hudTitle.innerText = `${game.title} • Party-Raum`;
 
-    if (game.id === "skribbol" || game.id === "uno" || game.id === "codenames" || game.id === "monopoly" || game.id === "price_guess") {
+    if (game.id === "skribbol" || game.id === "uno" || game.id === "codenames" || game.id === "monopoly" || game.id === "mensch" || game.id === "price_guess") {
         iframe.src = getGameUrl(game, lobbyId);
     } else {
         iframe.srcdoc = `
@@ -2283,7 +2297,8 @@ const SLOT_GAMES = [
     { id: "skribbol",    title: "skribbl",         icon: "🎨" },
     { id: "codenames",   title: "Codenames",       icon: "🕵️‍♂️" },
     { id: "price_guess", title: "Guess The Price", icon: "🏷️" },
-    { id: "monopoly",    title: "Monopoly 3D",     icon: "🎩" }
+    { id: "monopoly",    title: "Monopoly 3D",     icon: "🎩" },
+    { id: "mensch",      title: "Mensch ärgere dich nicht", icon: "🎲" }
 ];
 
 let isSlotSpinning = false;

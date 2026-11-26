@@ -1,4 +1,4 @@
-# Gilt für Builds mit dem Repo als Kontext (Monopoly-Image, Dockerfile.fly)
+# Gilt für Builds mit dem Repo als Kontext (Monopoly-, Mensch-Image, Dockerfile.fly)
 .git
 **/node_modules
 **/__pycache__
@@ -9,3 +9,6 @@ letsencrypt
 games/monopoly/static/dist
 games/monopoly/tests/ui/shots
 games/monopoly/images
+games/mensch/static
+games/mensch/data
+games/mensch/tests/ui/shots

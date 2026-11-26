@@ -1,13 +1,13 @@
-"""Mensch-Regeln auf dem Spieltisch (games/mensch/server3d/rules.py) – gezielte Fälle + 100 Computer-Partien.
+"""Mensch-Regeln auf dem Spieltisch (games/mensch/server/rules.py) – gezielte Fälle + 100 Computer-Partien.
 
-    python -I games/mensch/tests/test_rules3d.py
+    python -I games/mensch/tests/test_rules.py
 """
 import random, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "packages" / "tabletop-server"))
-sys.path.insert(0, str(ROOT / "games" / "mensch" / "server3d"))
+sys.path.insert(0, str(ROOT / "games" / "mensch" / "server"))
 from tabletop_server.rooms import GameDef, Room  # noqa: E402
 from layout import LAYOUT, COLORS, PALETTE  # noqa: E402
 from rules import MenschRules  # noqa: E402
@@ -116,6 +116,24 @@ def main():
     r.game["dice"] = 2
     m = next((m for m in r.rules.moves(r, 0) if m["piece"] == "p-yellow-1"), None)
     ok(m and m["to"] == "g-yellow-3", "Im Ziel weiterrücken (g1→g3)")
+
+    print("== Hausregeln ==")
+    r = new_room(players=("a", "b"))
+    ok(r.set_settings("b", {"must_capture": True}) == [], "Nur der Host stellt Hausregeln ein")
+    r.set_settings("a", {"must_capture": True})
+    r.start("a")
+    put(r, **{"p-yellow-0": "t5", "p-yellow-1": "t20", "p-green-0": "t8"})
+    r.game.update(turn=0, phase="move", dice=3)
+    ms = r.rules.moves(r, 0)
+    ok([m["piece"] for m in ms] == ["p-yellow-0"] and ms[0]["capture"] == "p-green-0", f"Schlagzwang: nur der schlagende Zug ({[m['piece'] for m in ms]})")
+    r.game["dice"] = 2
+    ok(len(r.rules.moves(r, 0)) == 2, "Ohne Schlagmöglichkeit freie Wahl")
+    r = new_room(players=("a", "b"))
+    r.set_settings("a", {"clear_start": False})
+    r.start("a")
+    put(r, **{"p-yellow-0": "t0", "p-yellow-1": "t20"})
+    r.game.update(turn=0, phase="move", dice=2)
+    ok({m["piece"] for m in r.rules.moves(r, 0)} == {"p-yellow-0", "p-yellow-1"}, "Ohne „Startfeld räumen“ darf auch die andere Figur ziehen")
 
     print("== Ende ==")
     r = new_room(players=("a", "b"))

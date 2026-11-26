@@ -1,6 +1,6 @@
 # Treffen-Spieltisch – Konzept
 
-> Stand: 2026-11-26 · Status: **abgestimmt · M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · als Nächstes M5 (Lobby/Hub, Persistenz, Feinschliff)** · Erstes Spiel: Mensch ärgere dich nicht
+> Stand: 2026-11-26 · Status: **abgestimmt · M1–M5 ✅ · Mensch läuft im Hub unter `/mensch/`** · Erstes Spiel: Mensch ärgere dich nicht
 
 ## 1. Ziel
 
@@ -90,7 +90,7 @@ Monopoly bleibt unverändert lauffähig und ist **Steinbruch** (Würfel, Hüpfen
 ## 6. Schnittstelle für ein Spiel (Server, Python)
 
 Umgesetzt in `packages/tabletop-server/tabletop_server/rules.py` (Doku im Dateikopf), Mensch-Regeln in
-`games/mensch/server3d/rules.py`. Abweichend vom Entwurf hier: Regeln arbeiten direkt auf `room.pieces`/
+`games/mensch/server/rules.py`. Abweichend vom Entwurf hier: Regeln arbeiten direkt auf `room.pieces`/
 `room.game` und liefern Ereignisse ohne Nummer; `public()` statt `view_for()` (Mensch hat keine geheimen Infos).
 
 ```python
@@ -132,7 +132,7 @@ Typen, Figuren (Modell, Farben), Würfel-Anzahl, Sitzplätze. Der Tisch baut dar
 | **M2 Gegenstände** ✅ | Mensch-Brett + Figuren: greifen, ziehen, einrasten, Sync über Server (noch ohne Regeln) |
 | **M3 Würfel** ✅ | Becher, Physik-Würfel, Ergebnis vom Server, Klang + Vibration |
 | **M4 Regeln** ✅ | Regel-Schnittstelle, Mensch-Regeln portiert, Zielvorschau, „gleitet zurück“, Bots |
-| **M5 Fertig** | Lobby, Einstellungen, Persistenz, Zuschauer, Handy-Feinschliff → ersetzt das heutige 2D-Mensch im Hub |
+| **M5 Fertig** ✅ | Im Hub (`/mensch/`, Host per Ticket), Hausregeln in der Lobby (⚙️), Spielstände in SQLite, Zuschauer, ein Becher für alle; 2D-Prototyp entfernt |
 | später | Karten/Hand/Stapel, Geld/Marker, freier Modus (Einstellung), weitere Spiele, Monopoly v2 |
 
 ## 10. Lokal ausprobieren (ohne Python/Node auf dem Host)
@@ -141,10 +141,17 @@ Typen, Figuren (Modell, Farben), Würfel-Anzahl, Sitzplätze. Der Tisch baut dar
 # Client bauen (Repo-Wurzel)
 podman run --rm -v "$PWD":/repo:z -w /repo/games/mensch/client docker.io/library/node:22-alpine sh -c 'npm ci && npm run build'
 # Server starten → http://127.0.0.1:8095/  (zweites Fenster/Handy mit gleichem ?room=… öffnen)
-podman run -d --name tisch-dev -p 8095:8095 -v "$PWD":/repo:ro,z localhost/mono-test-deps sh -c 'cd /tmp && exec python -u /repo/games/mensch/server3d/main.py'
+podman run -d --name tisch-dev -p 8095:8095 -e TABLETOP_DB=/tmp/mensch.sqlite3 -v "$PWD":/repo:ro,z localhost/mono-test-deps sh -c 'cd /tmp && exec python -u /repo/games/mensch/server/main.py'
 # Browser-Test (zwei Spieler, Präsenz, Leerlauf ohne Rendern) mit Screenshots
 podman run --rm --network=host -v "$PWD/games/mensch":/work:z -w /work localhost/mono-ui-test python tests/ui/tisch_smoke.py http://127.0.0.1:8095 /work/tests/ui/shots
+# Langsame Maschine wie die CI nachstellen: zusätzlich -e THROTTLE=4
+# Server-Tests: Regeln (+100 Computer-Partien) und Hausregeln/Spielstände
+podman run --rm -v "$PWD":/repo:ro,z -w /tmp localhost/mono-test-deps python -I /repo/games/mensch/tests/test_rules.py
+podman run --rm -v "$PWD":/repo:ro,z -w /tmp localhost/mono-test-deps python -I /repo/games/mensch/tests/test_server.py
 ```
+
+Im Hub (wie in Produktion): `TREFFEN_TICKET_SECRET=… podman compose up -d --build party-server partyhub mensch`, dann
+`http://127.0.0.1:8000` → Karte „Mensch ärgere dich nicht“. Test: `party-hub/tests/mensch_via_hub.py`.
 
 ## 11. Entscheidungen (Nutzer, 2026-11-26)
 

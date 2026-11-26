@@ -15,7 +15,7 @@ export default defineConfig({
         // three aus node_modules dieses Projekts – auch für Importe aus packages/
         dedupe: ['three', 'cannon-es']
     },
-    build: { outDir: '../static3d', emptyOutDir: true, sourcemap: true, chunkSizeWarningLimit: 1500 },
+    build: { outDir: '../static', emptyOutDir: true, sourcemap: true, chunkSizeWarningLimit: 1500 },
     server: {
         fs: { allow: ['..', pkg('')] },
         proxy: { '/ws': { target: backend, ws: true }, '/api': backend }

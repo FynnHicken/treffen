@@ -19,6 +19,7 @@ PartyHub ist eine integrierte Spieleabend-Plattform, die mehrere Open-Source Mul
 | **gtp-client** | React / Vite / Tailwind | `8088` | Guess The Price - Frontend (EUR-Preise) |
 | **gtp-server** | Express / Prisma (SQLite) / WS | `3005` | Guess The Price - Backend & WebSocket Engine, Produktkatalog wird bei jedem Start neu geseedet |
 | **monopoly** | Python / FastAPI / Three.js | `8090` | Monopoly 3D |
+| **mensch** | Python / FastAPI / Three.js | `8095` | Mensch ärgere dich nicht (3D-Spieltisch) |
 | *(caddy)* | Caddy 2 | `80`, `443` | *Optional:* SSL Reverse-Proxy für No-IP Domain |
 
 ---

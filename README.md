@@ -6,6 +6,7 @@ Komplettes, orchestriertes Paket für deinen Spieleabend-Server mit synchroner P
 -  **Codenames** (Python)
 -  **Guess The Price** (React / Express / SQLite)
 -  **Monopoly 3D** (FastAPI / Three.js)
+-  **Mensch ärgere dich nicht** (3D-Spieltisch, FastAPI / Three.js)
 
 ---
 

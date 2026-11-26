@@ -1,6 +1,6 @@
 /**
  * Das Mensch-Brett als bedruckter Karton: Druckbild auf Canvas (selbst gezeichnet), Kartonkante darunter.
- * Felder/Positionen kommen aus dem Server-Layout (games/mensch/server3d/layout.py).
+ * Felder/Positionen kommen aus dem Server-Layout (games/mensch/server/layout.py).
  */
 import * as THREE from 'three';
 import { seededRandom, type Layout } from '@treffen/tabletop';

@@ -90,6 +90,11 @@ export class TableClient {
         this.socket.send({ action: 'NEW_ROUND' });
     }
 
+    /** Hausregeln ändern (nur Host, nur Lobby – der Server prüft) */
+    setSettings(values: Record<string, boolean | number | string>): void {
+        this.socket.send({ action: 'SET_SETTINGS', settings: values });
+    }
+
     addBot(seat: number): void {
         this.socket.send({ action: 'ADD_BOT', seat });
     }

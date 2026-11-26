@@ -9,6 +9,7 @@ Lehren aus Monopoly, hier von Anfang an eingebaut:
 - Erste Nachricht AUTH {secret}, Spieler-ID daran gebunden; bot_-IDs gesperrt; Host per Hub-Ticket.
 """
 import asyncio
+import os
 import json
 import random
 import math
@@ -22,6 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import auth
+from .persistence import FLUSH_INTERVAL_SEC, Store
 from .rooms import GameDef, Room
 
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
@@ -29,20 +31,22 @@ SEND_TIMEOUT_SEC = 3.0
 STALE_MEMBER_SEC = 90.0          # so lange bleibt ein getrennter Platz reserviert
 EMPTY_ROOM_TTL_SEC = 30 * 60
 PRESENCE_MAX_PER_SEC = 30
-AWAY_GRACE_SEC = float(__import__("os").environ.get("TABLETOP_AWAY_GRACE_SEC", "20"))  # danach spielt der Computer
+AWAY_GRACE_SEC = float(os.environ.get("TABLETOP_AWAY_GRACE_SEC", "20"))  # danach spielt der Computer
 BOT_ROLL_DELAY = 1.1          # Computer „greift zum Becher“
 BOT_THINK_DELAY = 2.9         # nach dem Wurf bis zum Zug: Becher schütteln (~0,6 s), Würfel rollen, kurz schauen
 BOT_STEP_DELAY = 0.24         # je Feld, das eine Figur hüpft
 TABLE_EXTENT = 10.0              # Zeiger-Koordinaten müssen auf/um den Tisch liegen
 
 
-def create_app(game: GameDef, client_dist: Optional[Path] = None) -> FastAPI:
+def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optional[str] = None) -> FastAPI:
+    """db_path: SQLite-Datei für Spielstände (Standard: Umgebungsvariable TABLETOP_DB; leer = aus)."""
     app = FastAPI(title=f"Treffen-Spieltisch: {game.title}")
+    store = Store(os.environ.get("TABLETOP_DB", "") if db_path is None else db_path)
     rooms: Dict[str, Room] = {}
     sockets: Dict[str, Dict[str, WebSocket]] = {}   # room -> member -> ws
     locks: Dict[str, asyncio.Lock] = {}
     drivers: Dict[str, asyncio.Task] = {}
-    app.state.rooms, app.state.sockets = rooms, sockets
+    app.state.rooms, app.state.sockets, app.state.store = rooms, sockets, store
 
     def lock(room_id: str) -> asyncio.Lock:
         return locks.setdefault(room_id, asyncio.Lock())
@@ -57,6 +61,8 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None) -> FastAPI:
     async def broadcast(room_id: str, msgs, exclude: Optional[str] = None):
         if not msgs:
             return
+        if any(m.get("type") == "EVENT" for m in msgs):        # Zeiger (PRESENCE) ändern nichts Speicherwertes
+            store.mark_dirty(room_id)
         targets = [(mid, ws) for mid, ws in sockets.get(room_id, {}).items() if mid != exclude]
         if not targets:
             return
@@ -142,10 +148,24 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None) -> FastAPI:
                     rooms.pop(room_id, None)
                     sockets.pop(room_id, None)
                     locks.pop(room_id, None)
+                    store.forget(room_id)
+
+    async def persist_loop():
+        while True:
+            await asyncio.sleep(FLUSH_INTERVAL_SEC)
+            store.flush(rooms)
 
     @app.on_event("startup")
     async def _start():
+        rooms.update(store.load_all(lambda data: Room.from_saved(data, game)))
         asyncio.create_task(housekeeping())
+        asyncio.create_task(persist_loop())
+
+    @app.on_event("shutdown")
+    async def _stop():
+        for room_id in rooms:
+            store.mark_dirty(room_id)
+        store.flush(rooms)
 
     @app.get("/api/health")
     async def health():
@@ -242,6 +262,8 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None) -> FastAPI:
                         await broadcast(room_id, room.roll(member_id, data.get("power")))
                     elif action == "START":
                         await broadcast(room_id, room.start(member_id))
+                    elif action == "SET_SETTINGS":
+                        await broadcast(room_id, room.set_settings(member_id, data.get("settings")))
                     elif action == "NEW_ROUND":
                         await broadcast(room_id, room.new_round(member_id))
                     elif action == "ADD_BOT":
@@ -273,8 +295,8 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None) -> FastAPI:
 
     if client_dist is not None:
         index = client_dist / "index.html"
-        if (client_dist / "assets").is_dir():
-            app.mount("/assets", StaticFiles(directory=str(client_dist / "assets")), name="assets")
+        # check_dir=False: auch wenn der Client erst nach dem Serverstart gebaut wird
+        app.mount("/assets", StaticFiles(directory=str(client_dist / "assets"), check_dir=False), name="assets")
 
         @app.middleware("http")
         async def cache_headers(request, call_next):

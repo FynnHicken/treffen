@@ -38,6 +38,7 @@ build/
 # Docker volumes and persistent state
 /data/
 games/monopoly/data/
+games/mensch/data/
 *.sqlite3
 *.sqlite3-*
 gtp-postgres-data/
@@ -49,5 +50,5 @@ gtp-postgres-data/
 *.tar.gz
 games/monopoly/tests/ui/shots/
 static/dist/
-games/mensch/static3d/
+games/mensch/static/
 games/mensch/tests/ui/shots/

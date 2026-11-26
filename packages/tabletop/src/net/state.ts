@@ -52,6 +52,17 @@ export interface PieceState {
     held_by: string | null;
 }
 
+export type SettingValue = boolean | number | string;
+export interface SettingSpec {
+    default: SettingValue;
+    label: string;
+    /** Zusatzerklärung (optional) */
+    hint?: string;
+    min?: number;
+    max?: number;
+    choices?: SettingValue[];
+}
+
 /** Spielstand der Regeln (spielspezifisch; diese Felder nutzt der Tisch selbst) */
 export interface PlayState {
     turn: number | null;
@@ -76,6 +87,9 @@ export interface TableState {
     /** null = freier Tisch ohne Regeln */
     status: 'lobby' | 'playing' | 'finished' | null;
     play: PlayState | null;
+    /** Hausregeln: aktuelle Werte und was der Host einstellen kann (leer = nichts einstellbar) */
+    settings?: Record<string, SettingValue>;
+    settings_schema?: Record<string, SettingSpec>;
 }
 
 export type TableEvent =
@@ -87,7 +101,8 @@ export type TableEvent =
     | { type: 'PIECE_RELEASED'; piece: string }
     | { type: 'PIECE_MOVED'; piece: string; from: string; to: string; by: string; path?: string[]; capture?: string | null; reason?: string }
     | { type: 'GAME_UPDATED'; status: TableState['status']; play: PlayState | null }
-    | { type: 'DICE_ROLLED'; by: string; values: number[]; throw: ThrowSpec };
+    | { type: 'DICE_ROLLED'; by: string; values: number[]; throw: ThrowSpec }
+    | { type: 'SETTINGS_UPDATED'; settings: Record<string, SettingValue> };
 
 export function applyEvent(state: TableState, ev: TableEvent): TableState {
     switch (ev.type) {
@@ -109,6 +124,8 @@ export function applyEvent(state: TableState, ev: TableEvent): TableState {
             return { ...state, status: ev.status, play: ev.play };
         case 'DICE_ROLLED':
             return { ...state, last_roll: { by: ev.by, values: ev.values, throw: ev.throw } };
+        case 'SETTINGS_UPDATED':
+            return { ...state, settings: ev.settings };
         default:
             return state;   // unbekannte Ereignisse (neuere Server-Version) ignorieren
     }

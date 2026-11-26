@@ -1,14 +1,15 @@
-"""Regeln „Mensch ärgere dich nicht“ für den Spieltisch (portiert aus ../server/game_state.py).
+"""Regeln „Mensch ärgere dich nicht“ für den Spieltisch (portiert aus dem früheren 2D-Prototyp).
 
 Arbeitet direkt auf den Feld-IDs des Layouts: Laufbahn t0…t39, Häuschen h-<farbe>-0…3, Ziel g-<farbe>-0…3.
 Platz = Farbe: 0 Gelb (Start t0), 1 Grün (t10), 2 Rot (t20), 3 Schwarz (t30).
 
-Regeln (wie im Prototyp, Hausregel `clear_start` an):
+Regeln (Hausregeln per Host in der Lobby: `clear_start` Standard an, `must_capture` Standard aus):
 - Wer keine Figur auf der Laufbahn hat, darf bis zu 3× würfeln, um eine 6 zu bekommen.
 - 6: Figur aus dem Häuschen aufs Startfeld (nicht auf eigene Figur), danach nochmal würfeln.
 - Eigene Figuren kann man nicht schlagen; fremde auf dem Zielfeld werden geschlagen (zurück ins Häuschen).
 - Ins Ziel genau ziehen, im Ziel nichts überspringen.
 - Startfeld räumen: Solange Figuren im Häuschen sind, muss eine eigene Figur auf dem Startfeld zuerst weg.
+- Schlagzwang (Hausregel): Kann man schlagen, sind nur schlagende Züge erlaubt.
 - Wer alle 4 im Ziel hat, ist fertig; das Spiel endet, wenn nur noch einer übrig ist.
 """
 from typing import Dict, List, Optional
@@ -25,7 +26,10 @@ def seat_color(seat: int) -> str:
 
 class MenschRules(Rules):
     settings_schema = {
-        "clear_start": {"default": True, "label": "Startfeld muss geräumt werden"},
+        "clear_start": {"default": True, "label": "Startfeld muss geräumt werden",
+                        "hint": "Steht eine eigene Figur auf dem Startfeld und sind noch Figuren im Häuschen, muss sie zuerst weiterziehen."},
+        "must_capture": {"default": False, "label": "Schlagzwang",
+                         "hint": "Wer eine fremde Figur schlagen kann, muss es tun."},
     }
     min_players = 2
 
@@ -68,17 +72,9 @@ class MenschRules(Rules):
                 events.append({"type": "PIECE_MOVED", "piece": pid, "from": frm, "to": spec["field"],
                                "by": "rules", "path": [spec["field"]], "reason": "reset"})
         room.game = {"seats": seats, "turn": seats[0], "phase": "roll", "rolls_left": 0, "dice": None,
-                     "finished": [], "settings": {k: v["default"] for k, v in self.settings_schema.items()}}
-        room.game.update(self._settings_from(room))
+                     "finished": [], "settings": room.settings()}
         self._init_turn(room)
         return events
-
-    def _settings_from(self, room) -> dict:
-        s = {k: v["default"] for k, v in self.settings_schema.items()}
-        for k, v in (room.game_settings or {}).items():
-            if k in s and isinstance(v, type(s[k])):
-                s[k] = v
-        return {"settings": s}
 
     def _init_turn(self, room) -> None:
         g = room.game
@@ -172,6 +168,10 @@ class MenschRules(Rules):
                 forced = [m for m in moves if m["piece"] == on_start]
                 if forced:
                     return forced
+        if g.get("settings", {}).get("must_capture"):
+            captures = [m for m in moves if m["capture"]]
+            if captures:
+                return captures
         return moves
 
     def move(self, room, seat: int, piece: str, to: str) -> Optional[List[dict]]:

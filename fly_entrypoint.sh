@@ -3,7 +3,7 @@ set -e
 
 echo "🚀 Starting Treffen All-In-One services on Fly.io..."
 
-# Gemeinsamer Ticket-Schlüssel für Hub und Monopoly. Am besten per `fly secrets set` setzen;
+# Gemeinsamer Ticket-Schlüssel für Hub, Monopoly und Mensch. Am besten per `fly secrets set` setzen;
 # sonst pro Start zufällig (alle Dienste laufen in diesem einen Prozessbaum, Tickets leben nur 30 min).
 if [ -z "$TREFFEN_TICKET_SECRET" ]; then
     TREFFEN_TICKET_SECRET=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
@@ -30,6 +30,12 @@ fi
 if [ -f /app/monopoly/server/main.py ]; then
     echo "Starting monopoly..."
     cd /app/monopoly && PORT=8090 HOST=0.0.0.0 python3 server/main.py &
+fi
+
+# 4b. Mensch ärgere dich nicht (Python on port 8095)
+if [ -f /app/mensch/games/mensch/server/main.py ]; then
+    echo "Starting mensch..."
+    cd /app/mensch && PORT=8095 HOST=0.0.0.0 python3 games/mensch/server/main.py &
 fi
 
 # 5. Codenames (Python on port 5000)

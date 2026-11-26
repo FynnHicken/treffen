@@ -19,12 +19,13 @@ Räumen, Host, Abstimmung, synchronem Start) bettet mehrere Multiplayer-Spiele p
 | Codenames | `games/codenames/` | Python/Flask | 5000 (Host 5005) | `/codenames/` |
 | Guess The Price | `games/guess-the-price/` | React/Vite + Express/Prisma (SQLite) | 8088 / 3005 | `/price-guess/`, `/price-guess-api/`, `/price-guess-socket/` |
 | **Monopoly 3D** | `games/monopoly/` | Python FastAPI + Three.js | 8090 | `/monopoly/` |
+| **Mensch ärgere dich nicht** (Spieltisch 3D) | `games/mensch/` + `packages/tabletop*` | Python FastAPI + Three.js | 8095 | `/mensch/` |
 
 **Fokus des Nutzers: Monopoly perfektionieren – und daraus einen Brettspiel-Baukasten machen**, damit weitere
 Brettspiele möglichst viel Code (Rendering, Verbindung, UI) übernehmen: [`packages/boardgame-kit/README.md`](packages/boardgame-kit/README.md).
 **Neu (2026-11-26): Treffen-Spieltisch** – spielneutrales 3D-Brettspiel-Framework, erstes Spiel Mensch ärgere dich nicht.
 Konzept & Fahrplan: [`docs/tabletop/KONZEPT.md`](docs/tabletop/KONZEPT.md). Code: `packages/tabletop` (Client-Engine),
-`packages/tabletop-server` (Python), erstes Spiel `games/mensch/client` + `games/mensch/server3d` (Port 8095, noch nicht im Hub). **M1–M4 ✅** – voll spielbar mit Regeln und Computergegnern (Port 8095, noch nicht im Hub; M5 = Hub/Persistenz). Entscheidungen des Nutzers: Spielgefühl hat
+`packages/tabletop-server` (Python), erstes Spiel `games/mensch/client` + `games/mensch/server`. **M1–M5 ✅** – im Hub unter `/mensch/`, mit Regeln, Computergegnern, Hausregeln und gespeicherten Spielständen. Neues Tisch-Spiel anlegen: [`packages/tabletop-server/README.md`](packages/tabletop-server/README.md). Entscheidungen des Nutzers: Spielgefühl hat
 Vorrang, Regeln werden automatisch vom Server mitgeprüft; freier Modus (wie Tabletop Simulator) evtl. später als Einstellung.
 Der Monopoly-Client ist ein Vite-Projekt (`games/monopoly/client/`), das vor dem Deployen gebaut wird (passiert im Docker-Image). → [`games/monopoly/DEVELOPMENT.md`](games/monopoly/DEVELOPMENT.md)
 
@@ -84,7 +85,7 @@ Der Monopoly-Client ist ein Vite-Projekt (`games/monopoly/client/`), das vor dem
 ## Testen
 
 **CI** (`.github/workflows/tests.yml`) läuft bei jedem Push auf `main` und bei Pull Requests: Monopoly-Suite,
-Mensch-Tests, Hub-Sync-Server-Tests, JS-Syntax, `docker compose config`, `nginx -t`, alle Images bauen und
+Spieltisch-/Mensch-Tests (inkl. Start über den Hub), Hub-Sync-Server-Tests, JS-Syntax, `docker compose config`, `nginx -t`, alle Images bauen und
 ein Browser-Rauchtest des Hubs. **Rot = nicht deployen.** Status: `gh run list --limit 5`.
 
 - **Monopoly**: `games/monopoly/tests/run_tests.sh` (Podman oder Docker, nichts auf dem Host
@@ -126,6 +127,10 @@ Erledigt und auf `main`:
     (Identität, WebSocket, Escaping). Optik pixelgenau unverändert (Screenshot-Vergleich).
 
 11. Monopoly-Spielstände in SQLite (2026-11-26): Partien überstehen Neustart/Update, Volume `./data/monopoly`.
+
+13. Treffen-Spieltisch M1–M5 (2026-11-26): Mensch ärgere dich nicht in 3D im Hub (`/mensch/`, Host per Ticket),
+    Hausregeln in der Lobby, Spielstände in SQLite (Volume `./data/mensch`), ein Becher wird herumgereicht.
+    Der 2D-Prototyp (`games/mensch/server`, `static`) wurde ersetzt.
 
 **Umbau-Plan (mit dem Nutzer am 2026-11-26 abgestimmt, Schritt für Schritt):** 1. ✅ Monopoly-Verbindungen
 absichern · 1b. ✅ CI + Hub-Tests · 2. ✅ Monopoly-Spielstände in SQLite speichern · 3. 🚧 Vite + TypeScript

@@ -1,9 +1,10 @@
 /**
- * Mensch ärgere dich nicht – 3D-Spieltisch. M1: leerer Tisch mit Sitzplätzen und Präsenz.
+ * Mensch ärgere dich nicht – 3D-Spieltisch (läuft eigenständig auf Port 8095 oder im Hub unter /mensch/).
  */
 import './app.css';
 import {
-    createPawn, DiceLayer, isTouchDevice, PieceLayer, Presence, SeatLabels, TableClient, TableScene, unlockAudioOnGesture
+    createPawn, DiceLayer, isTouchDevice, PieceLayer, Presence, SeatLabels, SettingsPanel, TableClient, TableScene,
+    unlockAudioOnGesture
 } from '@treffen/tabletop';
 import { BOARD_THICKNESS, createBoard } from './board';
 import { setupHud } from './hud';
@@ -65,6 +66,7 @@ async function start(): Promise<void> {
     const client = new TableClient({ namespace: 'mensch', room, name });
     const presence = new Presence(table, client);
     const labels = new SeatLabels(table, client);
+    new SettingsPanel(client, document.querySelector('.top-center')!);
     unlockAudioOnGesture();
 
     // Brett, sobald das Layout vom Server da ist

@@ -41,3 +41,90 @@
     transform: translateY(-10px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
+
+/* Hausregeln (SettingsPanel) */
+.tt-settings-btn {
+    pointer-events: auto;
+    padding: 7px 14px;
+    border: 1px solid rgba(255, 220, 170, 0.25);
+    border-radius: 999px;
+    background: rgba(28, 19, 12, 0.78);
+    color: #f6ead8;
+    font: 600 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+}
+.tt-settings-btn[hidden] { display: none; }
+.tt-settings-btn:hover { background: rgba(48, 33, 20, 0.9); }
+.tt-settings {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(10, 6, 3, 0.55);
+    backdrop-filter: blur(2px);
+}
+.tt-settings[hidden] { display: none; }
+.tt-settings-card {
+    width: min(400px, 100%);
+    padding: 20px 22px;
+    border-radius: 18px;
+    background: #2a1d13;
+    border: 1px solid rgba(255, 220, 170, 0.2);
+    color: #f6ead8;
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.tt-settings-card h2 { margin: 0 0 14px; font-size: 19px; }
+.tt-settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px 0;
+    border-top: 1px solid rgba(255, 220, 170, 0.12);
+}
+.tt-settings-row label { display: flex; flex-direction: column; gap: 3px; }
+.tt-settings-row small { color: rgba(246, 234, 216, 0.65); font-size: 12.5px; }
+.tt-settings-row select { padding: 6px 8px; border-radius: 8px; font-size: 15px; }
+.tt-switch {
+    appearance: none;
+    flex: none;
+    width: 46px;
+    height: 28px;
+    margin: 0;
+    border-radius: 999px;
+    background: #5a4636;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.tt-switch::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #f6ead8;
+    transition: transform 0.2s;
+}
+.tt-switch:checked { background: #e8a54b; }
+.tt-switch:checked::after { transform: translateX(18px); }
+.tt-switch:disabled { cursor: default; opacity: 0.6; }
+.tt-switch:focus-visible { outline: 2px solid #ffd08a; outline-offset: 2px; }
+.tt-settings-note { margin: 12px 0 14px; font-size: 13px; color: rgba(246, 234, 216, 0.7); }
+.tt-settings-close {
+    width: 100%;
+    padding: 11px;
+    border: 0;
+    border-radius: 12px;
+    background: #e8a54b;
+    color: #2a1608;
+    font-weight: 800;
+    font-size: 15px;
+    cursor: pointer;
+}

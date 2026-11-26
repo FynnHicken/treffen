@@ -20,7 +20,7 @@ fi
 
 echo "Verwende: $COMPOSE"
 
-# Gemeinsamer Schlüssel für Spiel-Tickets (Hub → Monopoly). Einmal erzeugen, dann in .env behalten.
+# Gemeinsamer Schlüssel für Spiel-Tickets (Hub → Monopoly, Mensch). Einmal erzeugen, dann in .env behalten.
 if ! grep -qs '^TREFFEN_TICKET_SECRET=.' .env; then
     echo "Erzeuge TREFFEN_TICKET_SECRET in .env ..."
     echo "TREFFEN_TICKET_SECRET=$(openssl rand -hex 32)" >> .env
@@ -40,12 +40,13 @@ echo "=========================================================="
 echo "🎉 Treffen läuft erfolgreich!"
 echo "=========================================================="
 echo "• Treffen Portal:    http://localhost:8000"
-echo "  (alle Spiele laufen darüber: /skribbl/ /uno/ /codenames/ /price-guess/ /monopoly/)"
+echo "  (alle Spiele laufen darüber: /skribbl/ /uno/ /codenames/ /price-guess/ /monopoly/ /mensch/)"
 echo "• Direkt – skribbl:   http://localhost:8080/skribbl/"
 echo "• Direkt – UNO:       http://localhost:8086"
 echo "• Direkt – Codenames: http://localhost:5005"
 echo "• Direkt – GTP:       http://localhost:8088/price-guess/"
 echo "• Direkt – Monopoly:  http://localhost:8090"
+echo "• Direkt – Mensch:    http://localhost:8095"
 if [ -n "$MY_DOMAIN" ] && [ "$MY_DOMAIN" != "localhost" ]; then
     echo "• Öffentliche URL:   https://$MY_DOMAIN"
 fi

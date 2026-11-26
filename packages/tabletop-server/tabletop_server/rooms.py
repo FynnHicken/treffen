@@ -116,6 +116,8 @@ class Room:
             "last_roll": self.last_roll,
             "status": self.status if self.rules else None,
             "play": self.play_state(),
+            "settings": self.settings(),
+            "settings_schema": self.settings_schema(),
         }
 
     def next_event(self, event: dict) -> dict:
@@ -260,6 +262,78 @@ class Room:
         self.game = None
         return [self._play_event()]
 
+    # ---------- Raum-Einstellungen (Hausregeln) ----------
+    def settings_schema(self) -> dict:
+        """Was der Host einstellen kann: {key: {default, label, min?, max?, choices?}} aus den Regeln."""
+        return dict(getattr(self.rules, "settings_schema", None) or {})
+
+    def settings(self) -> dict:
+        """Aktuelle Werte – fehlende/ungültige fallen auf den Standard zurück."""
+        out = {}
+        for key, spec in self.settings_schema().items():
+            v = self.game_settings.get(key, spec.get("default"))
+            out[key] = v if valid_setting(spec, v) else spec.get("default")
+        return out
+
+    def set_settings(self, member_id: str, values) -> List[dict]:
+        """Host ändert Hausregeln – nur in der Lobby, nur bekannte Schlüssel mit gültigem Wert."""
+        if member_id != self.host_id or self.status != "lobby" or not isinstance(values, dict):
+            return []
+        schema = self.settings_schema()
+        changed = False
+        for key, v in values.items():
+            spec = schema.get(key)
+            if spec is None or not valid_setting(spec, v) or self.settings().get(key) == v:
+                continue
+            self.game_settings[key] = v
+            changed = True
+        if not changed:
+            return []
+        return [self.next_event({"type": "SETTINGS_UPDATED", "settings": self.settings()})]
+
+    # ---------- Speichern/Wiederherstellen (persistence.py) ----------
+    SAVE_VERSION = 1
+
+    def to_saved(self) -> dict:
+        return {
+            "v": self.SAVE_VERSION, "id": self.id, "game": self.game_def.id, "seq": self.seq,
+            "host_id": self.host_id, "host_claimed": self.host_claimed, "secrets": dict(self.secrets),
+            "members": [{"id": m.id, "name": m.name, "seat": m.seat, "is_bot": m.is_bot, "joined_at": m.joined_at}
+                        for m in self.members.values()],
+            "pieces": {pid: {"field": p["field"]} for pid, p in self.pieces.items()},
+            "last_roll": self.last_roll, "status": self.status, "state": self.game,
+            "settings": dict(self.game_settings), "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_saved(cls, data: dict, game: GameDef) -> "Room":
+        """Raum aus einem Spielstand. Menschen gelten als getrennt, bis sie wiederkommen (Computer vertritt sie)."""
+        if data.get("v") != cls.SAVE_VERSION or data.get("game") != game.id:
+            raise ValueError("Spielstand passt nicht zu diesem Spiel/dieser Version")
+        room = cls(str(data["id"]), game)
+        now = time.time()
+        room.seq = int(data.get("seq", 0))
+        room.host_id = data.get("host_id")
+        room.host_claimed = bool(data.get("host_claimed"))
+        room.secrets = {str(k): str(v) for k, v in (data.get("secrets") or {}).items()}
+        for md in data.get("members", []):
+            m = Member(str(md["id"]), str(md["name"]))
+            m.seat, m.is_bot = md.get("seat"), bool(md.get("is_bot"))
+            m.joined_at = float(md.get("joined_at", now))
+            if not m.is_bot:
+                m.connected, m.disconnected_at = False, now
+            room.members[m.id] = m
+        for pid, p in (data.get("pieces") or {}).items():
+            if pid in room.pieces:
+                room.pieces[pid] = {"field": p["field"], "held_by": None}
+        room.last_roll = data.get("last_roll")
+        room.status = data.get("status", "lobby")
+        room.game = data.get("state")
+        room.game_settings = dict(data.get("settings") or {})
+        room.created_at = float(data.get("created_at", now))
+        room.empty_since = now
+        return room
+
     def release_all_everyone(self) -> List[dict]:
         return [e for mid in list(self.members) for e in self.release_all(mid)]
 
@@ -355,3 +429,17 @@ class Room:
                 self.host_id = new_host
                 events.append(self.next_event({"type": "HOST_CHANGED", "host_id": new_host}))
         return events
+
+
+def valid_setting(spec: dict, value) -> bool:
+    """Passt ein Wert zur Einstellung? Typ wie der Standardwert; bei Zahlen min/max, bei Auswahl choices."""
+    default = spec.get("default")
+    if isinstance(default, bool):
+        return isinstance(value, bool)
+    if isinstance(default, int):
+        if isinstance(value, bool) or not isinstance(value, int):
+            return False
+        return spec.get("min", value) <= value <= spec.get("max", value)
+    if "choices" in spec:
+        return value in spec["choices"]
+    return isinstance(value, type(default))

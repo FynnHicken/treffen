@@ -7,7 +7,7 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 const SOLO_ROOM_TTL_MS = 60000; // 60 seconds for unused rooms with <= 1 player
 
 // Spiel-Tickets: signierter Nachweis für Spiele (z. B. Monopoly), wer im Hub-Raum Host ist.
-// Gleicher Schlüssel muss im Spiel gesetzt sein (siehe games/monopoly/server/auth.py).
+// Gleicher Schlüssel muss im Spiel gesetzt sein (siehe games/monopoly/server/auth.py, packages/tabletop-server).
 const TICKET_SECRET = (process.env.TREFFEN_TICKET_SECRET || '').trim();
 const TICKET_TTL_MS = 30 * 60 * 1000;
 if (!TICKET_SECRET) {
@@ -56,7 +56,7 @@ function defaultHubSettings() {
     return Object.fromEntries(Object.entries(HUB_SETTINGS_SCHEMA).map(([k, v]) => [k, v.default]));
 }
 
-const KNOWN_GAME_IDS = ['skribbol', 'uno', 'codenames', 'price_guess', 'monopoly'];
+const KNOWN_GAME_IDS = ['skribbol', 'uno', 'codenames', 'price_guess', 'monopoly', 'mensch'];
 
 class Room {
     constructor(code) {

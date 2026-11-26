@@ -143,6 +143,25 @@ services:
     networks:
       - party-net
 
+  # =========================================================================
+  # Mensch ärgere dich nicht (Treffen-Spieltisch, 3D)
+  # =========================================================================
+  mensch:
+    build:
+      context: .
+      dockerfile: games/mensch/Dockerfile
+    container_name: mensch
+    restart: unless-stopped
+    environment:
+      - TREFFEN_TICKET_SECRET=${TREFFEN_TICKET_SECRET:-}
+    volumes:
+      # Laufende Partien (SQLite) – überstehen Neustart, Update und Neubau des Containers
+      - ./data/mensch:/app/data
+    ports:
+      - "8095:8095"
+    networks:
+      - party-net
+
 networks:
   party-net:
     driver: bridge

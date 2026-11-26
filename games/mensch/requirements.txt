@@ -1,5 +1,0 @@
-# Exakt gepinnt (gleiche Versionen wie Monopoly), siehe games/monopoly/requirements.txt
-fastapi==0.165.0
-uvicorn[standard]==0.54.0
-websockets==17.4
-python-multipart==0.0.34
