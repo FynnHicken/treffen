@@ -135,6 +135,11 @@ jobs:
           TREFFEN_TICKET_SECRET=ci-test-secret docker compose -f docker-compose.yml up -d --force-recreate gtp-server gtp-client
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:8000/price-guess-api/category >/dev/null && curl -sf http://127.0.0.1:8000/price-guess/ >/dev/null && break; sleep 1; done
           docker run --rm --network=host -v "$PWD/party-hub/tests":/t:ro -v /tmp/shots:/shots treffen-ui-test python -u /t/gtp_via_hub.py http://127.0.0.1:8000 /shots
+      - name: skribbl über den Hub (Handy, Avatare, Spielstart)
+        run: |
+          TREFFEN_TICKET_SECRET=ci-test-secret docker compose -f docker-compose.yml up -d --force-recreate skribbl
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8000/skribbl/ >/dev/null && break; sleep 1; done
+          docker run --rm --network=host -v "$PWD/party-hub/tests":/t:ro -v /tmp/shots:/shots treffen-ui-test python -u /t/skribbl_via_hub.py http://127.0.0.1:8000 /shots
       - name: Screenshots hochladen
         if: always()
         uses: actions/upload-artifact@v5
@@ -144,6 +149,6 @@ jobs:
           if-no-files-found: ignore
       - name: Logs bei Fehler
         if: failure()
-        run: docker compose -f docker-compose.yml logs --tail=80 party-server partyhub monopoly mensch gtp-server gtp-client
+        run: docker compose -f docker-compose.yml logs --tail=80 party-server partyhub monopoly mensch gtp-server gtp-client skribbl
       - name: Shell-Skripte (Syntax)
         run: for f in start.sh stop.sh fly_entrypoint.sh party-hub/40-enable-ssl.sh party-hub/15-treffen-resolver.sh; do bash -n "$f"; done

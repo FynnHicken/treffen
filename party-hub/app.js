@@ -1224,7 +1224,7 @@ function handleServerMessage(data) {
                             console.log("Updating iframe src to active Skribbl lobby:", expectedLobbyPath);
                             const userName = partyState.currentUser ? partyState.currentUser.name : "Gast";
                             const skribblSession = getSkribblUserSession();
-                            iframe.src = `${expectedLobbyPath}?username=${encodeURIComponent(userName)}&usersession=${skribblSession}`;
+                            iframe.src = `${expectedLobbyPath}?username=${encodeURIComponent(userName)}&usersession=${skribblSession}${gameTicketFragment()}`;
                         }
                     } else if (!isOverlayActive && sessionStorage.getItem(STORAGE_KEY_JOINED) === "true") {
                         const game = partyState.games[data.activeGame.gameId];
@@ -1814,18 +1814,23 @@ function getSkribblUserSession() {
     return session;
 }
 
+/** Signiertes Spiel-Ticket als URL-Fragment (geht nicht an Server/Logs, das Spiel liest es selbst) */
+function gameTicketFragment() {
+    return partyState.gameTicket ? `#ticket=${encodeURIComponent(partyState.gameTicket)}` : "";
+}
+
 function getGameUrl(game, lobbyId) {
     const userName = partyState.currentUser ? partyState.currentUser.name : "Gast";
     if (game.id === "skribbol") {
         const id = lobbyId || partyState.currentLobbyId;
         const skribblSession = getSkribblUserSession();
         if (id) {
-            return `/skribbl/lobby/${id}?username=${encodeURIComponent(userName)}&usersession=${skribblSession}`;
+            return `/skribbl/lobby/${id}?username=${encodeURIComponent(userName)}&usersession=${skribblSession}${gameTicketFragment()}`;
         }
         // Fallback: Never send party guests to /skribbl/ (isolated lobby creation screen)!
         // Use a deterministic room-scoped lobby id so all guests automatically join the party lobby:
         const fallbackRoomLobby = `room-${ROOM_CODE.toLowerCase()}`;
-        return `/skribbl/lobby/${fallbackRoomLobby}?username=${encodeURIComponent(userName)}&usersession=${skribblSession}`;
+        return `/skribbl/lobby/${fallbackRoomLobby}?username=${encodeURIComponent(userName)}&usersession=${skribblSession}${gameTicketFragment()}`;
     } else if (game.id === "uno") {
         return `/uno/?lobby=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}`;
     } else if (game.id === "codenames") {

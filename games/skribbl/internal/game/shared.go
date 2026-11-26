@@ -59,6 +59,8 @@ const (
 var (
 	EventTypeKickVote          = "kick-vote"
 	EventTypeNameChange        = "name-change"
+	// EventTypeHubAvatar: Client schickt sein Hub-Ticket, der Server setzt daraus den Avatar.
+	EventTypeHubAvatar = "hub-avatar"
 	EventTypeMessage           = "message"
 	EventTypeLine              = "line"
 	EventTypeFill              = "fill"
@@ -305,6 +307,8 @@ type Player struct {
 	hasConnectedOnce bool
 	// ID uniquely identified the Player.
 	ID uuid.UUID `json:"id"`
+	// Avatar ist die Bild-URL aus dem Treffen-Hub (nur mit gültigem Hub-Ticket gesetzt).
+	Avatar string `json:"avatar,omitempty"`
 }
 
 // EditableLobbySettings represents all lobby settings that are editable by

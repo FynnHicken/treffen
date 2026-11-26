@@ -1558,6 +1558,37 @@ let cachedPlayers;
 
 //applyPlayers takes the players passed, assigns them to cachedPlayers,
 //refreshes the scoreboard and updates the drawerID and drawerName variables.
+// Treffen-Hub: Ticket kommt im URL-Fragment (#ticket=…), wird für Reconnects im Tab gemerkt
+// und aus der Adresszeile entfernt.
+function readHubTicket() {
+    try {
+        const m = /(?:^#|&)ticket=([^&]+)/.exec(location.hash);
+        if (m) {
+            sessionStorage.setItem("skribbl_hub_ticket", decodeURIComponent(m[1]));
+            history.replaceState(null, "", location.pathname + location.search);
+        }
+        return sessionStorage.getItem("skribbl_hub_ticket") || "";
+    } catch (e) {
+        return "";
+    }
+}
+readHubTicket();
+
+const HUB_AVATAR_RE = /^\/party-ws\/avatar\/[A-Za-z0-9_-]{1,64}\/[A-Za-z0-9_-]{1,64}\.svg$/;
+
+function createAvatarNode(url) {
+    const img = document.createElement("img");
+    img.className = "player-avatar";
+    img.src = url;
+    img.alt = "";
+    img.draggable = false;
+    // Spieler nicht mehr im Hub-Raum → Bild weg, Name bleibt
+    img.onerror = () => {
+        img.remove();
+    };
+    return img;
+}
+
 function applyPlayers(players) {
     const matchOngoing = gameState === "ongoing";
     if (!matchOngoing) {
@@ -1679,6 +1710,11 @@ function applyPlayers(players) {
         rankSpan.classList.add("rank");
         rankSpan.innerText = player.rank;
         playerDiv.appendChild(rankSpan);
+
+        if (typeof player.avatar === "string" && HUB_AVATAR_RE.test(player.avatar)) {
+            playerDiv.classList.add("has-avatar");
+            playerDiv.appendChild(createAvatarNode(player.avatar));
+        }
 
         const playernameSpan = document.createElement("span");
         playernameSpan.classList.add("playername");
@@ -2227,6 +2263,12 @@ const connectToWebsocket = () => {
 
         hasSocketEverConnected = true;
         socketIsConnecting = false;
+
+        // Treffen-Hub: Ticket schicken, der Server setzt daraus unseren Avatar
+        const hubTicket = readHubTicket();
+        if (hubTicket) {
+            socket.send(JSON.stringify({ type: "hub-avatar", data: hubTicket }));
+        }
 
         socket.onclose = (event) => {
             //We want to avoid handling the error multiple times and showing the incorrect dialogs.

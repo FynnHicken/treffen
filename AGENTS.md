@@ -138,7 +138,8 @@ Erledigt und auf `main`:
     `/party-ws/avatar/<RAUM>/<Hub-Spieler-ID>.svg` (strenge CSP, ETag), und als `.json` ({color, face}) für
     Canvas/WebGL. Die Spiele kennen die ID aus dem Hub-Ticket (`pid`), es fließen keine Bilddaten durch ihre
     Protokolle. Eingebaut in Guess The Price (Warteraum, Ergebnis, Wertung; `PlayerAvatar`) und den Spieltisch
-    (Platzschilder, Zeiger, Statuszeile, Siegerehrung; `packages/tabletop/src/ui/avatar.ts`). Ohne Ticket gibt es
+    (Platzschilder, Zeiger, Statuszeile, Siegerehrung; `packages/tabletop/src/ui/avatar.ts`) und skribbl (Spielerliste;
+    Client schickt das Ticket als `hub-avatar`, Prüfung in `games/skribbl/internal/game/hubticket.go`). Ohne Ticket gibt es
     keinen Avatar (Anfangsbuchstabe bzw. nichts). Neues Spiel: `pid` aus dem Ticket → URL bauen → `<img>`.
 
 14. Hub-Lobby als Kachelraster (2026-11-26, Entwurf „F1 · Arcade × Bento“): `party-hub/tiles.js` (`HUB_TILES` –

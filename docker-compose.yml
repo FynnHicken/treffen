@@ -51,6 +51,8 @@ services:
     environment:
       - ROOT_PATH=/skribbl
       - CLIENTS_PER_IP_LIMIT=24
+      # Hub-Tickets: daraus kommt der Avatar des Spielers
+      - TREFFEN_TICKET_SECRET=${TREFFEN_TICKET_SECRET:-}
     ports:
       - "8080:8080"
     networks:

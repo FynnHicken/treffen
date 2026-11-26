@@ -354,3 +354,30 @@ button { font-family: inherit; }
 [data-theme="cyber-arcade"] .hud-status-dot { background: var(--hub-green); border: 0; box-shadow: 0 0 8px var(--hub-green); }
 [data-theme="cyber-arcade"] .hud-status, [data-theme="cyber-arcade"] .hud-room { font-family: var(--hub-display); letter-spacing: 1px; font-size: 13px; }
 [data-theme="cyber-arcade"] .hud-room strong { background: none; border: 0; color: var(--hub-cyan); padding: 0; letter-spacing: 2px; }
+
+/* Einstellungsfelder im Spiel-Dialog (z. B. skribbl-Regeln): dunkel und lesbar, auch als native Auswahl auf dem Handy */
+.setting-input {
+    -webkit-appearance: none;
+    appearance: none;
+    background-color: var(--hub-tile-2);
+    color: var(--hub-ink);
+    border: 1px solid var(--hub-line-strong);
+    box-shadow: none;
+    min-height: 44px;
+    font-size: 16px; /* iOS zoomt sonst beim Antippen */
+}
+select.setting-input {
+    padding-right: 36px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23b9c0e6' stroke-width='2'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+}
+select.setting-input option { background: var(--hub-tile); color: var(--hub-ink); }
+.setting-input:focus { border-color: var(--hub-cyan); box-shadow: 0 0 0 2px rgba(77, 232, 255, 0.25); }
+.setting-input:disabled,
+.setting-input.is-disabled {
+    background-color: var(--hub-tile);
+    color: var(--hub-muted);
+    border-color: var(--hub-line);
+    opacity: 1;
+}

@@ -202,6 +202,15 @@ func (lobby *Lobby) HandleEvent(eventType string, payload []byte, player *Player
 		}
 
 		handleNameChangeEvent(player, lobby, message.Data)
+	} else if eventType == EventTypeHubAvatar {
+		var message StringDataEvent
+		if err := json.Unmarshal(payload, &message); err != nil {
+			return fmt.Errorf("invalid data received: '%s'", string(payload))
+		}
+		if url, ok := HubAvatarURL(message.Data, hubTicketSecret, time.Now()); ok && url != player.Avatar {
+			player.Avatar = url
+			lobby.Broadcast(&Event{Type: EventTypeUpdatePlayers, Data: lobby.players})
+		}
 	} else if eventType == EventTypeRequestDrawing {
 		// Since the client shouldn't be blocking to wait for the drawing, it's
 		// fine to emit the event if there's no drawing.
