@@ -18,16 +18,20 @@ export const GuessCard = ({ onGuess }: Props) => {
 	return (
 		<Card className='max-h-fit md:min-w-[350px] flex-1'>
 			<CardHeader>
-				<CardTitle>Your guess</CardTitle>
+				<CardTitle>Deine Schätzung</CardTitle>
 				<CardDescription className='word-break'>
-					Make sure to check price information and then choose the price.
+					Lies dir die Preis-Infos durch und tippe dann deinen Preis in Euro ein.
 				</CardDescription>
 			</CardHeader>
 			<CardContent>
 				<form className='space-y-4' onSubmit={guessPrice}>
 					<Input
 						type='number'
-						placeholder='12.3'
+						inputMode='decimal'
+						step='0.01'
+						min='0'
+						placeholder='z. B. 49,99'
+						aria-label='Preis in Euro'
 						value={guessedPrice}
 						onChange={e => setGuessedPrice(e.target.value)}
 					/>
@@ -40,7 +44,7 @@ export const GuessCard = ({ onGuess }: Props) => {
 							}
 						}}
 					>
-						<Check size={24} /> Guess
+						<Check size={24} /> Schätzen
 					</Button>
 				</form>
 			</CardContent>

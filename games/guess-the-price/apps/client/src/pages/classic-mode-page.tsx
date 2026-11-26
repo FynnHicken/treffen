@@ -44,8 +44,8 @@ export const ClassicModePage = () => {
 	if (gameEnded) {
 		return (
 			<div>
-				<h1 className='font-semibold text-3xl'>Classic mode - results</h1>
-				<p className='text-zinc-600 dark:text-zinc-400'>Get a random product and guess the price.</p>
+				<h1 className='font-semibold text-3xl'>Klassisch – Bilanz</h1>
+				<p className='text-zinc-600 dark:text-zinc-400'>Ein Produkt, du schätzt den Preis.</p>
 				<motion.div
 					initial={{ opacity: 0 }}
 					animate={{ opacity: 1 }}
@@ -69,8 +69,8 @@ export const ClassicModePage = () => {
 	return (
 		<div>
 			<div>
-				<h1 className='font-semibold text-3xl'>Classic mode</h1>
-				<p className='text-zinc-600 dark:text-zinc-400'>Get a random product and guess the price.</p>
+				<h1 className='font-semibold text-3xl'>Klassisch</h1>
+				<p className='text-zinc-600 dark:text-zinc-400'>Ein Produkt, du schätzt den Preis.</p>
 			</div>
 			{!product ? (
 				<motion.div
@@ -93,7 +93,7 @@ export const ClassicModePage = () => {
 						title={product.name}
 						image={product.image}
 						priceInfo={product.priceMessage ?? ''}
-						source={product.source ?? 'Unknown source'}
+						source={product.source ?? 'unbekannt'}
 					/>
 
 					{!resultsVisible && (

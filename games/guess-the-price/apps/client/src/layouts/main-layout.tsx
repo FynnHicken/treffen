@@ -16,7 +16,7 @@ export const MainLayout = () => {
 			<div className='flex flex-col justify-between min-h-screen dark:text-white dark:bg-zinc-950'>
 				<div>
 					<Navbar />
-					<main className='px-4 box-border py-8 flex flex-col w-full items-center'>
+					<main className='px-4 box-border py-4 md:py-8 flex flex-col w-full items-center'>
 						<div className='max-w-[1400px] w-full'>
 							<Outlet />
 						</div>

@@ -31,7 +31,7 @@ export const DestructiveActionButton = ({ title, description, children, onConfir
 				</DialogHeader>
 				<DialogFooter className='flex gap-2'>
 					<DialogClose asChild>
-						<Button>Cancel</Button>
+						<Button>Abbrechen</Button>
 					</DialogClose>
 					<Button
 						variant='destructive'

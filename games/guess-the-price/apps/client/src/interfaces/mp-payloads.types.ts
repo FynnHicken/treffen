@@ -9,6 +9,7 @@ export type RequiredPlayerId = {
 
 export type JoinSessionPayload = {
 	sessionId?: string;
+	hub?: { room: string; name?: string; ticket?: string };
 };
 
 export type GuessPricePayload = {
@@ -29,28 +30,35 @@ export type EndSessionPayload = RequiredPlayerId;
 export interface PlayerLeavesOutgoingPayload {
 	playerName: string;
 	players: number;
+	playerNames?: string[];
 }
 
 export interface PlayerJoinsOutgoingPayload {
 	playerName: string;
 	players: number;
+	playerNames?: string[];
+	host?: string;
 }
 
-export interface PLayerReconnectsOutgoingPayload {
-	playerName: string;
-	players: number;
-}
+export type PLayerReconnectsOutgoingPayload = PlayerJoinsOutgoingPayload;
 
 export interface SessionDetailsOutgoingPayload {
 	currentlyPlaying: boolean;
 	host: string;
 	sessionId: string;
 	players: number;
+	playerNames?: string[];
+	fromHub?: boolean;
 }
 
 export interface PlayerDetailsOutgoingPayload {
 	playerName: string;
 	playerId: string;
+	isHost?: boolean;
+}
+
+export interface HostChangedOutgoingPayload {
+	host: string;
 }
 
 export interface ExceptionOutgoingPayload {

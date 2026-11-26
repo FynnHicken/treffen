@@ -130,6 +130,11 @@ jobs:
           TREFFEN_TICKET_SECRET=ci-test-secret docker compose -f docker-compose.yml up -d --force-recreate party-server mensch
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/mensch/api/health >/dev/null && break; sleep 1; done
           docker run --rm --network=host -v "$PWD/party-hub/tests":/t:ro treffen-ui-test python -u /t/mensch_via_hub.py http://127.0.0.1:8000
+      - name: Guess The Price über den Hub (gemeinsame Runde, Namen und Host per Ticket)
+        run: |
+          TREFFEN_TICKET_SECRET=ci-test-secret docker compose -f docker-compose.yml up -d --force-recreate gtp-server gtp-client
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8000/price-guess-api/category >/dev/null && curl -sf http://127.0.0.1:8000/price-guess/ >/dev/null && break; sleep 1; done
+          docker run --rm --network=host -v "$PWD/party-hub/tests":/t:ro -v /tmp/shots:/shots treffen-ui-test python -u /t/gtp_via_hub.py http://127.0.0.1:8000 /shots
       - name: Screenshots hochladen
         if: always()
         uses: actions/upload-artifact@v5
@@ -139,6 +144,6 @@ jobs:
           if-no-files-found: ignore
       - name: Logs bei Fehler
         if: failure()
-        run: docker compose -f docker-compose.yml logs --tail=80 party-server partyhub monopoly mensch
+        run: docker compose -f docker-compose.yml logs --tail=80 party-server partyhub monopoly mensch gtp-server gtp-client
       - name: Shell-Skripte (Syntax)
         run: for f in start.sh stop.sh fly_entrypoint.sh party-hub/40-enable-ssl.sh party-hub/15-treffen-resolver.sh; do bash -n "$f"; done

@@ -1,6 +1,8 @@
 import { GameModeCard } from '@/components/main-page/game-mode-card';
 import { useTheme } from '@/context/theme-provider';
 import { motion } from 'framer-motion';
+import { Navigate } from 'react-router-dom';
+import { hubSessionId } from '@/lib/hub';
 
 const containerVariant = {
 	hidden: { opacity: 0 },
@@ -22,12 +24,15 @@ export const MainPage = () => {
 	const { theme } = useTheme();
 	const base = import.meta.env.BASE_URL || '/';
 
+	// Über den Hub gestartet → direkt in die gemeinsame Runde
+	if (hubSessionId) return <Navigate to={`/multiplayer/${hubSessionId}`} replace />;
+
 	return (
 		<div>
 			<div>
-				<h1 className='font-bold text-3xl'>Choose game mode</h1>
+				<h1 className='font-bold text-3xl'>Spielmodus wählen</h1>
 				<p className='text-md text-zinc-600 dark:text-zinc-400 '>
-					Choose your desired game mode and start guessing the price!
+					Such dir einen Modus aus und schätz los!
 				</p>
 			</div>
 
@@ -39,24 +44,24 @@ export const MainPage = () => {
 			>
 				<motion.div variants={itemVariant}>
 					<GameModeCard
-						title='Classic mode'
-						description='Get a product and guess the price.'
+						title='Klassisch'
+						description='Ein Produkt, du schätzt den Preis.'
 						imageSrc={`${base}images/${theme == 'dark' ? 'd-' : ''}classic-mode-image.svg`}
 						link='/classic-mode'
 					/>
 				</motion.div>
 				<motion.div variants={itemVariant}>
 					<GameModeCard
-						title='This or that'
-						description='Guess which product is more expensive.'
+						title='Was ist teurer?'
+						description='Zwei Produkte – welches kostet mehr?'
 						imageSrc={`${base}images/${theme == 'dark' ? 'd-' : ''}this-or-that-mode-image.svg`}
 						link='/this-that'
 					/>
 				</motion.div>
 				<motion.div variants={itemVariant}>
 					<GameModeCard
-						title='Multiplayer mode'
-						description='Play the classic mode with your friends.'
+						title='Mehrspieler'
+						description='Klassisch, aber gegen deine Freunde.'
 						imageSrc={`${base}images/${theme == 'dark' ? 'd-' : ''}multiplayer-mode-image.svg`}
 						link='/multiplayer'
 					/>

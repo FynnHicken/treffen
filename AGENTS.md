@@ -128,6 +128,12 @@ Erledigt und auf `main`:
 
 11. Monopoly-Spielstände in SQLite (2026-11-26): Partien überstehen Neustart/Update, Volume `./data/monopoly`.
 
+15. Guess The Price im Hub (2026-11-26): Start aus dem Hub führt alle in eine gemeinsame Runde pro Raum
+    (`hub-<RAUM>`), Namen und Host-Recht per Hub-Ticket (`apps/server/src/domain/hub/hub-ticket.ts`), Aktionen an den
+    Socket gebunden, Preis erst mit dem Ergebnis. Oberfläche deutsch, Euro, dunkel. Produktfotos lokal von Wikimedia
+    Commons (`apps/client/public/products/`, Lizenzen in `QUELLEN.md`). Abhängigkeiten per `package-lock.json` gepinnt.
+    Browser-Test: `party-hub/tests/gtp_via_hub.py`.
+
 14. Hub-Lobby als Kachelraster (2026-11-26, Entwurf „F1 · Arcade × Bento“): `party-hub/tiles.js` (`HUB_TILES` –
     Kachel hinzufügen/entfernen = ein Eintrag), Stil in `party-hub/hub.css`. Bühne mit ausgewähltem Spiel, Einladen,
     Spieler, „Heute gespielt“ (Verlauf kommt vom Party-Server, `history` in `ROSTER_SYNC`), Abstimmung nur solange eine

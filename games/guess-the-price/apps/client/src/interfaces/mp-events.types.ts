@@ -22,4 +22,5 @@ export enum OutgoingEvents {
 	SESSION_ENDS = 'session:ends',
 	SESSION_RESTARTS = 'session:restart',
 	SESSION_TERMINATE = 'session:terminated',
+	HOST_CHANGED = 'host:changed',
 }

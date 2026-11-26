@@ -12,6 +12,7 @@ import { useMpStore } from '@/stores/mp-store';
 import { useNavigate } from 'react-router-dom';
 import { useVolatileMpStore } from '@/stores/mp-volatile-store';
 import { toast } from 'sonner';
+import { hub } from '@/lib/hub';
 
 const connect = () => {
 	if (!socket.connected) {
@@ -53,12 +54,17 @@ export const useMultiplayerConnection = () => {
 		) => {
 			if (!sessionPayload || !playerPayload) return;
 
-			setSession({ sessionId: sessionPayload.sessionId, players: sessionPayload.players });
-			setPlayer({ ...playerPayload, isHost: sessionPayload.host === playerPayload.playerName });
+			setSession({
+				sessionId: sessionPayload.sessionId,
+				players: sessionPayload.players,
+				playerNames: sessionPayload.playerNames ?? [],
+				hostName: sessionPayload.host,
+			});
+			setPlayer({ ...playerPayload, isHost: playerPayload.isHost ?? sessionPayload.host === playerPayload.playerName });
 			loadSession(sessionPayload.currentlyPlaying, sessionPayload.currentlyPlaying);
 			setConnected(true);
 
-			if (sessionPayload.host === playerPayload.playerName) {
+			if (!hub && sessionPayload.host === playerPayload.playerName) {
 				//Joining as host from mp joining page
 				navigate(`/multiplayer/${sessionPayload.sessionId}`);
 			}
@@ -68,7 +74,7 @@ export const useMultiplayerConnection = () => {
 			if (payload.msg) {
 				setSocketError(payload.msg);
 			} else {
-				setSocketError('Unknown multiplayer error.');
+				setSocketError('Unbekannter Fehler im Mehrspieler-Modus.');
 			}
 		};
 
@@ -78,7 +84,8 @@ export const useMultiplayerConnection = () => {
 
 		const onSocketConnect = () => {
 			//Try to reconnect if you were in a session and socket lost connection to server
-			if (!connectedToSession && socket.connected && sessionId && playerId) {
+			// (Hub-Runden treten bei jeder Verbindung neu über den Hub bei, siehe MultiplayerPage)
+			if (!hub && !connectedToSession && socket.connected && sessionId && playerId) {
 				socket.emit(IncomingEvents.PLAYER_RECONNECT, { playerId, sessionId } as ReconnectPayload);
 			}
 		};
@@ -88,8 +95,8 @@ export const useMultiplayerConnection = () => {
 			reset();
 			navigate('/');
 			socket.disconnect();
-			toast.warning('Session ended', {
-				description: 'This session has ended',
+			toast.warning('Runde beendet', {
+				description: 'Der Host hat die Runde beendet.',
 			});
 		};
 

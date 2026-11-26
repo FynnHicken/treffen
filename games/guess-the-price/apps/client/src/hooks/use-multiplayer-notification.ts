@@ -3,6 +3,7 @@ import { socket } from '@/socket';
 import { OutgoingEvents } from '@/interfaces/mp-events.types';
 import {
 	ExceptionOutgoingPayload,
+	HostChangedOutgoingPayload,
 	PlayerJoinsOutgoingPayload,
 	PlayerLeavesOutgoingPayload,
 	PLayerReconnectsOutgoingPayload,
@@ -11,31 +12,42 @@ import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { useMpStore } from '@/stores/mp-store';
 import { useVolatileMpStore } from '@/stores/mp-volatile-store';
+import { hub } from '@/lib/hub';
 
 export const useMpNotifications = () => {
 	const navigate = useNavigate();
-	const mpStore = useMpStore();
-	const volatileMpStore = useVolatileMpStore();
 
 	useEffect(() => {
+		const store = () => useMpStore.getState();
+
 		const onPlayerJoin = (payload: PlayerJoinsOutgoingPayload) => {
-			toast.success('Player joins', { description: payload.playerName });
+			store().setPlayers(payload.players, payload.playerNames);
+			if (payload.host) store().setHost(payload.host);
+			if (payload.playerName !== store().playerName) toast.success(`${payload.playerName} ist dabei`);
 		};
 
 		const onPlayerLeave = (payload: PlayerLeavesOutgoingPayload) => {
-			toast.warning('Player leaves', { description: payload.playerName });
+			store().setPlayers(payload.players, payload.playerNames);
+			toast.warning(`${payload.playerName} ist weg`);
 		};
 
 		const onPlayerReconnect = (payload: PLayerReconnectsOutgoingPayload) => {
-			toast.info('Player reconnects', { description: payload.playerName });
+			store().setPlayers(payload.players, payload.playerNames);
+			if (payload.host) store().setHost(payload.host);
+			if (payload.playerName !== store().playerName) toast.info(`${payload.playerName} ist wieder da`);
+		};
+
+		const onHostChanged = (payload: HostChangedOutgoingPayload) => {
+			store().setHost(payload.host);
+			toast.info(`${payload.host} leitet jetzt die Runde`);
 		};
 
 		const onError = (payload: ExceptionOutgoingPayload) => {
-			toast.error('Error', { description: payload.msg });
+			toast.error('Fehler', { description: payload.msg });
 
-			if (payload.code === 404) {
-				mpStore.clear();
-				volatileMpStore.reset();
+			if (payload.code === 404 && !hub) {
+				store().clear();
+				useVolatileMpStore.getState().reset();
 				navigate('/multiplayer');
 			}
 		};
@@ -43,13 +55,15 @@ export const useMpNotifications = () => {
 		socket.on(OutgoingEvents.PLAYER_JOINS_SESSION, onPlayerJoin);
 		socket.on(OutgoingEvents.PLAYER_LEAVES, onPlayerLeave);
 		socket.on(OutgoingEvents.PLAYER_RECONNECTS, onPlayerReconnect);
+		socket.on(OutgoingEvents.HOST_CHANGED, onHostChanged);
 		socket.on(OutgoingEvents.EXCEPTION, onError);
 
 		return () => {
 			socket.off(OutgoingEvents.PLAYER_JOINS_SESSION, onPlayerJoin);
 			socket.off(OutgoingEvents.PLAYER_LEAVES, onPlayerLeave);
 			socket.off(OutgoingEvents.PLAYER_RECONNECTS, onPlayerReconnect);
+			socket.off(OutgoingEvents.HOST_CHANGED, onHostChanged);
 			socket.off(OutgoingEvents.EXCEPTION, onError);
 		};
-	}, [toast]);
+	}, [navigate]);
 };

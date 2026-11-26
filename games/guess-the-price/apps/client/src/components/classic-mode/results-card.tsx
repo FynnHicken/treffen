@@ -1,3 +1,4 @@
+import { formatPrice } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
@@ -46,33 +47,33 @@ export const ResultsCard = ({ guesses, onContinue }: Props) => {
 
 			<Card className='md:min-w-[500px] md:max-w-[600px]'>
 				<CardHeader>
-					<CardTitle>Results</CardTitle>
-					<CardDescription>Check your results and play again.</CardDescription>
+					<CardTitle>Bilanz</CardTitle>
+					<CardDescription>So hast du geschätzt.</CardDescription>
 				</CardHeader>
 				<CardContent>
 					<div className='flex items-center justify-center gap-24'>
 						<div className='text-center'>
 							<h2 className='text-3xl font-bold'>{guesses.length}</h2>
-							<p className='text-md text-zinc-500'>Guesses</p>
+							<p className='text-md text-zinc-500'>Schätzungen</p>
 						</div>
 						<div className='text-center'>
 							<h2 className='text-3xl font-bold'>
 								{guesses.reduce((prev, curr) => prev + curr.points, 0)} / {guesses.length * 100}
 							</h2>
-							<p className='text-md text-zinc-500'>Points</p>
+							<p className='text-md text-zinc-500'>Punkte</p>
 						</div>
 					</div>
 					{(bestGuess?.points ?? 0) > 0 && (
 						<div className='mt-4'>
-							<h2 className='text-xl font-semibold mb-2'>Best guess</h2>
+							<h2 className='text-xl font-semibold mb-2'>Beste Schätzung</h2>
 							<div className='flex flex-row gap-2'>
-								<img src={bestGuess?.image} alt={bestGuess?.title + "'s image"} className='max-w-[150px]' />
+								<img src={bestGuess?.image} alt={bestGuess?.title ?? ''} className='max-w-[150px]' />
 								<div>
 									<p className='text-lg font-semibold'>{bestGuess?.title}</p>
-									<p>Original price: {bestGuess?.originalPrice}</p>
-									<p>Your price: {bestGuess?.guessedPrice}</p>
+									<p>Echter Preis: {formatPrice(bestGuess?.originalPrice)}</p>
+									<p>Dein Preis: {formatPrice(bestGuess?.guessedPrice)}</p>
 									<p>
-										Points: <span className='font-semibold'>{bestGuess?.points} / 100</span>
+										Punkte: <span className='font-semibold'>{bestGuess?.points} / 100</span>
 									</p>
 								</div>
 							</div>
@@ -82,12 +83,12 @@ export const ResultsCard = ({ guesses, onContinue }: Props) => {
 				<CardFooter className='flex flex-row gap-2'>
 					<Link to='/'>
 						<Button className='bg-red-500 hover:bg-red-600'>
-							<HouseSimple size={24} /> Main menu
+							<HouseSimple size={24} /> Hauptmenü
 						</Button>
 					</Link>
 
 					<Button className='w-full' onClick={onContinue}>
-						<Joystick size={24} /> Play again
+						<Joystick size={24} /> Nochmal
 					</Button>
 				</CardFooter>
 			</Card>

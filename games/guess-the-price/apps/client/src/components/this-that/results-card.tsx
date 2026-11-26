@@ -25,23 +25,23 @@ export const ResultsCard = ({ guesses, onContinue }: Props) => {
 
 			<Card>
 				<CardHeader>
-					<CardTitle>Results</CardTitle>
-					<CardDescription>How many correct guesses you 've made ?</CardDescription>
+					<CardTitle>Bilanz</CardTitle>
+					<CardDescription>So oft lagst du richtig.</CardDescription>
 				</CardHeader>
 
 				<CardContent className='text-center'>
 					<h1 className='text-6xl font-bold'>{guesses}</h1>
-					<p className='text-zinc-700 dark:text-zinc-400'>Guesses</p>
+					<p className='text-zinc-700 dark:text-zinc-400'>richtig</p>
 				</CardContent>
 				<CardFooter className='flex flex-row gap-2'>
 					<Link to='/'>
 						<Button className='bg-red-500 hover:bg-red-600'>
-							<HouseSimple size={24} /> Main menu
+							<HouseSimple size={24} /> Hauptmenü
 						</Button>
 					</Link>
 
 					<Button className='w-full md:min-w-[240px]' onClick={onContinue}>
-						<Joystick size={24} /> Play again
+						<Joystick size={24} /> Nochmal
 					</Button>
 				</CardFooter>
 			</Card>

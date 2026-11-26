@@ -8,41 +8,67 @@ import {
 	PlayerJoinsOutgoingPayload,
 	PLayerReconnectsOutgoingPayload,
 	ReconnectPayload,
-	RequiredPlayerId,
 	RoundStartsOutgoingPayload,
 	SessionDetailsOutgoingPayload,
 } from '../../domain/interfaces/mp-payloads.types';
 import { validateMpPayload } from '../../domain/validation/validate-mp-payload';
-import {
-	JoinSessionPayloadSchema,
-	ReconnectPayloadSchema,
-	requiresPlayerIdPayloadSchema,
-} from '../../domain/validation/mp-payloads-validation.schema';
+import { JoinSessionPayloadSchema, ReconnectPayloadSchema } from '../../domain/validation/mp-payloads-validation.schema';
 import { MPGameService } from '../services/multiplayer/mp-game.service';
+import { MpSession } from '../../domain/multiplayer/mp-session';
+import { SocketError } from '../../domain/errors/socket-error';
+
+const sessionDetails = (session: MpSession): SessionDetailsOutgoingPayload => ({
+	sessionId: session.id,
+	host: session.hostName,
+	currentlyPlaying: !!session.currentRound,
+	players: session.connectedPlayers.length,
+	playerNames: session.playerNames,
+	fromHub: session.fromHub,
+});
+
+const playerDetails = (session: MpSession, player: { id: string; name: string }): PlayerDetailsOutgoingPayload => ({
+	playerId: player.id,
+	playerName: player.name,
+	isHost: session.isHost(player.id),
+});
 
 export const gameSessionSocketHandler = (io: Server, socket: Socket) => {
 	let currentSessionID: string | null = null;
+	const room = () => io.of('/mp-ws').to(currentSessionID ?? '');
+
+	/** Spieler-ID dieser Verbindung (nicht die aus der Nachricht – die könnte jeder hineinschreiben) */
+	const myPlayerId = () => {
+		const session = currentSessionID ? MPSessionsService.getSession(currentSessionID) : null;
+		const id = session?.playerIdForSocket(socket.id);
+		if (!session || !id) throw new SocketError('Du bist in keiner Runde.');
+		return { session, id };
+	};
+
+	const announce = (session: MpSession, event: OutgoingEvents, playerName: string) => {
+		room().emit(event, {
+			playerName,
+			players: session.connectedPlayers.length,
+			playerNames: session.playerNames,
+			host: session.hostName,
+		} as PlayerJoinsOutgoingPayload);
+	};
 
 	const joinSession = (payload: JoinSessionPayload) => {
 		try {
 			validateMpPayload(payload, JoinSessionPayloadSchema);
 
-			const { session, player } = MPSessionsService.handlePlayerConnection(socket.id, io, payload.sessionId);
+			const { session, player, rejoined, hostChanged } = MPSessionsService.handlePlayerConnection(
+				socket.id,
+				io,
+				payload.sessionId,
+				payload.hub
+			);
 			currentSessionID = session.id;
 			socket.join(session.id);
 
-			socket.emit(
-				OutgoingEvents.SESSION_DETAILS,
-				{
-					sessionId: session.id,
-					host: session.host.name,
-					currentlyPlaying: !!session.currentRound,
-					players: session.players.length,
-				} as SessionDetailsOutgoingPayload,
-				{ playerId: player.id, playerName: player.name } as PlayerDetailsOutgoingPayload
-			);
-
-			io.of('/mp-ws').to(session.id).emit(OutgoingEvents.PLAYER_JOINS_SESSION, { playerName: player.name, players: session.players.length } as PlayerJoinsOutgoingPayload);
+			socket.emit(OutgoingEvents.SESSION_DETAILS, sessionDetails(session), playerDetails(session, player));
+			announce(session, rejoined ? OutgoingEvents.PLAYER_RECONNECTS : OutgoingEvents.PLAYER_JOINS_SESSION, player.name);
+			if (hostChanged) room().emit(OutgoingEvents.HOST_CHANGED, { host: session.hostName });
 		} catch (error) {
 			handleSocketError(error, socket);
 		}
@@ -52,16 +78,11 @@ export const gameSessionSocketHandler = (io: Server, socket: Socket) => {
 		try {
 			validateMpPayload(payload, ReconnectPayloadSchema);
 
-			const { player, sessionDetails, players } = MPSessionsService.handlePlayerReconnection(
-				payload.sessionId,
-				payload.playerId,
-				socket.id
-			);
-
-			socket.emit(OutgoingEvents.SESSION_DETAILS, {...sessionDetails, players} as SessionDetailsOutgoingPayload, { playerId: player.id, playerName: player.name, } as PlayerDetailsOutgoingPayload);
-			socket.join(payload.sessionId);
-
-			io.of('/mp-ws').to(payload.sessionId).emit(OutgoingEvents.PLAYER_RECONNECTS, { playerName: player.name, players } as PLayerReconnectsOutgoingPayload);
+			const { player, session } = MPSessionsService.handlePlayerReconnection(payload.sessionId, payload.playerId, socket.id);
+			currentSessionID = session.id;
+			socket.join(session.id);
+			socket.emit(OutgoingEvents.SESSION_DETAILS, sessionDetails(session), playerDetails(session, player));
+			announce(session, OutgoingEvents.PLAYER_RECONNECTS, player.name);
 		} catch (error) {
 			handleSocketError(error, socket);
 		}
@@ -72,40 +93,31 @@ export const gameSessionSocketHandler = (io: Server, socket: Socket) => {
 		MPSessionsService.handlePlayerDisconnection(socket.id, currentSessionID);
 	};
 
-	const endSession = (payload: RequiredPlayerId) => {
+	const endSession = () => {
 		try {
-			validateMpPayload(payload, requiresPlayerIdPayloadSchema);
-
-			const sessionId = [...socket.rooms][1];
-			MPGameService.endSession(sessionId, payload.playerId);
+			const { session, id } = myPlayerId();
+			MPGameService.endSession(session.id, id);
 		} catch (error) {
 			handleSocketError(error, socket);
 		}
 	};
 
-	const terminateSession = (payload: RequiredPlayerId) => {
+	const terminateSession = () => {
 		try {
-			validateMpPayload(payload, requiresPlayerIdPayloadSchema);
-
-			const sessionId = [...socket.rooms][1];
-			MPGameService.terminateSession(sessionId, payload.playerId);
-
-			io.of('/mp-ws').to(sessionId).emit(OutgoingEvents.SESSION_TERMINATE);
+			const { session, id } = myPlayerId();
+			MPGameService.terminateSession(session.id, id);
+			room().emit(OutgoingEvents.SESSION_TERMINATE);
 		} catch (error) {
 			handleSocketError(error, socket);
 		}
 	};
 
-	const restartSession = async (payload: RequiredPlayerId) => {
+	const restartSession = async () => {
 		try {
-			validateMpPayload(payload, requiresPlayerIdPayloadSchema);
-
-			const sessionId = [...socket.rooms][1];
-			MPGameService.restartSession(sessionId, payload.playerId);
-			const round = await MPGameService.startRound([...socket.rooms][1], payload.playerId);
-			io.of('/mp-ws')
-				.to([...socket.rooms][1])
-				.emit(OutgoingEvents.ROUND_STARTS, round as RoundStartsOutgoingPayload);
+			const { session, id } = myPlayerId();
+			MPGameService.restartSession(session.id, id);
+			const round = await MPGameService.startRound(session.id, id);
+			room().emit(OutgoingEvents.ROUND_STARTS, round as RoundStartsOutgoingPayload);
 		} catch (error) {
 			handleSocketError(error, socket);
 		}

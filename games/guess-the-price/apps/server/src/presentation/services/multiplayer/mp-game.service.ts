@@ -10,14 +10,20 @@ export class MPGameService {
 		const session = this.mpSessionDatasource.getSession(sessionId);
 
 		if (!session) {
-			throw new SocketError('You must be in a game session to start rounds.');
+			throw new SocketError('Du bist in keiner Runde.');
 		}
 
-		if (session.host.id !== playerId) {
-			throw new SocketError('Only the host can start a new round.');
+		if (!session.isHost(playerId)) {
+			throw new SocketError('Nur der Host startet neue Runden.');
+		}
+
+		if (session.currentRound) {
+			throw new SocketError('Die Runde läuft noch.');
 		}
 
 		try {
+			// Alle Produkte schon gezeigt → von vorn (sonst ginge nach dem letzten Produkt nichts mehr)
+			if (session.seenProducts.length >= (await RandomService.countProducts())) session.seenProducts = [];
 			const product = await RandomService.getRandomProduct(session.seenProducts);
 			if (!product) {
 				throw new Error('Cannot get random product (MPGameService)');
@@ -26,7 +32,7 @@ export class MPGameService {
 			return rest;
 		} catch (error) {
 			console.error(error);
-			throw new SocketError('Cannot start the round, an error occurred while getting the product.');
+			throw new SocketError('Runde konnte nicht starten – kein Produkt gefunden.');
 		}
 	};
 
@@ -34,16 +40,23 @@ export class MPGameService {
 		const session = this.mpSessionDatasource.getSession(sessionId);
 
 		if (!session) {
-			throw new SocketError('You must be in a game session to guess the price of a product.');
+			throw new SocketError('Du bist in keiner Runde.');
+		}
+
+		if (!session.currentRound) {
+			throw new SocketError('Die Runde ist schon vorbei.');
+		}
+		if (session.currentRound.guesses.some(g => g.playerId === playerId)) {
+			throw new SocketError('Du hast schon geschätzt.');
 		}
 
 		try {
-			const results = await GuessService.guessProductPrice(session.currentRound?.product.id || '', guessedPrice);
+			const results = await GuessService.guessProductPrice(session.currentRound.product.id, guessedPrice);
 			session.guessPrice(playerId, results?.points ?? 0, guessedPrice ?? 0);
 			return session.getGuessesLeft();
 		} catch (error) {
 			console.error(error);
-			throw new SocketError('An error occurred while guessing the price for this product.');
+			throw new SocketError('Schätzung konnte nicht gewertet werden.');
 		}
 	};
 
@@ -51,11 +64,11 @@ export class MPGameService {
 		const session = this.mpSessionDatasource.getSession(sessionId);
 
 		if (!session) {
-			throw new SocketError('You must be in a game session.');
+			throw new SocketError('Du bist in keiner Runde.');
 		}
 
-		if (session.host.id !== playerId) {
-			throw new SocketError('Only the host can terminate the session.');
+		if (!session.isHost(playerId)) {
+			throw new SocketError('Nur der Host kann das Spiel beenden.');
 		}
 
 		session.endSession();
@@ -65,23 +78,24 @@ export class MPGameService {
 		const session = this.mpSessionDatasource.getSession(sessionId);
 
 		if (!session) {
-			throw new SocketError('You must be in a game session.');
+			throw new SocketError('Du bist in keiner Runde.');
 		}
 
-		if (session.host.id !== playerId) {
-			throw new SocketError('Only the host can terminate the session.');
+		if (!session.isHost(playerId)) {
+			throw new SocketError('Nur der Host kann das Spiel beenden.');
 		}
+		this.mpSessionDatasource.removeSession(sessionId);
 	};
 
 	public static restartSession = async (sessionId: string, playerId: string) => {
 		const session = this.mpSessionDatasource.getSession(sessionId);
 
 		if (!session) {
-			throw new SocketError('You must be in a game session.');
+			throw new SocketError('Du bist in keiner Runde.');
 		}
 
-		if (session.host.id !== playerId) {
-			throw new SocketError('Only the host can restart the session.');
+		if (!session.isHost(playerId)) {
+			throw new SocketError('Nur der Host kann neu starten.');
 		}
 
 		session.restartSession();

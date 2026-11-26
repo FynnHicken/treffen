@@ -21,8 +21,8 @@ export function ThemeToggle() {
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align='end'>
-				<DropdownMenuItem onClick={() => setTheme('light')}><Sun/> Light</DropdownMenuItem>
-				<DropdownMenuItem onClick={() => setTheme('dark')}><Moon/> Dark</DropdownMenuItem>
+				<DropdownMenuItem onClick={() => setTheme('light')}><Sun/> Hell</DropdownMenuItem>
+				<DropdownMenuItem onClick={() => setTheme('dark')}><Moon/> Dunkel</DropdownMenuItem>
 				<DropdownMenuItem onClick={() => setTheme('system')}><Desktop/> System</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>

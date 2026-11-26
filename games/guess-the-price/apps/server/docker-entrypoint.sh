@@ -12,4 +12,4 @@ echo "Seeding product catalog..."
 npm run seed
 
 echo "Starting Guess The Price backend on port ${PORT:-3005}..."
-exec npm run start
+exec node dist/app.js

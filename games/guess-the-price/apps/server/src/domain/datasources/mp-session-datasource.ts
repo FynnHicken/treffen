@@ -14,13 +14,14 @@ export class MPSessionDatasource {
 		return this;
 	}
 
-	public addSession(session: MpSession) {
-		this.sessionOwners.set(session.host.socketId, session.id);
+	public addSession(session: MpSession, ownerSocketId?: string) {
+		if (ownerSocketId) this.sessionOwners.set(ownerSocketId, session.id);
 		this.sessions.set(session.id, session);
 	}
 
 	public removeSession(id: string) {
 		this.sessions.delete(id);
+		for (const [socketId, sessionId] of this.sessionOwners) if (sessionId === id) this.sessionOwners.delete(socketId);
 	}
 
 	public getSession(id: string) {
@@ -43,7 +44,7 @@ export class MPSessionDatasource {
 		if (!this.sessions) return;
 		this.sessions.forEach(session => {
 			if (!session.checkSessionActive()) {
-				this.sessions.delete(session.id);
+				this.removeSession(session.id);
 			}
 		});
 	};

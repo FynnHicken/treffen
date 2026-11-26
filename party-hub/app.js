@@ -1839,7 +1839,9 @@ function getGameUrl(game, lobbyId) {
         const ticket = partyState.gameTicket ? `#ticket=${encodeURIComponent(partyState.gameTicket)}` : "";
         return `/mensch/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}${ticket}`;
     } else if (game.id === "price_guess") {
-        return `/price-guess/`;
+        // Alle landen in derselben Runde des Raums; Name und Host-Recht kommen über das Ticket
+        const ticket = partyState.gameTicket ? `#ticket=${encodeURIComponent(partyState.gameTicket)}` : "";
+        return `/price-guess/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}${ticket}`;
     }
     return game.embedUrl;
 }
@@ -1851,7 +1853,9 @@ function startGameView(game, lobbyId) {
     const hudIcon = document.getElementById("hudGameIcon");
 
     hudIcon.innerText = game.icon;
-    hudTitle.innerText = `${game.title} • Party-Raum`;
+    hudTitle.innerText = game.title;
+    const hudStatus = document.getElementById("hudStatus");
+    if (hudStatus) hudStatus.innerText = `${partyState.players.length} im Raum`;
 
     if (game.id === "skribbol" || game.id === "uno" || game.id === "codenames" || game.id === "monopoly" || game.id === "mensch" || game.id === "price_guess") {
         iframe.src = getGameUrl(game, lobbyId);

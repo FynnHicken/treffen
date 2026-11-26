@@ -6,7 +6,7 @@
 		"dev": "nodemon",
 		"lint": "eslint",
 		"build": "rimraf dist && tsc",
-		"start": "npm run build && node dist/app.js",
+		"start": "node dist/app.js",
 		"seed": "ts-node ./src/seed/seed.ts"
 	},
 	"keywords": [],

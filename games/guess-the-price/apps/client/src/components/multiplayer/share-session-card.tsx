@@ -8,62 +8,70 @@ interface Props {
 	sessionId: string;
 	playerNumber: number;
 	playerName: string;
+	playerNames: string[];
+	hostName: string;
+	/** über den Treffen-Hub gestartet: kein Einladungslink, die Gruppe ist schon da */
+	fromHub: boolean;
 	onStart?: () => void;
 }
 
-export const ShareSessionCard = ({ isHost, sessionId, playerNumber, playerName, onStart }: Props) => {
+export const ShareSessionCard = ({ isHost, sessionId, playerNumber, playerName, playerNames, hostName, fromHub, onStart }: Props) => {
+	const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+	const link = `${typeof window !== 'undefined' ? window.location.origin : ''}${base}/multiplayer/${sessionId}`;
 	const onCopyLink = () => {
-		navigator.clipboard.writeText(`${window.location.origin}/multiplayer/${sessionId}`);
-		toast.info('Session-Link kopiert!');
+		navigator.clipboard.writeText(link);
+		toast.info('Link kopiert!');
 	};
+	const names = playerNames.length ? playerNames : [playerName];
 
 	return (
-		<>
-			<div className='max-w-[750px]'>
+		<div className='w-full max-w-[640px] flex flex-col gap-5'>
+			<Card>
+				<CardHeader>
+					<CardTitle>Wer spielt mit?</CardTitle>
+					<CardDescription>
+						{isHost
+							? 'Du leitest die Runde. Starte, sobald alle da sind – wer später kommt, steigt in der nächsten Runde ein.'
+							: `${hostName || 'Der Host'} startet die Runde, sobald alle da sind.`}
+					</CardDescription>
+				</CardHeader>
+				<CardContent>
+					<ul className='flex flex-wrap gap-2' aria-label={`${playerNumber || names.length} Spieler`}>
+						{names.map(name => (
+							<li
+								key={name}
+								className={`px-3 py-2 rounded-md border text-sm font-medium dark:border-zinc-700 ${name === playerName ? 'border-cyan-400 dark:border-cyan-400' : ''}`}
+							>
+								{name}
+								{name === playerName && <span className='text-zinc-500'> (du)</span>}
+								{name === hostName && <span className='ml-1 text-amber-500 text-xs font-semibold'>HOST</span>}
+							</li>
+						))}
+					</ul>
+				</CardContent>
+				{isHost && (
+					<CardFooter className='border-t-[1px] dark:border-zinc-800 pt-4'>
+						<Button className='w-full h-12 text-base' onClick={onStart} data-testid='gtp-start'>
+							<Joystick size={24} /> Los geht's
+						</Button>
+					</CardFooter>
+				)}
+			</Card>
+
+			{!fromHub && (
 				<Card>
 					<CardHeader>
-						<CardTitle>You are</CardTitle>
-						<CardDescription>Hope you like your randomly generated name!</CardDescription>
+						<CardTitle>Freunde einladen</CardTitle>
+						<CardDescription>Schick diesen Link an alle, die mitspielen wollen.</CardDescription>
 					</CardHeader>
-					<CardContent className='text-center'>
-						<h2 className='text-xl font-semibold'>{playerName}</h2>
-					</CardContent>
-				</Card>
-				<Card className=' mt-5 w-fit'>
-					<CardHeader>
-						<CardTitle>Invite your friends</CardTitle>
-						<CardDescription>
-							{isHost
-								? 'Share this link with your friends and when you are ready click play.'
-								: 'Waiting for the host to start the round.'}
-						</CardDescription>
-					</CardHeader>
-
 					<CardContent>
-						<div className='flex items-center justify-center flex-col mb-5'>
-							<h1 className='text-2xl'>{playerNumber ?? 1}</h1>
-							<p className='text-neutral-800 dark:text-zinc-400'>Players in session</p>
-						</div>
-
-						<p className='hidden md:block text-md'>Share this link:</p>
-						<p className='hidden md:block font-sm font-medium'>{typeof window !== 'undefined' ? window.location.origin : ''}/multiplayer/{sessionId}</p>
+						<p className='hidden md:block text-sm font-medium break-all'>{link}</p>
 						<Button className='mt-2 w-full' onClick={onCopyLink}>
-							<Copy size={24} /> Copy session link
+							<Copy size={24} /> Link kopieren
 						</Button>
 					</CardContent>
-					{isHost && (
-						<CardFooter className='border-t-[1px] dark:border-zinc-800 pt-4 flex-col'>
-							<Button className='w-full' onClick={onStart}>
-								<Joystick size={24} /> Play
-							</Button>
-							<p className='text-sm text-neutral-600 dark:text-zinc-400 mt-1'>
-								* You are the host of the session. Click play whenever you want to start the session. Players can still
-								join once the session has stared.
-							</p>
-						</CardFooter>
-					)}
 				</Card>
-			</div>
-		</>
+			)}
+		</div>
 	);
 };

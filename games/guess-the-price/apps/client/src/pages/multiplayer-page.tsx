@@ -1,6 +1,6 @@
 import { GuessCard } from '@/components/classic-mode/guess-card';
-import { OutgoingEvents } from '@/interfaces/mp-events.types';
-import { PlayerJoinsOutgoingPayload } from '@/interfaces/mp-payloads.types';
+import { IncomingEvents } from '@/interfaces/mp-events.types';
+import { JoinSessionPayload } from '@/interfaces/mp-payloads.types';
 import { ProductCard } from '@/components/classic-mode/product-card';
 import { RoundTimer } from '@/components/multiplayer/round-timer';
 import { ShareSessionCard } from '@/components/multiplayer/share-session-card';
@@ -11,7 +11,8 @@ import { useMpNotifications } from '@/hooks/use-multiplayer-notification';
 import { useMpStore } from '@/stores/mp-store';
 import { useMultiplayerConnection } from '@/hooks/use-multiplayer-connection';
 import { useMultiplayerSession } from '@/hooks/use-multiplayer-session';
-import { useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
+import { hub, hubSessionId } from '@/lib/hub';
 import { useVolatileMpStore } from '@/stores/mp-volatile-store';
 import { WaitingForResultsCard } from '@/components/multiplayer/waiting-for-results-card';
 import { RoundResultsCard } from '@/components/multiplayer/round-results-card';
@@ -30,42 +31,55 @@ export const MultiplayerPage = () => {
 	const { hostStartRound, hostEndSession, hostTerminateSession, hostRestartSession, guessPrice } =
 		useMultiplayerSession();
 
+	// Normaler Link: der Sitzung beitreten, falls wir noch nicht drin sind
 	useEffect(() => {
+		if (hub) return;
 		if (id && !mpStore.playerId && !mpStore.sessionId) {
 			connectToExistingSession(id);
 		}
 	}, [id, connectToExistingSession, mpStore.playerId, mpStore.sessionId]);
 
+	// Über den Hub: bei jeder (Wieder-)Verbindung mit Raum, Name und Ticket beitreten.
+	// Der Server erkennt dieselbe Person wieder, Punkte bleiben erhalten.
 	useEffect(() => {
-		const playerJoinsSession = (payload: PlayerJoinsOutgoingPayload) => {
-			if (payload.playerName === mpStore.playerName) return;
-			mpStore.setPlayers(payload.players);
-		};
-
-		socket.on(OutgoingEvents.PLAYER_JOINS_SESSION, playerJoinsSession);
-
+		if (!hub) return;
+		const store = useMpStore.getState();
+		if (store.sessionId && store.sessionId !== hubSessionId) store.clear(); // Rest aus einem anderen Raum
+		const join = () =>
+			socket.emit(IncomingEvents.PLAYER_JOIN_SESSION, {
+				sessionId: hubSessionId ?? undefined,
+				hub: { room: hub!.room, name: hub!.name, ticket: hub!.ticket },
+			} as JoinSessionPayload);
+		if (socket.connected) join();
+		socket.on('connect', join);
 		return () => {
-			socket.off(OutgoingEvents.PLAYER_JOINS_SESSION, playerJoinsSession);
+			socket.off('connect', join);
 		};
 	}, []);
 
+	if (hub && id !== hubSessionId) return <Navigate to={`/multiplayer/${hubSessionId}`} replace />;
+
 	return (
 		<div>
-			<div className='mb-10 flex justify-between items-start md:items-end'>
+			<div className={`mb-8 flex justify-between items-start md:items-end gap-4 ${hub ? 'hidden md:flex' : ''}`}>
 				<div>
-					<h1 className='font-semibold text-3xl'>Multiplayer</h1>
-					<p className='text-zinc-600 dark:text-zinc-400'>Play the classic mode with your friends.</p>
+					<h1 className='font-semibold text-3xl'>{hub ? 'Guess The Price' : 'Mehrspieler'}</h1>
+					<p className='text-zinc-600 dark:text-zinc-400'>
+						Alle sehen dasselbe Produkt und schätzen den Preis. Wer am nächsten dran ist, bekommt die meisten Punkte.
+					</p>
 				</div>
 
-				<div>
-					<DestructiveActionButton
-						title='Are you sure?'
-						description='Once you leave the session you cannot rejoin with the same name. Meaning that if you rejoin you will appear as a new person and will loose track of your guesses.'
-						onConfirm={leaveSession}
-					>
-						<SignOut size={24} /> <span className='hidden md:block'>Leave session</span>
-					</DestructiveActionButton>
-				</div>
+				{!hub && (
+					<div>
+						<DestructiveActionButton
+							title='Wirklich verlassen?'
+							description='Wenn du die Runde verlässt und wieder beitrittst, bist du ein neuer Spieler und deine Punkte sind weg.'
+							onConfirm={leaveSession}
+						>
+							<SignOut size={24} /> <span className='hidden md:block'>Runde verlassen</span>
+						</DestructiveActionButton>
+					</div>
+				)}
 			</div>
 
 			<AnimatePresence>
@@ -82,6 +96,9 @@ export const MultiplayerPage = () => {
 									playerName={mpStore.playerName}
 									sessionId={mpStore.sessionId}
 									playerNumber={mpStore.players}
+									playerNames={mpStore.playerNames ?? []}
+									hostName={mpStore.hostName ?? ''}
+									fromHub={!!hub}
 									onStart={hostStartRound}
 								/>
 							</div>
@@ -159,6 +176,7 @@ export const MultiplayerPage = () => {
 								results={mpVolatileStore.sessionData.sessionResults ?? []}
 								roundsPlayed={mpVolatileStore.sessionData.roundsPlayed}
 								isHost={mpStore.isHost}
+								canTerminate={!hub}
 								onTerminateSession={hostTerminateSession}
 								onContinuePlaying={hostRestartSession}
 							/>

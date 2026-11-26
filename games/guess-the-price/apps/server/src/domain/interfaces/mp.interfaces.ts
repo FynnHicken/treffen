@@ -6,6 +6,8 @@ export interface Player {
 	isHost: boolean;
 	socketId: string;
 	disconnectedAt?: Date;
+	/** Spieler-ID aus dem Hub-Ticket (nur Hub-Runden) – damit dieselbe Person beim Neuladen ihren Platz behält */
+	hubPid?: string;
 	metrics?: {
 		points: number;
 		guesses: number;

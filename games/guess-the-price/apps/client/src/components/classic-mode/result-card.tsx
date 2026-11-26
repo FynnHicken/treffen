@@ -1,3 +1,4 @@
+import { formatPrice } from '@/lib/utils';
 import { SkipForward } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
@@ -20,26 +21,26 @@ export const ResultCard = ({ points, originalPrice, guessedPrice, onContinue, on
 	return (
 		<Card className='flex-1 max-h-fit'>
 			<CardHeader>
-				<CardTitle>Result</CardTitle>
-				<CardDescription>Check the result and continue playing or get the final results.</CardDescription>
+				<CardTitle>Ergebnis</CardTitle>
+				<CardDescription>Weiter mit dem nächsten Produkt oder Spiel beenden und Bilanz ansehen.</CardDescription>
 			</CardHeader>
 			<CardContent className='text-center'>
-				<h2 className={`text-3xl font-bold ${resultColor}`}>+{points}/100 Points</h2>
+				<h2 className={`text-3xl font-bold ${resultColor}`}>+{points}/100 Punkte</h2>
 				<div className='mt-3'>
 					<p className='dark:text-zinc-300 text-zinc-800'>
-						Your price: <span className='font-semibold'>{guessedPrice}€</span>
+						Dein Preis: <span className='font-semibold'>{formatPrice(guessedPrice)}</span>
 					</p>
 					<p className='dark:text-zinc-300 text-zinc-800'>
-						Original price: <span className='font-semibold'>{originalPrice}€</span>
+						Echter Preis: <span className='font-semibold'>{formatPrice(originalPrice)}</span>
 					</p>
 				</div>
 			</CardContent>
 			<CardFooter className='flex flex-row gap-2'>
 				<Button className='bg-red-500 hover:bg-red-600' onClick={onFinish}>
-					<Ranking size={24} /> End game
+					<Ranking size={24} /> Beenden
 				</Button>
 				<Button className='w-full' onClick={onContinue}>
-					<SkipForward size={24} /> Next product
+					<SkipForward size={24} /> Nächstes Produkt
 				</Button>
 			</CardFooter>
 		</Card>

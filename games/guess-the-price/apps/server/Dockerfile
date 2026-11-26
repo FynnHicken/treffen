@@ -5,16 +5,14 @@ RUN apk add --no-cache openssl
 
 WORKDIR /app
 
-COPY package.json .
-
-RUN npm install
+# Exakte Versionen aus package-lock.json
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
 
 COPY . .
 
-RUN npm install prisma
-RUN npx prisma generate
-
-RUN chmod +x ./docker-entrypoint.sh
+# Prisma-Client und TypeScript einmal beim Bauen, nicht bei jedem Start
+RUN npx prisma generate && npm run build && chmod +x ./docker-entrypoint.sh
 
 EXPOSE 3005
 

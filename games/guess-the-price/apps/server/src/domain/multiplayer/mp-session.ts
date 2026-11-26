@@ -15,8 +15,10 @@ import {
 } from '../interfaces/mp-payloads.types';
 
 export class MpSession {
-	public readonly host: Player;
+	public hostId: string | null;
 	public readonly id: string;
+	/** Sitzung gehört zu einem Hub-Raum (feste ID hub-<RAUM>, Namen/Host aus dem Hub) */
+	public readonly fromHub: boolean;
 	public players: Player[] = [];
 	public lastActive: Date;
 
@@ -26,15 +28,50 @@ export class MpSession {
 
 	private readonly io: Server;
 
-	constructor(host: Player, io: Server) {
-		this.host = host;
-		this.addPlayer(host);
-		this.id = uuid();
+	constructor(host: Player | null, io: Server, opts: { id?: string; fromHub?: boolean } = {}) {
+		this.hostId = host ? host.id : null;
+		if (host) this.addPlayer(host);
+		this.id = opts.id ?? uuid();
+		this.fromHub = !!opts.fromHub;
 		this.currentRound = null;
 		this.pastRounds = [];
 		this.seenProducts = [];
 		this.io = io;
 		this.lastActive = new Date();
+	}
+
+	public get host(): Player | null {
+		return this.players.find(p => p.id === this.hostId) ?? null;
+	}
+
+	public get hostName(): string {
+		return this.host?.name ?? '';
+	}
+
+	public isHost(playerId: string | null | undefined) {
+		return !!playerId && playerId === this.hostId;
+	}
+
+	public setHost(playerId: string) {
+		this.hostId = playerId;
+		this.players.forEach(p => (p.isHost = p.id === playerId));
+	}
+
+	/** Spieler-ID der Verbindung – Aktionen gelten immer für den Spieler hinter dem Socket, nie für IDs aus der Nachricht */
+	public playerIdForSocket(socketId: string): string | null {
+		return this.players.find(p => p.socketId === socketId && !p.disconnectedAt)?.id ?? null;
+	}
+
+	public findPlayer(playerId: string) {
+		return this.players.find(p => p.id === playerId) ?? null;
+	}
+
+	public get connectedPlayers() {
+		return this.players.filter(p => !p.disconnectedAt);
+	}
+
+	public get playerNames() {
+		return this.connectedPlayers.map(p => p.name);
 	}
 
 	//Session management
@@ -80,11 +117,11 @@ export class MpSession {
 	//Player management
 	public addPlayer(player: Player) {
 		if (!player) {
-			throw new SocketError('Cannot add player with empty id or name.');
+			throw new SocketError('Spieler ohne Namen kann nicht beitreten.');
 		}
 
-		if (this.players.length >= (Number(process.env.MAX_PLAYERS_SESSION) || 10)) {
-			throw new SocketError('The session is full.');
+		if (this.connectedPlayers.length >= (Number(process.env.MAX_PLAYERS_SESSION) || 12)) {
+			throw new SocketError('Die Runde ist voll.');
 		}
 
 		this.players.push({ ...player, metrics: { points: 0, guesses: 0, bestGuess: 0 } });
@@ -112,8 +149,12 @@ export class MpSession {
 			.to(this.id)
 			.emit(OutgoingEvents.PLAYER_LEAVES, {
 				playerName: disconnectedPlayer.name,
-				players: this.players.length,
+				players: this.connectedPlayers.length,
+				playerNames: this.playerNames,
 			} as PlayerLeavesOutgoingPayload);
+
+		// Wer noch fehlt, ist vielleicht gerade gegangen – dann nicht bis zum Ende der Zeit warten
+		this.endRoundIfEveryoneGuessed();
 	}
 
 	public isSocketConnected(socketId: string) {
@@ -131,24 +172,26 @@ export class MpSession {
 			guesses: [],
 		};
 		this.refreshActivity();
+		// Der echte Preis geht erst mit dem Rundenergebnis raus, sonst stünde er schon im Netzwerkverkehr
+		const { price: _hidden, ...productWithoutPrice } = this.currentRound.product;
+		void _hidden;
 		return {
 			...this.currentRound,
-			endTime: new Date().setSeconds(
-				this.currentRound.startTime.getSeconds() + Number(process.env.MP_SESSION_ROUND_DURATION_SECONDS ?? 30)
-			),
+			product: productWithoutPrice,
+			endTime: this.currentRound.startTime.getTime() + this.currentRound.seconds * 1000,
 		};
 	}
 
 	public async guessPrice(playerId: string, points: number, guessedPrice: number) {
 		if (!this.currentRound) {
-			throw new SocketError('The round has finished');
+			throw new SocketError('Die Runde ist schon vorbei.');
 		}
 		if (this.currentRound.guesses.find(guess => guess.playerId == playerId)) {
-			throw new SocketError('Player has already guessed the price');
+			throw new SocketError('Du hast schon geschätzt.');
 		}
 		const player = this.players.find(player => player.id == playerId);
 		if (!player) {
-			throw new SocketError('Player is not in the session');
+			throw new SocketError('Du bist nicht in dieser Runde.');
 		}
 
 		this.currentRound.guesses.push({
@@ -165,11 +208,17 @@ export class MpSession {
 		player.metrics!.points += points;
 		player.metrics!.guesses++;
 
-		if (this.currentRound.guesses.length === this.players.length) {
+		this.refreshActivity();
+		this.endRoundIfEveryoneGuessed();
+	}
+
+	private endRoundIfEveryoneGuessed() {
+		if (!this.currentRound) return;
+		const guessed = new Set(this.currentRound.guesses.map(g => g.playerId));
+		const waiting = this.connectedPlayers.filter(p => !guessed.has(p.id));
+		if (this.currentRound.guesses.length > 0 && waiting.length === 0) {
 			this.endRound();
 		}
-
-		this.refreshActivity();
 	}
 
 	private endRound() {
@@ -187,7 +236,7 @@ export class MpSession {
 	public getGuessesLeft() {
 		return {
 			currentGuesses: this.currentRound?.guesses.length,
-			players: this.players.length,
+			players: this.connectedPlayers.length,
 		};
 	}
 
@@ -224,7 +273,9 @@ export class MpSession {
 	}
 
 	public checkSessionActive() {
-		if (compareDates(this.lastActive, new Date()) >= Number(process.env.MP_SESSION_INACTIVE_SECONDS ?? 180)) {
+		// Hub-Runden warten länger: Die Gruppe sitzt evtl. noch in der Lobby oder plaudert zwischen den Runden
+		const limit = this.fromHub ? Number(process.env.MP_HUB_SESSION_INACTIVE_SECONDS ?? 1800) : Number(process.env.MP_SESSION_INACTIVE_SECONDS ?? 180);
+		if (compareDates(this.lastActive, new Date()) >= limit) {
 			this.io.of('/mp-ws').to(this.id).emit(OutgoingEvents.SESSION_TERMINATE);
 			return false;
 		}

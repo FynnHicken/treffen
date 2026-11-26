@@ -23,21 +23,21 @@ export const ProductCard = ({
 			<CardContent className='w-full flex flex-row gap-4'>
 				<Image
 					src={image}
-					alt={`${name}'s image`}
+					alt={name}
 					className='w-fit lg:w-[50%] lg:min-w-[250px] min-w-[180px] lg:h-[300px]'
 				/>
 				<div className='[&>p]:mb-2 [&>p]:text-sm  [&>h3]:font-medium'>
-					<h3>Product name</h3>
+					<h3>Produkt</h3>
 					<p className='break-words text-wrap whitespace-normal'>{name}</p>
 
-					<h3 className='font-medium'>Source</h3>
+					<h3 className='font-medium'>Quelle</h3>
 					<p>{source}</p>
 
-					<h3 className='font-medium'>Price message</h3>
+					<h3 className='font-medium'>Preis-Info</h3>
 					<p>{priceMessage}</p>
 					{showingResult && (
 						<>
-							<h3>Price</h3>
+							<h3>Preis</h3>
 							<PriceContainer price={price} animate={animate} className='text-3xl font-bold' />
 						</>
 					)}
@@ -45,7 +45,7 @@ export const ProductCard = ({
 			</CardContent>
 			<CardFooter>
 				<Button className='w-full' onClick={onSelect}>
-					<CaretDoubleUp size={24} /> Select this one
+					<CaretDoubleUp size={24} /> Das ist teurer
 				</Button>
 			</CardFooter>
 		</Card>

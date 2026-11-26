@@ -102,6 +102,8 @@ services:
       PORT: 3005
       DATABASE_URL: "file:/app/prisma/dev.db"
       CORS_ORIGIN: "*"
+      # Hub-Tickets: Name und Host-Recht kommen signiert vom Party-Server
+      TREFFEN_TICKET_SECRET: ${TREFFEN_TICKET_SECRET:-}
     ports:
       - "3005:3005"
     networks:

@@ -10,9 +10,7 @@ interface Props {
 export const PriceContainer = ({ className, price, animate, animationDuration }: Props) => {
 	return (
 		<h2 className={className}>
-			{(import.meta.env.VITE_CURRENCY_SYMBOL_LOCATION ?? "before") === 'before' && (import.meta.env.VITE_CURRENCY_SYMBOL ?? '$')}
-			<CountUp end={price} decimal='.' decimals={2} duration={animate ? (animationDuration ?? 0.5) : 0.01} />
-			{import.meta.env.VITE_CURRENCY_SYMBOL_LOCATION === 'after' && (import.meta.env.VITE_CURRENCY_SYMBOL ?? '€')}
+			<CountUp end={price} separator='.' decimal=',' decimals={2} suffix=' €' duration={animate ? (animationDuration ?? 0.5) : 0.01} />
 		</h2>
 	);
 };

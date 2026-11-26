@@ -7,9 +7,9 @@ export const Navbar = () => {
 	const base = import.meta.env.BASE_URL || '/';
 
 	return (
-		<nav className='p-5 flex justify-between'>
+		<nav className='p-3 md:p-5 flex justify-between items-center'>
 			<Link to='/'>
-				<img src={`${base}images/${theme == 'dark' ? 'd-' : ''}logo.svg`} alt='Guess the price logo' className='w-[260px]' />
+				<img src={`${base}images/${theme == 'dark' ? 'd-' : ''}logo.svg`} alt='Guess the price logo' className='w-[180px] md:w-[260px]' />
 			</Link>
 			<div>
 				<ThemeToggle />

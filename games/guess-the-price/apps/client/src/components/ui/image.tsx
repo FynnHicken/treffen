@@ -11,12 +11,12 @@ export const Image = ({ src, alt, className }: Props) => {
 
 	return (
 		<div
-			className={`${className ?? 'w-[300px] '} aspect-square relative overflow-hidden rounded-md ${loading && 'bg-zinc-200 animate-pulse'}`}
+			className={`${className ?? 'w-[300px] '} aspect-square relative overflow-hidden rounded-md ${loading ? 'bg-zinc-200 dark:bg-zinc-800 animate-pulse' : 'bg-zinc-100 dark:bg-zinc-900'}`}
 		>
 			<img
 				src={src}
 				alt={alt}
-				className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 rounded-md'
+				className='absolute inset-0 w-full h-full object-contain rounded-md'
 				onLoad={() => setLoading(false)}
 			/>
 		</div>

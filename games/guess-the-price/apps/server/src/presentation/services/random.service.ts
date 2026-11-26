@@ -2,8 +2,6 @@ import { PrismaClient } from '@prisma/client';
 import { ControllerError } from '../../domain/errors/controller-error';
 import { checkControllerError } from '../../domain/errors/handlers/handle-controller-error';
 
-const MAX_PRICE_DIFF = 1;
-
 export class RandomService {
 	private static prisma = new PrismaClient();
 	private static productSelectProperties = {
@@ -20,6 +18,8 @@ export class RandomService {
 			},
 		},
 	};
+
+	public static countProducts = async () => this.prisma.product.count();
 
 	public static getRandomProduct = async (ignore: string[], category?: string) => {
 		try {
@@ -51,59 +51,35 @@ export class RandomService {
 		}
 	};
 
+	/**
+	 * „Was ist teurer?“: das aktuelle Produkt (oder ein zufälliges) plus ein zweites mit ähnlicher
+	 * Preisklasse (Faktor 0,4–2,5), damit es nicht zu leicht wird. Gibt es keins, irgendein anderes.
+	 */
 	public static getRandomProductHighLow = async (currentProductId: string, ignore: string[]) => {
 		try {
-			const products = [];
+			const toProduct = <T extends { price: unknown }>(p: T) => ({ ...p, price: Number(p.price) });
 
-			// First product
-			products[0] = await this.prisma.product.findUnique({
-				where: { id: currentProductId },
+			const current = currentProductId
+				? await this.prisma.product.findUnique({ where: { id: currentProductId }, select: this.productSelectProperties })
+				: null;
+			const first = current ? toProduct(current) : await this.getRandomProduct(ignore);
+			if (!first) throw new ControllerError('Kein Produkt gefunden.', 404);
+
+			const others = await this.prisma.product.findMany({
+				where: { id: { notIn: [...ignore, first.id] } },
 				select: this.productSelectProperties,
 			});
+			if (!others.length) throw new ControllerError('Kein zweites Produkt gefunden.', 404);
 
-			if (!products[0]) {
-				products[0] = await this.getRandomProduct(ignore);
-			}
-
-			if (!products[0]) {
-				throw new ControllerError('Could not find any product', 404);
-			}
-
-			// Second product
-			const limitedProductCount = await this.prisma.product.count({
-				where: {
-					id: { notIn: [...ignore, products[0].id] },
-					price: { lte: Number(products[0].price) + MAX_PRICE_DIFF, gte: Number(products[0].price) - MAX_PRICE_DIFF },
-				},
+			const price = Number(first.price);
+			const similar = others.filter(p => {
+				const ratio = Number(p.price) / price;
+				return ratio >= 0.4 && ratio <= 2.5 && Number(p.price) !== price;
 			});
+			const pool = similar.length ? similar : others;
+			const second = pool[Math.floor(Math.random() * pool.length)];
 
-			if (limitedProductCount == 0) {
-				products[1] = await this.getRandomProduct([...ignore, products[0].id]);
-				return products;
-			}
-
-			products[1] = await this.prisma.product.findFirst({
-				orderBy: { id: 'desc' },
-				where: {
-					id: { notIn: [...ignore, products[0].id] },
-					price: { lte: Number(products[0].price) + MAX_PRICE_DIFF, gte: Number(products[0].price) - MAX_PRICE_DIFF },
-				},
-				skip: Math.floor(Math.random() * limitedProductCount),
-
-				select: this.productSelectProperties,
-			});
-
-			if (!products[1]) {
-				throw new ControllerError('Could not find any product', 404);
-			}
-
-			const { price: selectedProductPrice, ...selectedProductRest } = products[0];
-			const { price: newProductPrice, ...newProductRest } = products[1];
-
-			return {
-				selectedProduct: { price: Number(selectedProductPrice), ...selectedProductRest },
-				newProduct: { price: Number(newProductPrice), ...newProductRest },
-			};
+			return { selectedProduct: first, newProduct: toProduct(second) };
 		} catch (error) {
 			console.error(error);
 			checkControllerError(error as Error, 'Could not get random product high low');

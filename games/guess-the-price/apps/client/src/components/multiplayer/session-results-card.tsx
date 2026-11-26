@@ -11,6 +11,7 @@ interface Props {
 	results: PlayerSessionResultsRecord[];
 	roundsPlayed: number;
 	isHost: boolean;
+	canTerminate?: boolean;
 
 	onTerminateSession: () => void;
 	onContinuePlaying: () => void;
@@ -32,7 +33,7 @@ const itemVariant = {
 	visible: { opacity: 1, x: 0 },
 };
 
-export const SessionResultsCard = ({ results, roundsPlayed, isHost, onTerminateSession, onContinuePlaying }: Props) => {
+export const SessionResultsCard = ({ results, roundsPlayed, isHost, canTerminate = true, onTerminateSession, onContinuePlaying }: Props) => {
 	const playerName = useMpStore(state => state.playerName);
 
 	return (
@@ -40,8 +41,8 @@ export const SessionResultsCard = ({ results, roundsPlayed, isHost, onTerminateS
 			{results.length > 0 && results[0].playerName == playerName && <Fireworks autorun={{ speed: 0.2 }} />}
 			<Card>
 				<CardHeader>
-					<CardTitle>Session results</CardTitle>
-					<CardDescription>This session ended, let's see the results.</CardDescription>
+					<CardTitle>Gesamtwertung</CardTitle>
+					<CardDescription>{roundsPlayed} {roundsPlayed === 1 ? 'Runde' : 'Runden'} gespielt – so steht es.</CardDescription>
 				</CardHeader>
 				<CardContent>
 					<motion.div initial='hidden' animate='visible' variants={containerVariant} className='flex flex-col gap-4'>
@@ -55,18 +56,18 @@ export const SessionResultsCard = ({ results, roundsPlayed, isHost, onTerminateS
 									<div className='flex gap-2 items-center justify-start'>
 										<h3 className='text-lg font-semibold'>#{i + 1}</h3>
 										<h3 className='font-medium'>
-											{result.playerName} {playerName == result.playerName && '(You)'}
+											{result.playerName} {playerName == result.playerName && '(du)'}
 										</h3>
 									</div>
 									<div className='text-start'>
 										<p className='text-zinc-600 dark:text-zinc-400'>
-											Total points:
+											Punkte:
 											<span className='ml-1 text-neutral-900 font-semibold dark:text-zinc-100'>
 												{result.points}/{100 * roundsPlayed}
 											</span>
 										</p>
 										<p className='text-zinc-600 dark:text-zinc-400'>
-											Best guess:{' '}
+											Beste Schätzung:{' '}
 											<span className='ml-1 text-neutral-900 font-semibold dark:text-zinc-100'>
 												{result.bestGuess}/100
 											</span>
@@ -80,20 +81,21 @@ export const SessionResultsCard = ({ results, roundsPlayed, isHost, onTerminateS
 				{isHost && (
 					<CardFooter className='flex-col items-start gap-2'>
 						<div className='flex md:flex-row flex-col md:gap-4 gap-2 w-full'>
-							<DestructiveActionButton
-								title='Are you sure?'
-								description='If you terminate this session you will need to create a new one and invite everyone again to continue playing.'
-								onConfirm={onTerminateSession}
-							>
-								<SignOut size={24} /> Terminate session
-							</DestructiveActionButton>
+							{canTerminate && (
+								<DestructiveActionButton
+									title='Runde auflösen?'
+									description='Danach müsst ihr eine neue Runde erstellen und alle neu einladen.'
+									onConfirm={onTerminateSession}
+								>
+									<SignOut size={24} /> Auflösen
+								</DestructiveActionButton>
+							)}
 							<Button className='w-full' onClick={onContinuePlaying}>
-								<GameController size={24} /> Play again
+								<GameController size={24} /> Neues Spiel
 							</Button>
 						</div>
 						<p className='text-sm text-neutral-600 dark:text-neutral-400'>
-							*You are the host of this session, you can restart the session and continue playing with the same players.
-							Or you can terminate the session to stop playing.
+							Du leitest die Runde: „Neues Spiel“ setzt die Punkte zurück, alle bleiben dabei.
 						</p>
 					</CardFooter>
 				)}

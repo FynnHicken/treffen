@@ -342,3 +342,15 @@ button { font-family: inherit; }
     font-family: var(--hub-text); font-weight: 600;
 }
 [data-theme="cyber-arcade"] .toast { width: max-content; max-width: calc(100vw - 32px); text-align: center; font-size: 15px; padding: 10px 18px; }
+
+/* Leiste über dem laufenden Spiel */
+[data-theme="cyber-arcade"] .game-hud { background: var(--hub-tile); border-bottom: 1px solid var(--hub-line-strong); box-shadow: none; }
+[data-theme="cyber-arcade"] .hud-btn {
+    background: transparent; color: var(--hub-cyan); border: 1px solid var(--hub-cyan); box-shadow: none;
+    border-radius: 10px; font-family: var(--hub-display); font-size: 14px; letter-spacing: 1px; min-height: 38px;
+}
+[data-theme="cyber-arcade"] .hud-btn:hover { transform: none; background: rgba(77, 232, 255, 0.1); box-shadow: none; }
+[data-theme="cyber-arcade"] .hud-game-title { font-family: var(--hub-display); font-size: 18px; }
+[data-theme="cyber-arcade"] .hud-status-dot { background: var(--hub-green); border: 0; box-shadow: 0 0 8px var(--hub-green); }
+[data-theme="cyber-arcade"] .hud-status, [data-theme="cyber-arcade"] .hud-room { font-family: var(--hub-display); letter-spacing: 1px; font-size: 13px; }
+[data-theme="cyber-arcade"] .hud-room strong { background: none; border: 0; color: var(--hub-cyan); padding: 0; letter-spacing: 2px; }

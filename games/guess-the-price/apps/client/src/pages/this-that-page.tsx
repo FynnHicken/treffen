@@ -72,8 +72,8 @@ export const ThisOrThatPage = () => {
 			<>
 				<div>
 					<div className='mb-10'>
-						<h1 className='font-semibold text-3xl'>This or that mode</h1>
-						<p className='text-zinc-600 dark:text-zinc-400'>Get two products and guess which one is more expensive.</p>
+						<h1 className='font-semibold text-3xl'>Was ist teurer?</h1>
+						<p className='text-zinc-600 dark:text-zinc-400'>Zwei Produkte – tippe auf das teurere.</p>
 					</div>
 					<motion.div
 						initial={{ opacity: 0 }}
@@ -91,8 +91,8 @@ export const ThisOrThatPage = () => {
 	return (
 		<div>
 			<div className='mb-10'>
-				<h1 className='font-semibold text-3xl'>This or that mode</h1>
-				<p className='text-zinc-600 dark:text-zinc-400'>Get two products and guess which one is more expensive.</p>
+				<h1 className='font-semibold text-3xl'>Was ist teurer?</h1>
+				<p className='text-zinc-600 dark:text-zinc-400'>Zwei Produkte – tippe auf das teurere.</p>
 			</div>
 			<AnimatePresence>
 				{!products?.newProduct.name || !products.selectedProduct.name ? (

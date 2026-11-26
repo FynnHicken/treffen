@@ -16,7 +16,7 @@ const basename = typeof window !== 'undefined' && window.location.pathname.start
 
 createRoot(document.getElementById('root')!).render(
 	<StrictMode>
-		<ThemeProvider defaultTheme='light' storageKey='theme'>
+		<ThemeProvider defaultTheme='dark' storageKey='theme'>
 			<BrowserRouter basename={basename}>
 				<Routes>
 					<Route element={<MainLayout />}>
