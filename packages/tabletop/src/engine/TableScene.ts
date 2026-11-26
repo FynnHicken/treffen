@@ -136,7 +136,8 @@ export class TableScene {
 
     private frame(now: number): void {
         this.frameRequested = false;
-        const dt = Math.min(0.1, (now - this.lastTime) / 1000);
+        // Höchstens 0,25 s pro Bild: kein Springen, aber auf langsamen Geräten auch kein Zeitlupen-Effekt
+        const dt = Math.min(0.25, (now - this.lastTime) / 1000);
         this.lastTime = now;
         let busy = this.controls.update();          // true, solange Dämpfung nachläuft
         for (const a of [...this.animators]) {

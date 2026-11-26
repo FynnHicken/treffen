@@ -78,7 +78,7 @@ async def main():
         ok(f_anna == "t0" and f_ben == "t0", f"Figur auf Startfeld A (Anna: {f_anna}, Ben: {f_ben})")
         async def resting(page):
             try:
-                await page.wait_for_function("__tisch.pieces.isResting()", timeout=5000)
+                await page.wait_for_function("__tisch.pieces.isResting()", timeout=30000)
                 return True
             except Exception:
                 return False
