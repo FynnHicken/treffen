@@ -142,6 +142,8 @@ jedem Event, Hub schickt Avatare (bis 32 KB) bei jedem `ROSTER_SYNC`, 3D rendert
 
 **➡️ Offene Arbeit der letzten Sitzung: [`HANDOFF.md`](HANDOFF.md) (Modus „Manuell“, Handy-Überarbeitung).**
 
+**Checkliste Nutzer:** Handytest Mensch (über den Hub, echtes Gerät) – Feedback abwarten, dann Handy-Feinschliff.
+
 **Als Nächstes:** Browser-Playtest des Gameplay-Pakets durch den Nutzer (Server-Seite ist getestet,
 UI noch nicht von Hand). Weitere Ideen: [`games/monopoly/DEVELOPMENT.md` → Roadmap](games/monopoly/DEVELOPMENT.md#roadmap--status).
 
