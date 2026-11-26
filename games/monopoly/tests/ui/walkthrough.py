@@ -50,6 +50,9 @@ SETTLE_JS = """() => {
   const mine = st.current_player && st.players && g.getState && st.current_player.id === (st.players.find(p => p.name === 'Testi') || {}).id;
   if (mine && pa.type === 'TAX_CHOICE') g.payIncomeTax('flat');
   if (mine && pa.type === 'CARD_DRAWN' && g.confirmCard) g.confirmCard();
+  // Manueller Modus: Karte selbst aufdecken bzw. Figur selbst ziehen (Knopf in der Hinweisleiste)
+  const manualBtn = document.getElementById('manual-prompt-btn');
+  if (mine && (pa.type === 'DRAW_CARD' || pa.type === 'MOVE_TOKEN') && manualBtn && manualBtn.offsetParent) manualBtn.click();
   if (mine && pa.type === 'BUY_OR_AUCTION' && pa.square) g.buyProperty(pa.square.index);
   const open = [...document.querySelectorAll('.modal-overlay.open')].filter(m => m.id !== 'modal-lobby');
   open.forEach(m => g.closeModal && g.closeModal(m.id));
@@ -57,7 +60,7 @@ SETTLE_JS = """() => {
   return !blocking && open.length === 0;
 }"""
 
-async def settle(page, timeout_s=15):
+async def settle(page, timeout_s=25):
     """Pflicht-Entscheidungen des eigenen Zugs erledigen und Fenster schließen, bis nichts mehr im Weg ist.
     (Karten/Steuer erscheinen erst nach der Animation – deshalb mehrfach prüfen.)"""
     calm = 0
