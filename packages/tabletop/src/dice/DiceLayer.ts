@@ -469,7 +469,9 @@ export class DiceLayer {
             const now = performance.now();
             const cup = this.cup;
             // Weiterreichen, sobald die Würfel liegen und niemand den Becher hält
-            const holder = this.holderSeat();
+            // Ein anstehender Wurf hat Vorrang: Der Becher muss erst zum Werfenden, auch wenn der Zug
+            // (z. B. nach dem 3. Fehlversuch) schon beim Nächsten ist – sonst wartet der Wurf ewig.
+            const holder = this.queued ? this.queued.thr.seat : this.holderSeat();
             const diceBusy = !!this.gather || (!!this.recording && this.playTime !== Infinity);
             if (!this.travel && holder !== null && holder !== this.cupSeat && !diceBusy && this.tipT === null && !this.holding) {
                 this.moveCupTo(holder);

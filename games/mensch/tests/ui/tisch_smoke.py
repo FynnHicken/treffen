@@ -2,6 +2,8 @@
 
     podman run --rm --network=host -v "$PWD/games/mensch":/work:z -w /work localhost/mono-ui-test \
         python tests/ui/tisch_smoke.py http://127.0.0.1:8095 /work/tests/ui/shots
+
+Langsame Maschine (wie die CI) nachstellen: `-e THROTTLE=4` an `podman run` anhängen.
 """
 import asyncio, os, random, string, sys
 from playwright.async_api import async_playwright
@@ -23,6 +25,9 @@ def ok(c, m):
 async def open_player(browser, name, **ctx):
     c = await browser.new_context(locale="de-DE", **ctx)
     p = await c.new_page()
+    if os.environ.get("THROTTLE"):           # langsame Maschine nachstellen (z. B. THROTTLE=4)
+        cdp = await c.new_cdp_session(p)
+        await cdp.send("Emulation.setCPUThrottlingRate", {"rate": float(os.environ["THROTTLE"])})
     errs = []
     p.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
     p.on("pageerror", lambda e: errs.append("pageerror: " + str(e)))
@@ -90,8 +95,13 @@ async def main():
                 await anna.wait_for_timeout(800)
                 ok(await anna.evaluate("__tisch.dice.topValues().length") == 0, "Beim Schütteln liegt der Würfel im Becher (eingesammelt)")
         await anna.mouse.up()
-        await anna.wait_for_timeout(500)
-        ok(await dice_done(ben), "Becher geschüttelt → gewürfelt")
+        # auf den neuen Wurf warten (nicht nur „ruht“ – der alte Wurf ruht ja auch)
+        try:
+            await ben.wait_for_function(f"__tisch.client.state.last_roll.throw.seed !== {seed_before} && __tisch.dice.isResting() && __tisch.dice.topValues().length", timeout=90000)
+            rolled = True
+        except Exception:
+            rolled = False
+        ok(rolled, "Becher geschüttelt → gewürfelt")
         lr = await ben.evaluate("__tisch.client.state.last_roll")
         ok(lr["throw"]["seed"] != seed_before and lr["throw"]["power"] > 0.4, f"Neuer Wurf, Stärke aus dem Schütteln: {lr['throw']['power']}")
         ok(await ben.evaluate("__tisch.dice.topValues()") == lr["values"], "Auch dieser Wurf zeigt die Server-Zahl")
@@ -129,7 +139,7 @@ async def main():
                 return "roll"
             if st["play"]["phase"] != "move":
                 return None
-            await page.wait_for_function("__tisch.pieces.isResting()", timeout=30000)
+            await page.wait_for_function("__tisch.pieces.isResting() && __tisch.dice.isResting()", timeout=60000)
             mv = st["play"]["moves"][0]
             legal = [m["to"] for m in st["play"]["moves"] if m["piece"] == mv["piece"]]
             src = await page.evaluate(f"__tisch.pieces.screenPos('{mv['piece']}')")
@@ -148,7 +158,10 @@ async def main():
                 dst = await page.evaluate(f"__tisch.pieces.fieldScreenPos('{mv['to']}')")
                 await drag(page, src, dst)
                 how = "ziehen"
-            await page.wait_for_timeout(900)
+            try:
+                await page.wait_for_function(f"__tisch.client.state.pieces['{mv['piece']}'].field === '{mv['to']}'", timeout=20000)
+            except Exception:
+                pass
             field = await page.evaluate(f"__tisch.client.state.pieces['{mv['piece']}'].field")
             ok(field == mv["to"], f"{name} zieht {mv['piece']} → {mv['to']} ({how})")
             return "move"
