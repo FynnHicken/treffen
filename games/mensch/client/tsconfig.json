@@ -15,7 +15,8 @@
       "@treffen/boardgame-kit": ["../../../packages/boardgame-kit/src/index.ts"],
       "@treffen/tabletop": ["../../../packages/tabletop/src/index.ts"],
       "three": ["./node_modules/@types/three/index.d.ts"],
-      "three/addons/*": ["./node_modules/@types/three/examples/jsm/*"]
+      "three/addons/*": ["./node_modules/@types/three/examples/jsm/*"],
+      "cannon-es": ["./node_modules/cannon-es/dist/cannon-es.d.ts"]
     }
   },
   "include": ["src", "../../../packages/boardgame-kit/src", "../../../packages/tabletop/src"]

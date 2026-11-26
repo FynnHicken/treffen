@@ -27,8 +27,21 @@ export interface PieceSpec {
     field: string;   // Startfeld
 }
 
+export interface ThrowSpec {
+    power: number;
+    seed: number;
+    seat: number;
+}
+
+export interface Roll {
+    by: string;
+    values: number[];
+    throw: ThrowSpec;
+}
+
 export interface Layout {
     board?: { kind: string; size: number; spacing?: number };
+    dice?: { count: number; sides: number };
     palette?: Record<string, string>;
     fields: Record<string, FieldSpec>;
     pieces: Record<string, PieceSpec>;
@@ -46,6 +59,7 @@ export interface TableState {
     members: Member[];
     layout: Layout;
     pieces: Record<string, PieceState>;
+    last_roll: Roll | null;
 }
 
 export type TableEvent =
@@ -55,7 +69,8 @@ export type TableEvent =
     | { type: 'HOST_CHANGED'; host_id: string | null }
     | { type: 'PIECE_GRABBED'; piece: string; by: string }
     | { type: 'PIECE_RELEASED'; piece: string }
-    | { type: 'PIECE_MOVED'; piece: string; from: string; to: string; by: string };
+    | { type: 'PIECE_MOVED'; piece: string; from: string; to: string; by: string }
+    | { type: 'DICE_ROLLED'; by: string; values: number[]; throw: ThrowSpec };
 
 export function applyEvent(state: TableState, ev: TableEvent): TableState {
     switch (ev.type) {
@@ -73,6 +88,8 @@ export function applyEvent(state: TableState, ev: TableEvent): TableState {
             return withPiece(state, ev.piece, { held_by: null });
         case 'PIECE_MOVED':
             return withPiece(state, ev.piece, { field: ev.to, held_by: null });
+        case 'DICE_ROLLED':
+            return { ...state, last_roll: { by: ev.by, values: ev.values, throw: ev.throw } };
         default:
             return state;   // unbekannte Ereignisse (neuere Server-Version) ignorieren
     }

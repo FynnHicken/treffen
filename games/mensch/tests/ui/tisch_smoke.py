@@ -101,6 +101,38 @@ async def main():
         ok(await resting(anna), "…und ist zurückgeglitten")
         await anna.screenshot(path=f"{OUT}/desktop-anna-brett.png")
 
+        # ---- M3: Würfel ----
+        async def dice_done(page):
+            try:
+                await page.wait_for_function("__tisch.dice.isResting() && __tisch.client.state.last_roll", timeout=60000)
+                return True
+            except Exception:
+                return False
+        await anna.click("#roll-btn")
+        await anna.wait_for_timeout(400)
+        ok(await dice_done(anna) and await dice_done(ben), "Würfel per Knopf geworfen und liegen bei beiden")
+        roll = await anna.evaluate("__tisch.client.state.last_roll.values")
+        ta, tb = await anna.evaluate("__tisch.dice.topValues()"), await ben.evaluate("__tisch.dice.topValues()")
+        ok(ta == roll and tb == roll, f"Oben liegt die Server-Zahl {roll} (Anna {ta}, Ben {tb})")
+        ia, ib = await anna.evaluate("__tisch.dice.lastRollInfo()"), await ben.evaluate("__tisch.dice.lastRollInfo()")
+        ok(ia["positions"] == ib["positions"], f"Würfel liegt bei beiden gleich ({ia['positions']}), Wurf dauert {ia['seconds']:.2f} s")
+        await anna.screenshot(path=f"{OUT}/desktop-anna-wurf.png")
+        # Becher greifen und schütteln
+        await anna.wait_for_timeout(1600)    # Sperre nach dem letzten Wurf
+        cup = await anna.evaluate("__tisch.dice.cupScreenPos(0)")
+        seed_before = await anna.evaluate("__tisch.client.state.last_roll.throw.seed")
+        await anna.mouse.move(cup["x"], cup["y"]); await anna.mouse.down()
+        for i in range(24):
+            await anna.mouse.move(cup["x"] + (40 if i % 2 else -40), cup["y"] + (15 if i % 3 else -15))
+            await anna.wait_for_timeout(25)
+        await anna.mouse.up()
+        await anna.wait_for_timeout(500)
+        ok(await dice_done(ben), "Becher geschüttelt → gewürfelt")
+        lr = await ben.evaluate("__tisch.client.state.last_roll")
+        ok(lr["throw"]["seed"] != seed_before and lr["throw"]["power"] > 0.4, f"Neuer Wurf, Stärke aus dem Schütteln: {lr['throw']['power']}")
+        ok(await ben.evaluate("__tisch.dice.topValues()") == lr["values"], "Auch dieser Wurf zeigt die Server-Zahl")
+        await ben.screenshot(path=f"{OUT}/handy-ben-wurf.png")
+
         # Ben setzt sich auf einen anderen freien Platz (Klick auf Schild)
         await ben.evaluate("__tisch.client.sit(2)")
         await anna.wait_for_timeout(600)

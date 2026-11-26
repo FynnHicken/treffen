@@ -180,6 +180,8 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None) -> FastAPI:
                         await broadcast(room_id, room.sit(member_id, data.get("seat")))
                     elif action == "STAND":
                         await broadcast(room_id, room.stand_up(member_id))
+                    elif action == "ROLL":
+                        await broadcast(room_id, room.roll(member_id, data.get("power")))
                     elif action == "GRAB":
                         await broadcast(room_id, room.grab(member_id, data.get("piece")))
                     elif action == "RELEASE":

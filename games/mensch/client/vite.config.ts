@@ -13,7 +13,7 @@ export default defineConfig({
             '@treffen/tabletop': pkg('tabletop/src')
         },
         // three aus node_modules dieses Projekts – auch für Importe aus packages/
-        dedupe: ['three']
+        dedupe: ['three', 'cannon-es']
     },
     build: { outDir: '../static3d', emptyOutDir: true, sourcemap: true, chunkSizeWarningLimit: 1500 },
     server: {

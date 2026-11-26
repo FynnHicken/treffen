@@ -24,7 +24,7 @@ Räumen, Host, Abstimmung, synchronem Start) bettet mehrere Multiplayer-Spiele p
 Brettspiele möglichst viel Code (Rendering, Verbindung, UI) übernehmen: [`packages/boardgame-kit/README.md`](packages/boardgame-kit/README.md).
 **Neu (2026-11-26): Treffen-Spieltisch** – spielneutrales 3D-Brettspiel-Framework, erstes Spiel Mensch ärgere dich nicht.
 Konzept & Fahrplan: [`docs/tabletop/KONZEPT.md`](docs/tabletop/KONZEPT.md). Code: `packages/tabletop` (Client-Engine),
-`packages/tabletop-server` (Python), erstes Spiel `games/mensch/client` + `games/mensch/server3d` (Port 8095, noch nicht im Hub). **M1 ✅ M2 ✅** (Brett + Figuren ziehen, noch ohne Regeln). Entscheidungen des Nutzers: Spielgefühl hat
+`packages/tabletop-server` (Python), erstes Spiel `games/mensch/client` + `games/mensch/server3d` (Port 8095, noch nicht im Hub). **M1 ✅ M2 ✅ M3 ✅** (Brett, Figuren ziehen, Physik-Würfel mit Becher – noch ohne Regeln). Entscheidungen des Nutzers: Spielgefühl hat
 Vorrang, Regeln werden automatisch vom Server mitgeprüft; freier Modus (wie Tabletop Simulator) evtl. später als Einstellung.
 Der Monopoly-Client ist ein Vite-Projekt (`games/monopoly/client/`), das vor dem Deployen gebaut wird (passiert im Docker-Image). → [`games/monopoly/DEVELOPMENT.md`](games/monopoly/DEVELOPMENT.md)
 

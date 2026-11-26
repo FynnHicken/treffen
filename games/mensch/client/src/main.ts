@@ -3,7 +3,7 @@
  */
 import './app.css';
 import {
-    createPawn, isTouchDevice, PieceLayer, Presence, SeatLabels, TableClient, TableScene, unlockAudioOnGesture
+    createPawn, DiceLayer, isTouchDevice, PieceLayer, Presence, SeatLabels, TableClient, TableScene, unlockAudioOnGesture
 } from '@treffen/tabletop';
 import { BOARD_THICKNESS, createBoard } from './board';
 
@@ -78,6 +78,15 @@ async function start(): Promise<void> {
         surfaceY: BOARD_THICKNESS,
         createMesh: (_id, spec, layout) => createPawn(layout.palette?.[spec.color ?? ''] ?? '#999')
     });
+    // Würfel: rollen im Streifen zwischen Brett und Tischkante; das Brett ist ein Hindernis
+    const BOARD_SIZE = 11 * 0.8 + 0.9;
+    const dice = new DiceLayer(table, client, {
+        obstacles: [{ x: 0, z: 0, w: BOARD_SIZE, d: BOARD_SIZE, h: BOARD_THICKNESS }]
+    });
+    const rollBtn = document.getElementById('roll-btn') as HTMLButtonElement;
+    rollBtn.addEventListener('click', () => dice.throwDice(0.6));
+    client.onState(s => { rollBtn.hidden = !s.members.some(m => m.id === client.you && m.seat !== null); });
+
     client.onError(err => {
         if (err.code === 'DROP_REJECTED') toast('Dort kann die Figur nicht hin.');
     });
@@ -87,7 +96,7 @@ async function start(): Promise<void> {
     setTimeout(() => document.getElementById('hint')?.classList.add('fade'), 6000);
 
     // Für Tests und Fehlersuche
-    (window as any).__tisch = { table, client, presence, pieces };
+    (window as any).__tisch = { table, client, presence, pieces, dice };
 }
 
 start();

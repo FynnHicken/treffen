@@ -57,7 +57,7 @@ def build_layout() -> dict:
         for k in range(4):
             pieces[f"p-{color}-{k}"] = {"kind": "pawn", "seat": seat, "color": color, "field": f"h-{color}-{k}"}
     return {"board": {"kind": "mensch", "size": 11 * SPACING + 0.9, "spacing": SPACING},
-            "palette": PALETTE, "fields": fields, "pieces": pieces}
+            "palette": PALETTE, "fields": fields, "pieces": pieces, "dice": {"count": 1, "sides": 6}}
 
 
 LAYOUT = build_layout()

@@ -6,6 +6,7 @@ Protokoll (Server → Client):
   PRESENCE {from, p}                Zeiger/„hält etwas“ eines anderen Mitglieds (ungeprüft, nicht gespeichert)
   ERROR    {code, message}          nur an den Absender
 """
+import random
 import re
 import time
 from typing import Dict, List, Optional
@@ -24,7 +25,8 @@ def clean_text(value, max_len: int, fallback: str = "") -> str:
 class GameDef:
     """Was der Tisch über ein Spiel wissen muss (Regeln kommen in M4 dazu).
 
-    layout: {"fields": {id: {x, z, kind, color?}}, "pieces": {id: {kind, seat, field}}}
+    layout: {"fields": {id: {x, z, kind, color?}}, "pieces": {id: {kind, seat, field}},
+             "dice": {"count": 1, "sides": 6}}
       - Felder sind Ablageplätze mit Tisch-Koordinaten (Mitte = 0,0; Platz 0 sitzt bei +z).
       - Figuren gehören einem Sitzplatz (`seat`) und stehen anfangs auf `field`.
     """
@@ -78,6 +80,8 @@ class Room:
         self.pieces: Dict[str, dict] = {
             pid: {"field": p["field"], "held_by": None} for pid, p in game.layout.get("pieces", {}).items()
         }
+        self.last_roll: Optional[dict] = None
+        self._rng = random.SystemRandom()       # Würfel: nicht vorhersagbar
 
     # ---------- Zustand ----------
     def state(self) -> dict:
@@ -89,6 +93,7 @@ class Room:
             "members": [m.to_dict(self.game) for m in sorted(self.members.values(), key=lambda m: m.joined_at)],
             "layout": self.game.layout,
             "pieces": {pid: dict(p) for pid, p in self.pieces.items()},
+            "last_roll": self.last_roll,
         }
 
     def next_event(self, event: dict) -> dict:
@@ -155,6 +160,31 @@ class Room:
             return []
         m.connected, m.disconnected_at = False, time.time()
         return self.release_all(member_id) + [self.next_event({"type": "MEMBER_UPDATED", "member": m.to_dict(self.game)})]
+
+    # ---------- Würfel ----------
+    ROLL_LOCK_SEC = 1.5       # solange rollen die Würfel noch – kein zweiter Wurf
+
+    def roll(self, member_id: str, power=None, now: Optional[float] = None) -> List[dict]:
+        """Würfeln. Ergebnis bestimmt nur der Server; `throw` beschreibt den Wurf für die Animation
+        (alle Clients simulieren mit denselben Startwerten). Ohne Regeln (M3): jeder, der sitzt."""
+        now = time.time() if now is None else now
+        m = self.members.get(member_id)
+        spec = self.game.layout.get("dice") or {}
+        if not m or not m.connected or m.seat is None or not spec:
+            return []
+        if self.last_roll and now - self.last_roll["at"] < self.ROLL_LOCK_SEC:
+            return []
+        try:
+            power = min(1.0, max(0.0, float(power)))
+        except (TypeError, ValueError):
+            power = 0.6
+        if power != power:      # NaN
+            power = 0.6
+        sides, count = int(spec.get("sides", 6)), int(spec.get("count", 1))
+        values = [self._rng.randint(1, sides) for _ in range(count)]
+        throw = {"power": round(power, 3), "seed": self._rng.getrandbits(31), "seat": m.seat}
+        self.last_roll = {"by": member_id, "values": values, "throw": throw, "at": now}
+        return [self.next_event({"type": "DICE_ROLLED", "by": member_id, "values": values, "throw": throw})]
 
     # ---------- Figuren (M2: ohne Spielregeln) ----------
     def _may_touch(self, member_id: str, piece_id: str) -> bool:

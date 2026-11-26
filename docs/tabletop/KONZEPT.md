@@ -1,6 +1,6 @@
 # Treffen-Spieltisch – Konzept
 
-> Stand: 2026-11-26 · Status: **abgestimmt · M1 ✅ · M2 ✅ · als Nächstes M3 (Würfel)** · Erstes Spiel: Mensch ärgere dich nicht
+> Stand: 2026-11-26 · Status: **abgestimmt · M1 ✅ · M2 ✅ · M3 ✅ · als Nächstes M4 (Regeln + Bots)** · Erstes Spiel: Mensch ärgere dich nicht
 
 ## 1. Ziel
 
@@ -72,7 +72,7 @@ games/mensch/
 Monopoly bleibt unverändert lauffähig und ist **Steinbruch** (Würfel, Hüpfen, Kamera, Sounds, Bot-Erfahrung).
 
 **Technik:** Three.js aktuell (0.187.0, exakt gepinnt), Vite + TypeScript strict, Physik-Engine für Würfel
-(Kandidaten cannon-es oder Rapier, Entscheidung in M3), Python/FastAPI wie bei Monopoly/Mensch.
+(**cannon-es 0.20.0**, entschieden in M3: klein, reines JS, deterministisch genug – alle Clients berechnen denselben Wurf identisch), Python/FastAPI wie bei Monopoly/Mensch.
 
 ## 5. Wie Client und Server reden
 
@@ -126,7 +126,7 @@ Typen, Figuren (Modell, Farben), Würfel-Anzahl, Sitzplätze. Der Tisch baut dar
 |---|---|
 | **M1 Leerer Tisch** ✅ | 3D-Tisch, Sitzplätze, Kamera mit Gesten, zwei Browser sehen sich (Präsenz-Zeiger), Hub-Ticket |
 | **M2 Gegenstände** ✅ | Mensch-Brett + Figuren: greifen, ziehen, einrasten, Sync über Server (noch ohne Regeln) |
-| **M3 Würfel** | Becher, Physik-Würfel, Ergebnis vom Server, Klang + Vibration |
+| **M3 Würfel** ✅ | Becher, Physik-Würfel, Ergebnis vom Server, Klang + Vibration |
 | **M4 Regeln** | Regel-Schnittstelle, Mensch-Regeln portiert, Zielvorschau, „gleitet zurück“, Bots |
 | **M5 Fertig** | Lobby, Einstellungen, Persistenz, Zuschauer, Handy-Feinschliff → ersetzt das heutige 2D-Mensch im Hub |
 | später | Karten/Hand/Stapel, Geld/Marker, freier Modus (Einstellung), weitere Spiele, Monopoly v2 |

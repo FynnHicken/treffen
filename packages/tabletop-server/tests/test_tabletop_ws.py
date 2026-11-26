@@ -79,6 +79,8 @@ def apply(state, ev):
         state["pieces"][ev["piece"]]["held_by"] = None
     elif t == "PIECE_MOVED":
         state["pieces"][ev["piece"]].update(field=ev["to"], held_by=None)
+    elif t == "DICE_ROLLED":
+        state["last_roll"] = {"by": ev["by"], "values": ev["values"], "throw": ev["throw"]}
 
 
 async def settle(t=0.3):
@@ -191,6 +193,31 @@ async def main():
     await b2.send(action="DROP", piece="p0", field="f3")
     await settle()
     ok(piece(a, "p0")["field"] == "f2", "Nur wer hält, kann absetzen")
+    print("== Würfeln (M3, ohne Regeln) ==")
+    await x.send(action="ROLL", power=0.5)                 # Zuschauer
+    await settle()
+    ok(a.state.get("last_roll") is None, "Zuschauer kann nicht würfeln")
+    await b2.send(action="ROLL", power=0.8)
+    await settle()
+    lr = a.state.get("last_roll") or {}
+    ok(lr.get("by") == "bob" and len(lr.get("values", [])) == 1 and 1 <= lr["values"][0] <= 6, f"Bob würfelt: {lr.get('values')}")
+    ok(lr.get("throw", {}).get("seat") == 1 and lr["throw"]["power"] == 0.8 and isinstance(lr["throw"]["seed"], int), "Wurfparameter für die Animation")
+    seq_before = a.seq
+    await a.send(action="ROLL", power=0.5)
+    await settle()
+    ok(a.seq == seq_before, "Während die Würfel rollen, kein zweiter Wurf (Sperre)")
+    await asyncio.sleep(1.4)
+    await a.send(action="ROLL", power="quatsch")
+    await settle()
+    ok(a.state["last_roll"]["by"] == "alice" and a.state["last_roll"]["throw"]["power"] == 0.6, "Nach der Sperre wieder möglich; ungültige Stärke → Standard")
+    from tabletop_server.rooms import Room, GameDef as GD
+    r = Room("X", GD("t", "t", ["#000", "#111"], layout={"dice": {"count": 2, "sides": 6}}))
+    r.join("u", "U", False)
+    rolls = [r.roll("u", 0.5, now=i * 10.0)[0]["event"]["values"] for i in range(400)]
+    flat = [v for vs in rolls for v in vs]
+    ok(all(len(vs) == 2 for vs in rolls) and set(flat) == {1, 2, 3, 4, 5, 6}, "Zwei Würfel, alle Augenzahlen kommen vor")
+    ok(max(flat.count(k) for k in range(1, 7)) < 220, f"Grob gleichverteilt: {[flat.count(k) for k in range(1, 7)]}")
+
     await a.send(action="GRAB", piece="p0")
     await settle()
     await a.close()
@@ -207,6 +234,7 @@ async def main():
 
 def run():
     layout = {
+        "dice": {"count": 1, "sides": 6},
         "fields": {f: {"x": i * 0.8, "z": 0, "kind": "track"} for i, f in enumerate(["h0", "f1", "f2", "f3"])},
         "pieces": {"p0": {"kind": "pawn", "seat": 0, "field": "h0"}, "p1": {"kind": "pawn", "seat": 1, "field": "f1"}},
     }

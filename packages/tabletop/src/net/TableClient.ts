@@ -82,6 +82,10 @@ export class TableClient {
         return () => this.connectionListeners.delete(fn);
     }
 
+    roll(power: number): void {
+        this.socket.send({ action: 'ROLL', power });
+    }
+
     grab(piece: string): void {
         this.socket.send({ action: 'GRAB', piece });
     }

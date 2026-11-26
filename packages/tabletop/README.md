@@ -14,6 +14,8 @@ Wird als Quellcode vom Vite-Build eines Spiels eingebunden (Alias `@treffen/tabl
 | `ui/SeatLabels.ts` | Namensschilder an den Plätzen (Host-Krone, getrennt, „Hinsetzen“; hochkant unter dem Brett) |
 | `objects/PieceLayer.ts` | Figuren: greifen (Capture vor der Kamera-Steuerung), ziehen mit Neigung, Einrast-Ring, Hüpfen aufs Feld, Zurückgleiten bei Ablehnung, fremde gehaltene Figuren folgen deren Zeiger |
 | `objects/pawn.ts` | Klassische Spielfigur als Drehkörper, lackiertes Holz (`createPawn(color)`) |
+| `dice/DiceLayer.ts` | Würfeln: Becher greifen + schütteln (Strecke bzw. Handy-Bewegungssensor = Stärke), Server bestimmt Zahl; Wurf wird mit cannon-es vorab simuliert, Würfel-Aussehen so gedreht, dass die Server-Zahl oben liegt, dann abgespielt (mit Aufprall-Klängen). Alle Clients sehen denselben Wurf |
+| `dice/dieMesh.ts`, `dice/cup.ts` | Würfel (abgerundet, Elfenbein, vertiefte Augen, rote Eins) und Lederbecher mit Filz |
 | `audio/sfx.ts` | Synthetische Tisch-Geräusche (Holz-Klack, Aufnehmen) + Vibration |
 
 Regeln für den Code hier: kein Spielwissen (keine Mensch-/Monopoly-Begriffe), TypeScript `strict`,

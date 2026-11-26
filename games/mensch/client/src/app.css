@@ -53,6 +53,23 @@ html, body {
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
+.roll-btn {
+    position: fixed;
+    right: max(14px, env(safe-area-inset-right));
+    bottom: max(56px, calc(env(safe-area-inset-bottom) + 48px));
+    padding: 12px 18px;
+    border: 1px solid rgba(255, 220, 170, 0.25);
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--ink);
+    font: 700 15px system-ui, sans-serif;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+.roll-btn[hidden] { display: none; }
+.roll-btn:active { transform: scale(0.96); }
+
 .hint {
     position: fixed;
     bottom: max(14px, env(safe-area-inset-bottom));
