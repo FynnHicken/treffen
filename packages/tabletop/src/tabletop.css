@@ -1,44 +1,31 @@
-/* Spieltisch: Namensschilder und Zeiger (liegen als HTML über der 3D-Szene) */
+/* Spieltisch: Namen sind in den Tisch graviert (3D). Hier nur Bedien-Chips der Lobby und Zeiger. */
 
 .tt-seat {
     --tt-color: #999;
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 12px;
-    border-radius: 999px;
-    background: rgba(24, 16, 10, 0.72);
-    border: 1.5px solid color-mix(in srgb, var(--tt-color) 70%, transparent);
-    color: #f6ead8;
-    font: 600 13px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
-    white-space: nowrap;
     pointer-events: auto;
     user-select: none;
-    backdrop-filter: blur(4px);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-    transform: translateY(18px);
+    white-space: nowrap;
+    font: 600 12px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-.tt-seat-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--tt-color);
-    box-shadow: 0 0 8px var(--tt-color);
-}
-.tt-seat.me { border-width: 2px; background: rgba(36, 24, 14, 0.85); }
-.tt-seat-you { opacity: 0.7; font-weight: 500; }
-.tt-seat.offline { opacity: 0.55; }
-.tt-seat-off { font-weight: 500; font-size: 11px; color: #f4b183; }
-.tt-seat.free { cursor: pointer; opacity: 0.8; border-style: dashed; }
-.tt-seat.free .tt-seat-dot { background: transparent; border: 2px solid var(--tt-color); box-shadow: none; }
-.tt-seat.free:hover { opacity: 1; }
+.tt-seat[hidden] { display: none; }
+.tt-seat.col { flex-direction: column; gap: 5px; }
 .tt-seat-action {
-    margin-left: 4px;
-    padding: 2px 8px;
+    padding: 5px 11px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--tt-color) 85%, black);
+    background: color-mix(in srgb, var(--tt-color) 80%, black);
     color: #fff;
-    font-size: 11px;
+    cursor: pointer;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+}
+.tt-seat-action:hover { filter: brightness(1.12); }
+.tt-seat-action.bot { background: rgba(55, 65, 81, 0.92); }
+.tt-seat-action.rm {
+    padding: 2px 8px;
+    background: rgba(24, 16, 10, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .tt-presence-label {
@@ -54,19 +41,3 @@
     transform: translateY(-10px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
-
-/* Schmale Bildschirme: kompakte Schilder, bei freien Plätzen nur „Hinsetzen“ */
-@media (max-width: 520px) {
-    .tt-seat { padding: 5px 10px; font-size: 12px; }
-    .tt-seat.free .tt-seat-name { display: none; }
-}
-
-/* Am Zug: Schild leuchtet in Spielerfarbe */
-.tt-seat.turn {
-    border-width: 2px;
-    border-color: var(--tt-color);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--tt-color) 35%, transparent), 0 0 22px color-mix(in srgb, var(--tt-color) 55%, transparent);
-}
-.tt-seat-action.bot { background: #4b5563; cursor: pointer; }
-.tt-seat-action.rm { background: transparent; border: 1px solid rgba(255,255,255,0.3); cursor: pointer; padding: 1px 7px; }
-.tt-seat-action { cursor: pointer; }

@@ -64,7 +64,7 @@ async function start(): Promise<void> {
     const name = await askName();
     const client = new TableClient({ namespace: 'mensch', room, name });
     const presence = new Presence(table, client);
-    new SeatLabels(table, client);
+    const labels = new SeatLabels(table, client);
     unlockAudioOnGesture();
 
     // Brett, sobald das Layout vom Server da ist
@@ -97,7 +97,7 @@ async function start(): Promise<void> {
     setTimeout(() => document.getElementById('hint')?.classList.add('fade'), 6000);
 
     // Für Tests und Fehlersuche
-    (window as any).__tisch = { table, client, presence, pieces, dice };
+    (window as any).__tisch = { table, client, presence, pieces, dice, labels };
 }
 
 start();

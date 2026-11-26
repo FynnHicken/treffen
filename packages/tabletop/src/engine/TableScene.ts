@@ -98,7 +98,7 @@ export class TableScene {
         this.buildPlacemats();
 
         // ---------- Kamera ----------
-        this.camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+        this.camera = new THREE.PerspectiveCamera(40, 1, 1, 100)   // near = 1: genug Tiefengenauigkeit für flach aufliegende Flächen (kein Flimmern);
         const c = this.controls = new OrbitControls(this.camera, r.domElement);
         c.enableDamping = true;
         c.dampingFactor = 0.09;
@@ -177,7 +177,9 @@ export class TableScene {
         const vfov = THREE.MathUtils.degToRad(this.camera.fov);
         const hfov = 2 * Math.atan(Math.tan(vfov / 2) * this.camera.aspect);
         const fov = Math.min(vfov, hfov);
-        return this.focusRadius / Math.sin(fov / 2);
+        // Hochkant etwas mehr Rand: Becher und Namen an den seitlichen Plätzen sollen ganz ins Bild
+        const radius = this.camera.aspect < 0.8 ? this.focusRadius * 1.1 : this.focusRadius;
+        return radius / Math.sin(fov / 2);
     }
 
     /** Richtung (Einheitsvektor in der Tischebene) von der Mitte zu einem Sitzplatz. */

@@ -40,7 +40,7 @@ async def main():
 
         members = await anna.evaluate("__tisch.client.state.members.map(m => [m.name, m.seat])")
         ok(sorted(members) == [["Anna", 0], ["Ben", 1]], f"Beide am Tisch: {members}")
-        labels = await anna.evaluate("[...document.querySelectorAll('.tt-seat')].map(e => e.textContent.trim())")
+        labels = await anna.evaluate("__tisch.labels.texts()")
         ok(any("Anna" in l and "(du)" in l for l in labels) and any("Ben" in l for l in labels), f"Namensschilder: {labels}")
         ok(sum("Platz frei" in l for l in labels) == 2, "Zwei freie Plätze angezeigt")
         host = await ben.evaluate("__tisch.client.state.host_id === __tisch.client.state.members.find(m => m.name === 'Anna').id")

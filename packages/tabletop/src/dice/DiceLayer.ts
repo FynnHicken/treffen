@@ -38,7 +38,17 @@ const GRAVITY = -60;                    // Tisch-Einheiten/s² (1 Einheit ≈ 1,
 
 export class DiceLayer {
     private dice: THREE.Mesh[] = [];
-    private cups = new Map<number, THREE.Object3D>();     // Sitzplatz → Becher
+    /** Der eine Becher am Tisch – wer ihn hat, ist dran */
+    private cup: THREE.Group;
+    /** Platz, an dem der Becher steht (bzw. zu dem er gerade wandert) */
+    private cupSeat: number | null = null;
+    /** Becher wird weitergereicht: Bogen um das Brett herum */
+    private travel: { from: number; delta: number; t: number; dur: number } | null = null;
+    /** In der Lobby: wer zuletzt gewürfelt/den Becher genommen hat */
+    private lobbyHolder: number | null = null;
+    private tipT: number | null = null;
+    /** Wo der Becher gerade steht (ohne Schütteln/Kippen) */
+    private cupBase = new THREE.Vector3();
     private recording: Recording | null = null;
     private playTime = 0;
     private nextImpact = 0;
@@ -57,15 +67,23 @@ export class DiceLayer {
 
     constructor(private table: TableScene, private client: TableClient, private opts: DiceLayerOptions = {}) {
         this.size = opts.dieSize ?? 0.42;
+        this.cup = createCup();
+        this.cup.visible = false;
+        table.scene.add(this.cup);
         client.onState(s => this.syncState(s));
         client.onEvent(ev => {
-            if (ev.type === 'DICE_ROLLED') this.onRolled(ev.values, ev.throw, true);
+            if (ev.type === 'DICE_ROLLED') {
+                this.lobbyHolder = ev.throw.seat;
+                this.onRolled(ev.values, ev.throw, true);
+            }
         });
         client.onPresence((from, p) => {
             if (p?.hold !== 'cup') return;
             const seat = this.client.state?.members.find(m => m.id === from)?.seat;
             if (seat != null) {
                 this.shakingOthers.set(seat, performance.now());
+                this.lobbyHolder = seat;
+                this.moveCupTo(seat);
                 this.gatherInto(seat);          // wer schüttelt, hat die Würfel vorher eingesammelt
                 this.animate();
             }
@@ -91,25 +109,63 @@ export class DiceLayer {
             this.table.scene.add(d);
             this.dice.push(d);
         }
-        // Becher an besetzten Plätzen
-        const seated = new Set(s.members.filter(m => m.seat !== null).map(m => m.seat as number));
-        for (const seat of seated) {
-            if (!this.cups.has(seat)) {
-                const cup = createCup();
-                cup.position.copy(this.cupPosition(seat));
-                cup.userData.cupSeat = seat;
-                cup.traverse(o => { o.userData.cupSeat = seat; });
-                this.table.scene.add(cup);
-                this.cups.set(seat, cup);
-            }
-        }
-        for (const [seat, cup] of this.cups) {
-            if (!seated.has(seat)) { this.table.scene.remove(cup); this.cups.delete(seat); }
-        }
         // Letzter Wurf (z. B. nach Beitreten/Reconnect): Würfel ohne Animation dort hinlegen
         const lr = s.last_roll;
+        if (lr && this.lobbyHolder === null) this.lobbyHolder = lr.throw.seat;
         if (lr && !this.playing && this.lastRollKey !== rollKey(lr)) this.onRolled(lr.values, lr.throw, false);
+        // Becher: beim ersten Mal direkt hinstellen, danach wird er weitergereicht
+        const holder = this.holderSeat();
+        this.cup.visible = this.count > 0 && holder !== null;
+        if (this.cupSeat === null && holder !== null) {
+            this.cupSeat = holder;
+            this.cup.position.copy(this.cupPosition(holder));
+            this.cupBase.copy(this.cup.position);
+        } else if (holder !== null && holder !== this.cupSeat) {
+            this.animate();                 // reicht weiter, sobald der Würfel liegt
+        }
         this.table.invalidate();
+    }
+
+    /**
+     * Wer den Becher haben sollte: im Spiel der Platz am Zug, in der Lobby wer zuletzt gewürfelt hat
+     * (sonst der Host bzw. der erste besetzte Platz). Spielende: bleibt, wo er ist.
+     */
+    holderSeat(): number | null {
+        const s = this.client.state;
+        if (!s) return null;
+        const seated = s.members.filter(m => m.seat !== null).map(m => m.seat as number).sort((a, b) => a - b);
+        if (s.status === 'playing' && s.play?.turn != null) return s.play.turn;
+        if (s.status === 'finished' && this.cupSeat !== null) return this.cupSeat;
+        if (this.lobbyHolder !== null && seated.includes(this.lobbyHolder)) return this.lobbyHolder;
+        const host = s.members.find(m => m.id === s.host_id)?.seat;
+        return host ?? seated[0] ?? null;
+    }
+
+    /** Becher zu einem Platz reichen (im Bogen um das Brett herum, in Spielrichtung). */
+    private moveCupTo(seat: number): void {
+        if (this.cupSeat === seat && !this.travel) return;
+        if (this.cupSeat === null) {
+            this.cupSeat = seat;
+            this.cup.position.copy(this.cupPosition(seat));
+            this.cupBase.copy(this.cup.position);
+            return;
+        }
+        const from = angleOf(this.cupBase);
+        let delta = angleOf(this.cupPosition(seat)) - from;
+        while (delta <= -Math.PI) delta += Math.PI * 2;
+        while (delta > Math.PI) delta -= Math.PI * 2;
+        this.travel = { from, delta, t: 0, dur: 0.45 + Math.abs(delta) / Math.PI * 0.5 };
+        this.cupSeat = seat;
+        this.animate();
+    }
+
+    /** Punkt auf dem Weg des Bechers: abgerundetes Quadrat im Streifen zwischen Brett und Tischkante */
+    private cupPathPoint(angle: number): THREE.Vector3 {
+        const r = this.cupPosition(0);
+        const R = pnorm(r.x, r.z);
+        const ux = -Math.sin(angle), uz = Math.cos(angle);
+        const k = R / pnorm(ux, uz);
+        return new THREE.Vector3(ux * k, 0, uz * k);
     }
 
     private onRolled(values: number[], thr: { power: number; seed: number; seat: number }, animate: boolean): void {
@@ -123,11 +179,13 @@ export class DiceLayer {
             this.table.invalidate();
             return;
         }
-        // Liegen die Würfel noch auf dem Tisch, erst in den Becher des Werfenden einsammeln
+        // Erst muss der Becher beim Werfenden sein und die Würfel vom Tisch darin liegen
         const onTable = this.dice.some(d => d.visible);
-        if (this.gather || (onTable && this.inCup !== thr.seat)) {
+        if (this.gather || this.travel || this.cupSeat !== thr.seat || (onTable && this.inCup !== thr.seat)) {
             this.queued = { values, thr };
+            this.moveCupTo(thr.seat);
             this.gatherInto(thr.seat);
+            this.animate();
             return;
         }
         this.startPlayback(values, thr);
@@ -140,7 +198,7 @@ export class DiceLayer {
         this.playTime = 0;
         this.nextImpact = 0;
         this.applyFrame(0, 0);
-        this.tipCup(thr.seat);
+        this.tipCup();
         if (thr.seat === this.client.me?.seat) vibrate([12, 30, 18]);
         this.animate();
     }
@@ -276,8 +334,10 @@ export class DiceLayer {
         const me = this.client.me;
         if (!me || me.seat === null || this.holding || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
         if (!this.client.canRoll) return;              // nicht dran → Becher bleibt stehen, Kamera darf drehen
-        const cup = this.cups.get(me.seat);
-        if (!cup || !this.table.pickObjects(ev.clientX, ev.clientY, [cup]).length) return;
+        if (!this.cup.visible || !this.table.pickObjects(ev.clientX, ev.clientY, [this.cup]).length) return;
+        // In der Lobby darf jeder: der Becher kommt zu einem herüber
+        this.lobbyHolder = me.seat;
+        this.moveCupTo(me.seat);
         ev.stopPropagation();
         ev.preventDefault();
         this.startShake(ev);
@@ -342,10 +402,8 @@ export class DiceLayer {
         this.animate();
     }
 
-    private tipCup(seat: number): void {
-        const cup = this.cups.get(seat);
-        if (!cup) return;
-        cup.userData.tipT = 0;
+    private tipCup(): void {
+        this.tipT = 0;
         this.animate();
     }
 
@@ -360,7 +418,7 @@ export class DiceLayer {
             if (g) {
                 g.t = Math.min(1, g.t + dt / 0.45);
                 const k = g.t * g.t * (3 - 2 * g.t);
-                const mouth = this.cupPosition(g.seat).setY(0.95);
+                const mouth = this.cupBase.clone().setY(0.95);
                 this.dice.forEach((d, i) => {
                     if (!d.visible) return;
                     const from = g.from[i] ?? mouth;
@@ -375,9 +433,6 @@ export class DiceLayer {
                     knock(0.22, 2.7);
                     this.inCup = g.seat;
                     this.gather = null;
-                    const q = this.queued;
-                    this.queued = null;
-                    if (q) this.startPlayback(q.values, q.thr);
                 }
                 busy = true;
             }
@@ -398,30 +453,61 @@ export class DiceLayer {
                     busy = true;
                 }
             }
-            // Becher: halten = angehoben + Schütteln; nach dem Wurf kippen und zurückstellen
+            // ---- Becher ----
             const now = performance.now();
-            for (const [seat, cup] of this.cups) {
-                const base = this.cupPosition(seat);
-                const mine = seat === this.client.me?.seat;
-                const shaking = (mine && this.holding) || now - (this.shakingOthers.get(seat) ?? 0) < 400;
-                if (shaking) {
-                    const amp = mine && this.holding ? 0.04 + this.holding.power * 0.08 : 0.08;
-                    cup.position.set(base.x + Math.sin(now / 37) * amp, 0.55 + Math.sin(now / 53) * amp, base.z + Math.cos(now / 41) * amp);
-                    cup.rotation.set(Math.sin(now / 45) * amp * 2, 0, Math.cos(now / 39) * amp * 2);
-                    busy = true;
-                } else if (cup.userData.tipT !== undefined) {
-                    const t = (cup.userData.tipT += dt / 0.9);
-                    const dir = this.table.seatDirection(seat);
-                    const k = t < 0.35 ? t / 0.35 : t < 0.65 ? 1 : Math.max(0, 1 - (t - 0.65) / 0.35);
-                    cup.position.set(base.x, 0.35 * k, base.z);
-                    // um die Achse „nach vorn“ kippen, Öffnung zeigt nach links (Wurfrichtung)
-                    cup.quaternion.setFromAxisAngle(dir, -k * 1.9);
-                    if (t >= 1) { cup.userData.tipT = undefined; cup.position.copy(base); cup.rotation.set(0, 0, 0); }
-                    else busy = true;
-                } else if (cup.position.y !== 0) {
-                    cup.position.copy(base);
-                    cup.rotation.set(0, 0, 0);
+            const cup = this.cup;
+            // Weiterreichen, sobald die Würfel liegen und niemand den Becher hält
+            const holder = this.holderSeat();
+            const diceBusy = !!this.gather || (!!this.recording && this.playTime !== Infinity);
+            if (!this.travel && holder !== null && holder !== this.cupSeat && !diceBusy && this.tipT === null && !this.holding) {
+                this.moveCupTo(holder);
+            }
+            let lift = 0, lean = 0;
+            const tr = this.travel;
+            if (tr) {
+                tr.t = Math.min(1, tr.t + dt / tr.dur);
+                const k = tr.t < 0.5 ? 2 * tr.t * tr.t : 1 - Math.pow(-2 * tr.t + 2, 2) / 2;
+                this.cupBase.copy(this.cupPathPoint(tr.from + tr.delta * k));
+                lift = Math.sin(Math.PI * tr.t) * 0.3;
+                lean = Math.sin(Math.PI * tr.t) * 0.12 * Math.sign(tr.delta);
+                if (tr.t >= 1) {
+                    this.travel = null;
+                    this.cupBase.copy(this.cupPosition(this.cupSeat!));
+                    knock(0.1, 1.5);                     // leise aufsetzen
                 }
+                busy = true;
+            } else if (this.cupSeat !== null) {
+                this.cupBase.copy(this.cupPosition(this.cupSeat));
+            }
+            // Wartender Wurf: Becher ist da → Würfel einsammeln (falls nötig) → werfen
+            const q = this.queued;
+            if (q && !this.travel && !this.gather && this.cupSeat === q.thr.seat) {
+                if (this.dice.some(d => d.visible) && this.inCup !== q.thr.seat) this.gatherInto(q.thr.seat);
+                else { this.queued = null; this.startPlayback(q.values, q.thr); }
+                busy = true;
+            }
+            const base = this.cupBase;
+            const seat = this.cupSeat;
+            const mine = seat !== null && seat === this.client.me?.seat;
+            const shaking = (mine && this.holding) || (seat !== null && now - (this.shakingOthers.get(seat) ?? 0) < 400);
+            cup.rotation.set(0, 0, 0);
+            if (shaking) {
+                const amp = mine && this.holding ? 0.04 + this.holding.power * 0.08 : 0.08;
+                cup.position.set(base.x + Math.sin(now / 37) * amp, 0.55 + lift + Math.sin(now / 53) * amp, base.z + Math.cos(now / 41) * amp);
+                cup.rotation.set(Math.sin(now / 45) * amp * 2, 0, Math.cos(now / 39) * amp * 2);
+                busy = true;
+            } else if (this.tipT !== null && seat !== null) {
+                const t = (this.tipT += dt / 0.9);
+                const dir = this.table.seatDirection(seat);
+                const k = t < 0.35 ? t / 0.35 : t < 0.65 ? 1 : Math.max(0, 1 - (t - 0.65) / 0.35);
+                cup.position.set(base.x, 0.35 * k, base.z);
+                // um die Achse „zum Spieler“ kippen: Öffnung zeigt nach links, dorthin rollen die Würfel
+                cup.quaternion.setFromAxisAngle(dir, k * 1.9);
+                if (t >= 1) { this.tipT = null; cup.position.copy(base); cup.rotation.set(0, 0, 0); }
+                busy = true;
+            } else {
+                cup.position.set(base.x, lift, base.z);
+                if (lean) cup.quaternion.setFromAxisAngle(new THREE.Vector3(base.x, 0, base.z).normalize(), lean);
             }
             this.playing = busy;
             return busy;
@@ -448,8 +534,8 @@ export class DiceLayer {
         };
     }
 
-    cupScreenPos(seat: number): { x: number; y: number } {
-        const p = this.cupPosition(seat).setY(0.35).project(this.table.camera);
+    cupScreenPos(_seat?: number): { x: number; y: number } {
+        const p = this.cupBase.clone().setY(0.35).project(this.table.camera);
         const rect = this.table.renderer.domElement.getBoundingClientRect();
         return { x: rect.left + (p.x + 1) / 2 * rect.width, y: rect.top + (1 - p.y) / 2 * rect.height };
     }
@@ -457,4 +543,14 @@ export class DiceLayer {
 
 function rollKey(r: { values: number[]; throw: { seed: number } }): string {
     return `${r.throw.seed}:${r.values.join(',')}`;
+}
+
+/** Winkel eines Tischpunkts um die Mitte – gleiche Zählung wie die Sitzplätze */
+function angleOf(p: THREE.Vector3): number {
+    return Math.atan2(-p.x, p.z);
+}
+
+/** „Eckiger“ Betrag: Weg des Bechers als abgerundetes Quadrat (bleibt neben dem Brett) */
+function pnorm(x: number, z: number): number {
+    return Math.pow(Math.pow(Math.abs(x), 8) + Math.pow(Math.abs(z), 8), 1 / 8);
 }

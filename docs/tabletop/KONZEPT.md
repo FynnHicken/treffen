@@ -28,11 +28,11 @@ Alles ist ein **Gegenstand** mit `id`, `typ`, Position (Feld/Zone oder freie Koo
 | **Brett** | Mensch-Kreuz, Monopoly-Plan | liegt fest, hat **Felder** mit Positionen |
 | **Feld / Zone** | Laufbahn, Häuschen, Ziel, Ablagestapel, Bank | Ablageziel; rastet ein (Snap) |
 | **Figur** | Hütchen, Monopoly-Figur | greifen, über Feldern schweben, absetzen; hüpft Feld für Feld |
-| **Würfel** | W6, später andere | im Becher schütteln/werfen; rollt physikalisch, Ergebnis vom Server |
+| **Würfel** | W6, später andere | im Becher schütteln/werfen; rollt physikalisch, Ergebnis vom Server. **Ein** Becher wird herumgereicht – wer ihn hat, ist dran (natürliche Zuganzeige) |
 | **Karte / Stapel** | Ereignis-, Spielkarten | ziehen, umdrehen, mischen, ablegen |
 | **Hand** | Karten eines Spielers | nur für den Besitzer sichtbar, aufgefächert am eigenen Platz |
 | **Marker / Geld** | Scheine, Chips, Häuser | stapeln, zählen, übergeben |
-| **Sitzplatz** | 4 Seiten des Tisches | eigener Platz ist immer „unten“; Name, Farbe, Avatar |
+| **Sitzplatz** | 4 Seiten des Tisches | eigener Platz ist immer „unten“; Platzset in Spielerfarbe, Name ins Platzset graviert (Würfel rollen darüber) |
 
 Für Mensch ärgere dich nicht reichen: Brett, Felder/Zonen, Figuren, Würfel, Sitzplätze.
 
