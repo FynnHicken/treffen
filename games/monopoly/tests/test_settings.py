@@ -246,6 +246,7 @@ async def main():
     room = make_room("MAN1", humans=("h1",), bots=("b1",), settings={"play_mode": "manual"})
     srv.connections["MAN1"] = {"h1": FakeWS()}
     h1 = room.players[0]
+    room.current_player_idx = 0  # Startreihenfolge wird ausgewürfelt – hier soll der Mensch beginnen
     # 1. Mensch würfelt -> MOVE_TOKEN pending, Figur bewegt sich noch nicht
     await send("MAN1", "h1", action="ROLL_DICE", power=0.85)
     ok(h1.position == 0 and (room.pending_action or {}).get("type") == "MOVE_TOKEN",

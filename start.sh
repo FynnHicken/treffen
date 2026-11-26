@@ -20,6 +20,13 @@ fi
 
 echo "Verwende: $COMPOSE"
 
+# Gemeinsamer Schlüssel für Spiel-Tickets (Hub → Monopoly). Einmal erzeugen, dann in .env behalten.
+if ! grep -qs '^TREFFEN_TICKET_SECRET=.' .env; then
+    echo "Erzeuge TREFFEN_TICKET_SECRET in .env ..."
+    echo "TREFFEN_TICKET_SECRET=$(openssl rand -hex 32)" >> .env
+    chmod 600 .env
+fi
+
 if [ -n "$MY_DOMAIN" ] && [ "$MY_DOMAIN" != "localhost" ]; then
     echo "No-IP Domain erkannt: $MY_DOMAIN (Starte mit Caddy HTTPS Reverse-Proxy)"
     $COMPOSE -f docker-compose.yml -f docker-compose.caddy.yml up -d --build

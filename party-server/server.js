@@ -1,9 +1,27 @@
 import http from 'http';
+import crypto from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
 const SOLO_ROOM_TTL_MS = 60000; // 60 seconds for unused rooms with <= 1 player
+
+// Spiel-Tickets: signierter Nachweis für Spiele (z. B. Monopoly), wer im Hub-Raum Host ist.
+// Gleicher Schlüssel muss im Spiel gesetzt sein (siehe games/monopoly/server/auth.py).
+const TICKET_SECRET = (process.env.TREFFEN_TICKET_SECRET || '').trim();
+const TICKET_TTL_MS = 30 * 60 * 1000;
+if (!TICKET_SECRET) {
+    console.warn('⚠️  TREFFEN_TICKET_SECRET nicht gesetzt – Spiele bekommen keine signierten Tickets.');
+}
+function b64url(buf) {
+    return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function signTicket(payload) {
+    if (!TICKET_SECRET) return null;
+    const body = b64url(JSON.stringify(payload));
+    const sig = b64url(crypto.createHmac('sha256', TICKET_SECRET).update(body).digest());
+    return `${body}.${sig}`;
+}
 
 // Profilfelder kommen vom Client und landen bei allen anderen im DOM –
 // daher hier hart begrenzen (Defense in depth, der Client escaped zusätzlich).
@@ -283,7 +301,7 @@ class Room {
         });
 
         const now = Date.now();
-        this.broadcast({
+        this.broadcastPersonal({
             type: "ROSTER_SYNC",
             players: playerList,
             hostId: this.hostId,
@@ -296,6 +314,23 @@ class Room {
             remainingMs: this.expiresAt ? Math.max(0, this.expiresAt - now) : null,
             ttlTotalMs: SOLO_ROOM_TTL_MS
         });
+    }
+
+    // Wie broadcast(), aber jeder Socket bekommt zusätzlich sein eigenes Spiel-Ticket
+    broadcastPersonal(msg) {
+        const exp = Date.now() + TICKET_TTL_MS;
+        for (const [id, ws] of this.sockets.entries()) {
+            if (ws.readyState !== WebSocket.OPEN) continue;
+            const player = this.players.get(id);
+            const gameTicket = player ? signTicket({
+                v: 1, room: this.code, pid: id, name: player.name, host: id === this.hostId, exp: Math.floor(exp / 1000)
+            }) : null;
+            try {
+                ws.send(JSON.stringify(gameTicket ? { ...msg, gameTicket } : msg));
+            } catch (e) {
+                console.error(`[Room ${this.code}] Send error to ${id}:`, e);
+            }
+        }
     }
 
     broadcast(msg, excludeWs = null) {

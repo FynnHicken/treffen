@@ -10,6 +10,8 @@
     let socket = null;
     let roomId = null;
     let playerId = null;
+    let clientSecret = null;   // bindet playerId serverseitig an diesen Browser (AUTH)
+    let hubTicket = null;      // vom Hub signiertes Ticket (Host-Recht), kommt per #ticket=…
 
     // Spielernamen, Chat und Log kommen von anderen Clients → vor innerHTML escapen
     function esc(value) {
@@ -566,16 +568,49 @@
     }
 
     // Helper: Local Storage & URL params for seamless Game Hub Party embedding
+    function newPlayerId() {
+        return 'p_' + randomToken(10);
+    }
+
+    function randomToken(bytes) {
+        const arr = new Uint8Array(bytes);
+        (window.crypto || window.msCrypto).getRandomValues(arr);
+        return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function initClientSecret() {
+        try {
+            clientSecret = localStorage.getItem('monopoly_client_secret');
+            if (!clientSecret || !/^[A-Za-z0-9_-]{16,128}$/.test(clientSecret)) {
+                clientSecret = randomToken(24);
+                localStorage.setItem('monopoly_client_secret', clientSecret);
+            }
+        } catch (e) {
+            clientSecret = clientSecret || randomToken(24);
+        }
+        // Ticket steht im Fragment (#ticket=…), damit es nicht in Server-Logs landet
+        try {
+            const hashParams = new URLSearchParams(window.location.hash.slice(1));
+            const t = hashParams.get('ticket');
+            if (t) {
+                sessionStorage.setItem('monopoly_hub_ticket', t);
+                history.replaceState(null, '', window.location.pathname + window.location.search);
+            }
+            hubTicket = t || sessionStorage.getItem('monopoly_hub_ticket');
+        } catch (e) {}
+    }
+
     function initPlayerIdentity() {
+        initClientSecret();
         try {
             let storedId = sessionStorage.getItem('monopoly_player_id');
             if (!storedId) {
-                storedId = 'p_' + Math.random().toString(36).substring(2, 9);
+                storedId = newPlayerId();
                 sessionStorage.setItem('monopoly_player_id', storedId);
             }
             playerId = storedId;
         } catch (e) {
-            playerId = 'p_' + Math.random().toString(36).substring(2, 9);
+            playerId = newPlayerId();
         }
 
         try {
@@ -845,6 +880,7 @@
 
         socket.onopen = function() {
             console.log('WebSocket connected to room', roomId);
+            socket.send(JSON.stringify({ action: 'AUTH', secret: clientSecret }));
             sendJoinMessage();
         };
 
@@ -857,8 +893,13 @@
             }
         };
 
-        socket.onclose = function() {
+        socket.onclose = function(ev) {
             if (!roomId) return;
+            if (ev && ev.code === 4003) {
+                // ID gehört (z. B. nach gelöschtem localStorage) einem anderen Secret → neue ID
+                playerId = newPlayerId();
+                try { sessionStorage.setItem('monopoly_player_id', playerId); } catch (e) {}
+            }
             console.log('WebSocket disconnected, reconnecting in 2s...');
             setTimeout(connectWebSocket, 2000);
         };
@@ -998,7 +1039,8 @@
             name: playerName,
             token: selectedToken,
             color: selectedColor,
-            is_host: (getQueryParam('host') === '1')
+            is_host: (getQueryParam('host') === '1'),
+            ticket: hubTicket || undefined
         });
     }
 
@@ -1019,6 +1061,7 @@
         }
 
         if (msg.type === 'ERROR') {
+            if (msg.code === 'ID_IN_USE') return;  // onclose (4003) holt sich still eine neue ID
             showYourTurnPopup('⚠️ HINWEIS', msg.message || 'Aktion nicht möglich.');
             if (msg.code === 'ROOM_FULL') {
                 showRoomSelector();

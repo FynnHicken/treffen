@@ -3,6 +3,13 @@ set -e
 
 echo "🚀 Starting Treffen All-In-One services on Fly.io..."
 
+# Gemeinsamer Ticket-Schlüssel für Hub und Monopoly. Am besten per `fly secrets set` setzen;
+# sonst pro Start zufällig (alle Dienste laufen in diesem einen Prozessbaum, Tickets leben nur 30 min).
+if [ -z "$TREFFEN_TICKET_SECRET" ]; then
+    TREFFEN_TICKET_SECRET=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+fi
+export TREFFEN_TICKET_SECRET
+
 # 1. Party Server (Node.js WebSocket on port 3001)
 echo "Starting party-server..."
 cd /app/party-server && PORT=3001 node server.js &

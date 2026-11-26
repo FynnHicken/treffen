@@ -11,6 +11,9 @@ services:
       dockerfile: Dockerfile
     container_name: party-server
     restart: unless-stopped
+    environment:
+      # Signiert Spiel-Tickets (Host-Nachweis). start.sh legt den Wert in .env an.
+      - TREFFEN_TICKET_SECRET=${TREFFEN_TICKET_SECRET:-}
     ports:
       - "3001:3001"
     networks:
@@ -129,6 +132,8 @@ services:
       dockerfile: Dockerfile
     container_name: monopoly
     restart: unless-stopped
+    environment:
+      - TREFFEN_TICKET_SECRET=${TREFFEN_TICKET_SECRET:-}
     ports:
       - "8090:8090"
     networks:

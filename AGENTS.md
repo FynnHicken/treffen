@@ -55,6 +55,12 @@ Räumen, Host, Abstimmung, synchronem Start) bettet mehrere Multiplayer-Spiele p
 - Hub (`party-server/server.js`): Spieler-ID ist per Client-Secret an den Browser gebunden;
   Host-/Spieleraktionen nutzen nur die **an den Socket gebundene** ID, nie Felder aus der Nachricht.
 - Monopoly: Aktionen prüfen Zug/Host/Mitgliedschaft serverseitig; Raum-/Spieler-IDs `[A-Za-z0-9_-]{1,40}`.
+  Erste WebSocket-Nachricht ist `AUTH {secret}` – die Spieler-ID ist daran gebunden; `bot_`-IDs sind gesperrt.
+- **Spiel-Tickets**: Der Party-Server signiert pro Person ein Ticket (`gameTicket` in `ROSTER_SYNC`,
+  HMAC mit `TREFFEN_TICKET_SECRET`), der Hub hängt es als `#ticket=…` an die Spiel-URL. Spiele glauben
+  das Host-Recht nur mit gültigem Ticket. `start.sh` erzeugt den Schlüssel in `.env` (nie committen);
+  auf Fly besser per `fly secrets set TREFFEN_TICKET_SECRET=…`. Neue Spiele sollten das genauso nutzen
+  (Prüfcode: `games/monopoly/server/auth.py`).
 
 ## Werkzeuge
 
@@ -69,7 +75,7 @@ Räumen, Host, Abstimmung, synchronem Start) bettet mehrere Multiplayer-Spiele p
 - Auf diesem Rechner ist **kein Node/npm auf dem Host** – JS-Syntax per
   `podman run --rm -v .:/j:ro,Z docker.io/library/node:20-alpine node --check /j/<datei>.js`.
 
-## Aktueller Stand (zuletzt aktualisiert: 2026-11-21)
+## Aktueller Stand (zuletzt aktualisiert: 2026-11-26)
 
 Erledigt und auf `main`:
 1. Infrastruktur-Review: Compose-GTP auf SQLite, Nginx-Socket-Route, optionales HTTPS, Ports/Doku.
@@ -85,6 +91,17 @@ Erledigt und auf `main`:
 
 8. Playtest-Feedback 1: fremde Züge ohne Zwangs-Popups, Kontostand in der Auktion, Handel mit Kartenbildern
    und Partner-Übersicht, Kartenstapel-Bug, Gefängnis-Pasch befreit nur, Bauregel „nur auf der eigenen Farbe“.
+
+9. Sicherheit S1 (2026-11-26): Monopoly-Identität per Client-Secret, keine Bot-Übernahme, Host per
+   signiertem Hub-Ticket (siehe Sicherheitsmodell oben).
+
+**Umbau-Plan (mit dem Nutzer am 2026-11-26 abgestimmt, Schritt für Schritt):** 1. ✅ Monopoly-Verbindungen
+absichern · 2. Monopoly-Spielstände in SQLite speichern · 3. Vite + TypeScript, `game_client.js` in Module
+zerlegen · 4. Hub-Client: Server als einzige Wahrheit (localStorage/BroadcastChannel-Abgleich raus), Spiele
+als Plug-ins mit Manifest statt fest verdrahtet · 5. Design/Handy. Performance-Notizen für später:
+`broadcast_room` sendet seriell unter dem Raum-Lock (langsamer Client bremst alle), volle `to_dict()` bei
+jedem Event, Hub schickt Avatare (bis 32 KB) bei jedem `ROSTER_SYNC`, 3D rendert dauerhaft mit Soft-Shadows,
+34 MB Assets ohne komprimierte Texturen.
 
 **➡️ Offene Arbeit der letzten Sitzung: [`HANDOFF.md`](HANDOFF.md) (Modus „Manuell“, Handy-Überarbeitung).**
 

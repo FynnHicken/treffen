@@ -22,6 +22,7 @@ INDEX_HTML = STATIC_DIR / "index.html"
 
 from game_state import GameRoom, TOKEN_OPTIONS, PLAYER_COLORS, SQUARES, MAX_PLAYERS, clean_text
 import bot_ai
+import auth
 
 app = FastAPI(title="Monopoly 3D Web Edition")
 
@@ -52,6 +53,7 @@ away_tasks: Dict[tuple, asyncio.Task] = {}   # (room_id, player_id) -> Abwesenhe
 room_locks: Dict[str, asyncio.Lock] = {}
 room_empty_since: Dict[str, float] = {}      # room_id -> seit wann ohne Verbindung
 room_expiry: Dict[str, float] = {} # room_id -> unix timestamp when room expires
+room_secrets: Dict[str, Dict[str, str]] = {}  # room_id -> {player_id: sha256(Client-Secret)}
 
 AWAY_GRACE_SEC = float(os.environ.get("MONOPOLY_AWAY_GRACE_SEC", "30"))  # so lange darf ein Spieler weg sein, bevor der Computer übernimmt
 EMPTY_ROOM_TTL_SEC = 30 * 60   # Räume ganz ohne Verbindung werden nach 30 min gelöscht
@@ -80,6 +82,7 @@ def delete_room(room_id: str):
     room_expiry.pop(room_id, None)
     room_empty_since.pop(room_id, None)
     room_locks.pop(room_id, None)
+    room_secrets.pop(room_id, None)
 
 def update_room_expiry(room_id: str, force_reset: bool = False):
     room = rooms.get(room_id)
@@ -215,31 +218,31 @@ async def list_rooms():
         })
     return {"rooms": room_list}
 
-@app.post("/api/create_room")
-async def create_room(data: dict):
-    room_id = str(data.get("room_id") or uuid.uuid4().hex[:6].upper())
-    host_id = str(data.get("player_id") or uuid.uuid4().hex[:8])
-    if not SAFE_ID_RE.match(room_id) or not SAFE_ID_RE.match(host_id):
-        return JSONResponse({"error": "Ungültige Raum- oder Spieler-ID."}, status_code=400)
-    party_id = data.get("party_id")
-
-    # Bestehenden Raum nie überschreiben (sonst ist ein laufendes Spiel weg)
-    existing = rooms.get(room_id)
-    if existing:
-        return {"room_id": room_id, "host_id": existing.host_id, "existing": True}
-
-    room = GameRoom(room_id, host_id, party_id)
-    rooms[room_id] = room
-    connections[room_id] = {}
-    update_room_expiry(room_id, True)
-    return {"room_id": room_id, "host_id": host_id}
-
 @app.websocket("/ws/{room_id}/{player_id}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str):
-    if not SAFE_ID_RE.match(room_id) or not SAFE_ID_RE.match(player_id):
+    # bot_-IDs vergibt nur der Server – sonst könnte man sich als Computergegner verbinden und dessen Züge spielen
+    if not SAFE_ID_RE.match(room_id) or not SAFE_ID_RE.match(player_id) or player_id.startswith("bot_"):
         await websocket.close(code=1008)
         return
     await websocket.accept()
+
+    # Erste Nachricht muss AUTH {secret} sein: bindet die Spieler-ID an diesen Browser
+    try:
+        first = json.loads(await asyncio.wait_for(websocket.receive_text(), auth.AUTH_TIMEOUT_SEC))
+    except Exception:
+        await websocket.close(code=1008)
+        return
+    secret = first.get("secret") if isinstance(first, dict) and first.get("action") == "AUTH" else None
+    if not auth.valid_client_secret(secret):
+        await websocket.close(code=1008)
+        return
+    secret_hash = auth.hash_secret(secret)
+    known = room_secrets.setdefault(room_id, {})
+    if known.get(player_id, secret_hash) != secret_hash:
+        await _send_error(websocket, "Diese Spieler-ID gehört einem anderen Browser.", code="ID_IN_USE")
+        await websocket.close(code=4003)
+        return
+    known[player_id] = secret_hash
 
     # Create room on the fly if not exists
     if room_id not in rooms:
@@ -370,8 +373,14 @@ async def _act_join(websocket: WebSocket, room_id: str, room: GameRoom, player_i
     name = data.get("name", f"Spieler {len(room.players)+1}")
     token = data.get("token", "dog")
     color = data.get("color", "#e74c3c")
-    # Host-Flag vom Hub nur einmal pro Raum akzeptieren (sonst kann sich jeder zum Host machen)
-    if data.get("is_host") is True and not room.host_claimed and room.status == "LOBBY":
+    # Host-Recht vom Hub: mit TREFFEN_TICKET_SECRET nur per signiertem Ticket, sonst (Monopoly allein
+    # gestartet) wie bisher per is_host-Flag. In beiden Fällen nur einmal pro Raum.
+    if auth.tickets_enabled():
+        ticket = auth.verify_ticket(data.get("ticket"), room_id)
+        claims_host = bool(ticket and ticket.get("host") is True)
+    else:
+        claims_host = data.get("is_host") is True
+    if claims_host and not room.host_claimed and room.status == "LOBBY":
         room.host_id = player_id
         room.host_claimed = True
     room.add_player(player_id, name, token, color)

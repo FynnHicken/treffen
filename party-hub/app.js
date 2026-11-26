@@ -1147,6 +1147,9 @@ function handleServerMessage(data) {
             }
             updateExpiryAnimations();
 
+            // Signiertes Spiel-Ticket (Host-Nachweis für Spiele wie Monopoly), kommt pro Person
+            if (typeof data.gameTicket === "string") partyState.gameTicket = data.gameTicket;
+
             if (Array.isArray(data.players)) {
                 // Update players from real-time server
                 partyState.players = data.players;
@@ -1979,7 +1982,9 @@ function getGameUrl(game, lobbyId) {
     } else if (game.id === "codenames") {
         return `/codenames/g/${encodeURIComponent(ROOM_CODE)}?name=${encodeURIComponent(userName)}`;
     } else if (game.id === "monopoly") {
-        return `/monopoly/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}`;
+        // Ticket im Fragment (#…): geht nicht an den Server und landet so nicht in Access-Logs
+        const ticket = partyState.gameTicket ? `#ticket=${encodeURIComponent(partyState.gameTicket)}` : "";
+        return `/monopoly/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}&host=${partyState.isHost ? '1' : '0'}${ticket}`;
     } else if (game.id === "price_guess") {
         return `/price-guess/`;
     }

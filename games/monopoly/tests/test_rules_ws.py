@@ -22,9 +22,11 @@ async def drain(w,t=0.4):
     if last: LAST["state"]=last["state"]
     return last or {"state":LAST["state"]}
 async def send(w,**m): await w.send(json.dumps(m))
+async def conn(path):  # verbindet und meldet sich mit einem je Spieler festen Secret an
+    w=await websockets.connect(B+path); await send(w,action="AUTH",secret=("secret-"+path.replace("/","-")).ljust(16,"x")); return w
 async def main():
     print("== Rechte & Validierung (Server) ==")
-    a=await websockets.connect(B+"T1/alice"); b=await websockets.connect(B+"T1/bob")
+    a=await conn("T1/alice"); b=await conn("T1/bob")
     await send(a,action="JOIN",name="Alice",token="dog",color="#e74c3c",is_host=True)
     await send(b,action="JOIN",name="Bob<script>",token="hat",color="#3498db",is_host=True)
     await drain(a); st=(await drain(b))["state"]
@@ -45,13 +47,10 @@ async def main():
     await asyncio.sleep(0.3)
     await send(other,action="CHAT",message="<img src=x onerror=alert(1)> hallo"); st=(await drain(other))["state"]
     ok(True,"Socket nach Müll-Nachrichten noch offen"); ok(not any("<img" in l for l in st["logs"]),"Chat bereinigt: "+st["logs"][-1])
-    eve=await websockets.connect(B+"T1/eve"); await send(eve,action="RESET_LOBBY"); await drain(eve); st=(await drain(a))["state"]
+    eve=await conn("T1/eve"); await send(eve,action="RESET_LOBBY"); await drain(eve); st=(await drain(a))["state"]
     ok(st["status"]=="PLAYING","Fremder kann nicht zurücksetzen")
     await send(b, action="RESET_LOBBY"); await drain(b); st=(await drain(a))["state"]
     ok(st["status"]=="PLAYING","Mitspieler (Bob) kann laufendes Spiel nicht abbrechen")
-    req=urllib.request.Request("http://127.0.0.1:8090/api/create_room",data=json.dumps({"room_id":"T1"}).encode(),headers={"Content-Type":"application/json"})
-    r=json.loads(urllib.request.urlopen(req).read()); rooms=json.load(urllib.request.urlopen("http://127.0.0.1:8090/api/rooms"))
-    ok(r.get("existing") and any(x["room_id"]=="T1" and x["status"]=="PLAYING" for x in rooms["rooms"]),"create_room überschreibt laufenden Raum nicht")
     try:
         w=await websockets.connect(B+"%3Cimg%3E/x"); await w.recv(); ok(False,"böse Raum-ID abgelehnt")
     except Exception: ok(True,"böse Raum-ID abgelehnt")

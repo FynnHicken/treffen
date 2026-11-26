@@ -158,7 +158,6 @@ web_game/
   - `GET /`: Liefert die Hauptseite (`index.html`).
   - `GET /static/...`: Liefert statische Assets (3D-Modelle, Texturen, Audio).
   - `GET /api/config`: Liefert Konfiguration (verfügbare Spielfiguren, Farben, Felddaten).
-  - `POST /api/create_room`: Erstellt manuell einen neuen Raum.
 - **WebSocket-Verbindung**:
   - Endpoint: `/ws/{room_id}/{player_id}`
   - Raum- und Sitzungsverwaltung mit automatischer Wiederverbindung.

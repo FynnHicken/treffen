@@ -46,7 +46,8 @@ jeweils anderen Container (Dev-Server ↔ Tests) die Leserechte (`PermissionErro
 Aufruf: **`http://127.0.0.1:8090/`** (nicht `localhost` – das löst auf diesem Rechner zu IPv6 auf,
 wo die rootless-Portweiterleitung nicht antwortet). Im WLAN: `http://<LAN-IP>:8090/`.
 
-Umgebungsvariablen: `PORT` (8090), `HOST` (0.0.0.0), `MONOPOLY_AWAY_GRACE_SEC` (30).
+Umgebungsvariablen: `PORT` (8090), `HOST` (0.0.0.0), `MONOPOLY_AWAY_GRACE_SEC` (30),
+`TREFFEN_TICKET_SECRET` (gemeinsam mit dem Party-Server; leer = Host per `is_host`-Flag wie früher, siehe Abschnitt 7).
 
 ### Weitere Asset-Quellen außerhalb des Repos (Stand 2026-11-22)
 Unter `~/AGY/Treffen/` liegen alte Projektordner des Nutzers. Nichts davon ist im Repo; vor einer Übernahme
@@ -68,7 +69,8 @@ games/monopoly/tests/run_tests.sh rules    # | driver | settings | sim
 
 | Datei | Prüft |
 |---|---|
-| `test_rules_ws.py` | Host-Rechte, Zug-/Kaufprüfungen, Validierung, Chat-Bereinigung, `create_room`, Bankrott-Geldmenge |
+| `test_rules_ws.py` | Host-Rechte, Zug-/Kaufprüfungen, Validierung, Chat-Bereinigung, Bankrott-Geldmenge |
+| `test_auth_ws.py` | Spieler-ID an Client-Secret gebunden, keine Bot-ID-Übernahme, Host nur per gültigem Hub-Ticket (läuft mit `TREFFEN_TICKET_SECRET`) |
 | `test_driver_ws.py` | Bot-Treiber (nur Bots), Reaktionszeit während Bot-Zügen, Abwesenheit → Computer → Rückkehr, Reconnect-Reihenfolge, Zuschauer, 240 parallele Nachrichten |
 | `test_settings.py` | Gameplay-Paket G1–G10 im Prozess gegen den echten Server-Code (Fake-Sockets, Sleeps auf 0): Einstellungs-Rechte, Startgeld, Frei-Parken-Topf, Los-Gehalt, Gefängnis-Würfe, Spieldauer, Zug-Timer, Schwierigkeiten, Bot-Angebote + Cooldown, Handelsablauf, 30 Partien mit gemischten Regeln |
 | `test_bot_ai_sim.py` | 11 Unit-Tests der Bot-KI + 40 komplette Bot-Partien über den **echten** Bot-Treiber (Sleeps auf 0) mit Invarianten-Prüfung nach jedem Schritt |
@@ -177,8 +179,17 @@ offer_jail_cards, req_jail_cards}`, `ACCEPT_TRADE`, `REJECT_TRADE`, `END_TURN`, 
 `ANIM_CONFIG_UPDATED`, `DEBUG_ACTION_APPLIED`, `PLAYER_DISCONNECTED`, `SPECTATOR`, `ROOM_EXPIRED`,
 `ERROR {message, code?}` (nur an den Absender).
 
-HTTP: `GET /api/config`, `GET /api/rooms`, `POST /api/create_room {room_id?, player_id?}`
-(überschreibt nie einen bestehenden Raum).
+HTTP: `GET /api/config`, `GET /api/rooms`. (`POST /api/create_room` wurde am 2026-11-26 entfernt –
+ungenutzt, und man konnte damit vorab einen Raum mit beliebigem Host anlegen.)
+
+**Verbindungsaufbau & Identität** (`server/auth.py`): `WS /ws/{room_id}/{player_id}`; die **erste
+Nachricht muss `AUTH {secret}`** sein (16–128 Zeichen `[A-Za-z0-9_-]`, Client: `localStorage
+monopoly_client_secret`). Der Server bindet `player_id` pro Raum an `sha256(secret)` (`room_secrets`);
+anderes Secret → `ERROR ID_IN_USE` + Close `4003` (Client holt sich still eine neue ID). IDs mit
+`bot_`-Präfix werden abgelehnt (sonst könnte man Computerzüge spielen). Host-Recht: ist
+`TREFFEN_TICKET_SECRET` gesetzt, nur per `JOIN {ticket}` mit gültigem, vom Party-Server signiertem
+Ticket (`base64url(JSON{v,room,pid,name,host,exp}).base64url(HMAC-SHA256)`, 30 min gültig, kommt per
+`#ticket=` im iframe-Fragment); sonst wie früher per `is_host`. In beiden Fällen nur einmal pro Raum.
 
 `state` enthält u. a. `status` (LOBBY|PLAYING|GAME_OVER), `host_id`, `players[]` (+ `away`, `debts`),
 `current_player`, `dice`, `rolled`, `board_state`, `pending_action`, `pending_trade`,
@@ -210,6 +221,8 @@ Es gibt bereits einen clientseitigen „Zug automatisch beenden“-Timer
 Legende: ✅ erledigt · 🚧 in Arbeit · ⬜ offen
 
 ### Erledigt
+- ✅ Sicherheit S1 (2026-11-26) – Spieler-ID an Client-Secret gebunden, Bot-ID-Übernahme gesperrt,
+  Host per signiertem Hub-Ticket, `create_room` entfernt (Details Abschnitt 7)
 - ✅ Block 1 – Zug-/Host-Prüfungen, Fehlerbehandlung, XSS, Bankrott-Geldmenge, Auktions-Timer-Blockade
 - ✅ Block 2 – Bot-Treiber + Lock, Abwesenheit, Zuschauer (Basis), Reconnect, Aufräumen
 - ✅ Block 3 – Bot-KI, Bot↔Bot-Handel, Kartentexte

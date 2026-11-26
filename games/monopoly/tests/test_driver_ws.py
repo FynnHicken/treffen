@@ -14,7 +14,9 @@ def ok(c,m):
 class C:
     def __init__(s,room,pid): s.room,s.pid=room,pid; s.st=None; s.msgs=[]
     async def open(s):
-        s.ws=await websockets.connect(B+f"{s.room}/{s.pid}"); s.task=asyncio.create_task(s.reader()); return s
+        s.ws=await websockets.connect(B+f"{s.room}/{s.pid}")
+        await s.ws.send(json.dumps({"action":"AUTH","secret":f"secret-{s.room}-{s.pid}".ljust(16,"x")}))
+        s.task=asyncio.create_task(s.reader()); return s
     async def reader(s):
         try:
             async for raw in s.ws:
