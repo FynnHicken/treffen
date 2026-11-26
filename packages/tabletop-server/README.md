@@ -8,4 +8,7 @@ Beispiel: `games/mensch/server3d/main.py`. Protokoll: Kopf von `rooms.py` und `d
 Tests: `python -I packages/tabletop-server/tests/test_tabletop_ws.py` (startet selbst einen Server; ohne
 Python auf dem Host: `podman run --rm -v "$PWD":/repo:ro,z localhost/mono-test-deps sh -c 'cd /tmp && python -I /repo/packages/tabletop-server/tests/test_tabletop_ws.py'`).
 
-Kommt in M3–M5 dazu: Regel-Schnittstelle (`Rules`), Zufall mit Startwert, Bots, Persistenz (wie Monopoly), Zuschauer-Sicht.
+Spielablauf mit Regeln (M4): `GameDef(..., rules=MeineRegeln())` → Lobby (Plätze, Computer per `ADD_BOT`),
+`START` (Host), Würfeln/Ziehen nur im eigenen Zug (Server prüft), `GAME_UPDATED` nach jeder Änderung,
+Bot-Treiber spielt Computer und vertritt Getrennte nach `TABLETOP_AWAY_GRACE_SEC` (20 s), `NEW_ROUND`.
+Kommt in M5: Persistenz (wie Monopoly), Hub-Einbindung, Raum-Einstellungen in der Lobby.

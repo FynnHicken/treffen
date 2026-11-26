@@ -148,3 +148,72 @@ html, body {
 @media (max-width: 520px) {
     .hud-title { display: none; }
 }
+
+/* ---- Spielablauf ---- */
+.status {
+    position: fixed;
+    top: max(64px, calc(env(safe-area-inset-top) + 56px));
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: calc(100vw - 32px);
+    padding: 9px 16px;
+    border-radius: 14px;
+    background: var(--panel);
+    border: 1px solid rgba(255, 220, 170, 0.18);
+    font-size: 14px;
+    text-align: center;
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+    transition: background 0.3s, box-shadow 0.3s;
+}
+.status[hidden] { display: none; }
+.status.mine {
+    background: rgba(120, 72, 20, 0.88);
+    border-color: rgba(255, 210, 140, 0.6);
+    box-shadow: 0 0 24px rgba(255, 190, 100, 0.35);
+    font-weight: 700;
+}
+.start-btn {
+    position: fixed;
+    left: 50%;
+    bottom: max(60px, calc(env(safe-area-inset-bottom) + 52px));
+    transform: translateX(-50%);
+    padding: 13px 22px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #2a1608;
+    font: 800 16px system-ui, sans-serif;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.start-btn[hidden] { display: none; }
+.start-btn:disabled { background: #6b5a48; color: #e8dccb; cursor: default; font-weight: 600; font-size: 14px; }
+.gameover {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(10, 6, 3, 0.5);
+    backdrop-filter: blur(2px);
+}
+.gameover[hidden] { display: none; }
+.gameover-card {
+    width: min(360px, 100%);
+    padding: 22px 24px;
+    border-radius: 18px;
+    background: #2a1d13;
+    border: 1px solid rgba(255, 220, 170, 0.2);
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.gameover-card h2 { margin: 0 0 12px; }
+.gameover-card ol { list-style: none; padding: 0; margin: 0 0 16px; text-align: left; }
+.gameover-card li { padding: 8px 10px; border-radius: 10px; font-size: 16px; }
+.gameover-card li:first-child { background: rgba(232, 165, 75, 0.18); font-weight: 700; }
+.gameover-card li span { display: inline-block; width: 2em; }
+.gameover-card button {
+    width: 100%; padding: 12px; border: 0; border-radius: 12px;
+    background: var(--accent); color: #2a1608; font-weight: 800; font-size: 16px; cursor: pointer;
+}

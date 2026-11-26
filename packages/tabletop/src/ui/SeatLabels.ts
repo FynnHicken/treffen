@@ -15,9 +15,13 @@ export class SeatLabels {
         for (let s = 0; s < table.seats; s++) {
             const el = document.createElement('div');
             el.className = 'tt-seat';
-            el.addEventListener('click', () => {
+            el.addEventListener('click', ev => {
                 const st = this.client.state;
-                if (st && !st.members.some(m => m.seat === s)) this.client.sit(s);
+                if (!st) return;
+                const act = (ev.target as HTMLElement).closest('[data-act]')?.getAttribute('data-act');
+                if (act === 'bot') this.client.addBot(s);
+                else if (act === 'rm') this.client.removeBot(s);
+                else if (!st.members.some(m => m.seat === s) && (!st.status || st.status === 'lobby')) this.client.sit(s);
             });
             const obj = new CSS2DObject(el);
             table.scene.add(obj);
@@ -40,7 +44,7 @@ export class SeatLabels {
             const dir = this.table.seatDirection(s);
             const sideways = Math.abs(dir.dot(own)) < 0.5;      // aus Sicht des eigenen Platzes links/rechts
             const p = portrait && sideways
-                ? own.clone().multiplyScalar(half - 0.85).add(dir.clone().multiplyScalar(half - 3.0))
+                ? own.clone().multiplyScalar(half - 0.85).add(dir.clone().multiplyScalar(half - 2.55))
                 : this.table.seatPosition(s, 0.85);
             obj.position.set(p.x, 0.05, p.z);
         });
@@ -57,19 +61,28 @@ export class SeatLabels {
             const m = state.members.find(x => x.seat === s);
             const color = state.game.seat_colors[s] ?? '#999';
             el.style.setProperty('--tt-color', color);
+            const lobby = !state.status || state.status === 'lobby';
+            const manage = lobby && !!state.status && this.client.isHost;     // Host kann Computer setzen
+            const turn = state.status === 'playing' && state.play?.turn === s;
             el.classList.toggle('free', !m);
             el.classList.toggle('me', !!m && m.id === this.client.you);
             el.classList.toggle('offline', !!m && !m.connected);
+            el.classList.toggle('turn', turn);
             if (!m) {
-                el.innerHTML = `<span class="tt-seat-dot"></span><span class="tt-seat-name">Platz frei</span><span class="tt-seat-action">Hinsetzen</span>`;
+                const sit = this.client.me ? '<span class="tt-seat-action" data-act="sit">Hinsetzen</span>' : '';
+                const bot = manage ? '<span class="tt-seat-action bot" data-act="bot">+ Computer</span>' : '';
+                el.innerHTML = `<span class="tt-seat-dot"></span><span class="tt-seat-name">Platz frei</span>${lobby ? sit : ''}${bot}`;
             } else {
                 const crown = m.id === state.host_id ? '<span class="tt-seat-host" title="Host">👑</span>' : '';
+                const icon = m.is_bot ? '<span title="Computer">🤖</span>' : '';
                 const you = m.id === this.client.you ? ' <span class="tt-seat-you">(du)</span>' : '';
-                const off = m.connected ? '' : ' <span class="tt-seat-off">getrennt</span>';
-                el.innerHTML = `<span class="tt-seat-dot"></span>${crown}<span class="tt-seat-name">${escapeHtml(m.name)}${you}${off}</span>`;
+                const off = m.connected ? '' : ' <span class="tt-seat-off">getrennt – Computer spielt</span>';
+                const rm = manage && m.is_bot ? '<span class="tt-seat-action rm" data-act="rm" title="Computer entfernen">✕</span>' : '';
+                el.innerHTML = `<span class="tt-seat-dot"></span>${crown}${icon}<span class="tt-seat-name">${escapeHtml(m.name)}${you}${off}</span>${rm}`;
             }
             this.table.setSeatColor(s, m ? color : null);
         }
+        this.table.setTurnSeat(state.status === 'playing' ? state.play?.turn ?? null : null);
         this.table.invalidate();
     }
 }

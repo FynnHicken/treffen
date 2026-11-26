@@ -10,6 +10,7 @@ Lehren aus Monopoly, hier von Anfang an eingebaut:
 """
 import asyncio
 import json
+import random
 import math
 import re
 import time
@@ -28,6 +29,10 @@ SEND_TIMEOUT_SEC = 3.0
 STALE_MEMBER_SEC = 90.0          # so lange bleibt ein getrennter Platz reserviert
 EMPTY_ROOM_TTL_SEC = 30 * 60
 PRESENCE_MAX_PER_SEC = 30
+AWAY_GRACE_SEC = float(__import__("os").environ.get("TABLETOP_AWAY_GRACE_SEC", "20"))  # danach spielt der Computer
+BOT_ROLL_DELAY = 1.1          # Computer „greift zum Becher“
+BOT_THINK_DELAY = 2.2         # nach dem Wurf (Würfel rollen) bis zum Zug
+BOT_STEP_DELAY = 0.24         # je Feld, das eine Figur hüpft
 TABLE_EXTENT = 10.0              # Zeiger-Koordinaten müssen auf/um den Tisch liegen
 
 
@@ -36,6 +41,7 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None) -> FastAPI:
     rooms: Dict[str, Room] = {}
     sockets: Dict[str, Dict[str, WebSocket]] = {}   # room -> member -> ws
     locks: Dict[str, asyncio.Lock] = {}
+    drivers: Dict[str, asyncio.Task] = {}
     app.state.rooms, app.state.sockets = rooms, sockets
 
     def lock(room_id: str) -> asyncio.Lock:
@@ -67,15 +73,67 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None) -> FastAPI:
                     pass
         await asyncio.gather(*(deliver(ws) for _, ws in targets))
 
+    def auto_member(room: Room):
+        """Mitglied am Zug, falls der Computer für es spielt (Bot oder lange getrennt), sonst None."""
+        if not room.rules or room.status != "playing" or not room.game:
+            return None
+        m = room.member_at(room.game.get("turn"))
+        if m is None:
+            return None
+        if m.is_bot or (not m.connected and m.disconnected_at and time.time() - m.disconnected_at >= AWAY_GRACE_SEC):
+            return m
+        return None
+
+    def kick_driver(room_id: str):
+        task = drivers.get(room_id)
+        if task and not task.done():
+            return
+        room = rooms.get(room_id)
+        if room and auto_member(room):
+            drivers[room_id] = asyncio.create_task(drive(room_id))
+
+    async def drive(room_id: str):
+        """Spielt Computer-Züge – ein Schritt pro Durchlauf, Warten außerhalb des Locks."""
+        delay = BOT_ROLL_DELAY
+        try:
+            while True:
+                await asyncio.sleep(delay)
+                room = rooms.get(room_id)
+                if not room or not sockets.get(room_id):
+                    return                                  # niemand schaut zu → pausieren
+                async with lock(room_id):
+                    m = auto_member(room)
+                    if not m:
+                        return
+                    if room.rules.wants_roll(room, m.seat):
+                        events = room.roll(m.id, 0.45 + random.random() * 0.4, auto=True)
+                        delay = BOT_THINK_DELAY if room.game and room.game.get("phase") == "move" else BOT_ROLL_DELAY + 0.6
+                        if not events:
+                            delay = 0.5                     # Sperre nach letztem Wurf → kurz warten
+                    else:
+                        events = room.bot_move(m.seat)
+                        path = next((e["event"].get("path") or [] for e in events
+                                     if e["event"]["type"] == "PIECE_MOVED"), [])
+                        delay = BOT_ROLL_DELAY + BOT_STEP_DELAY * len(path)
+                        if not events:
+                            return
+                await broadcast(room_id, events)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"[{room_id}] Fehler im Bot-Treiber: {e!r}")
+
     async def housekeeping():
         while True:
             await asyncio.sleep(5)
             now = time.time()
             for room_id, room in list(rooms.items()):
                 async with lock(room_id):
-                    events = room.remove_stale(STALE_MEMBER_SEC)
+                    # Während des Spiels behalten Getrennte ihren Platz (der Computer vertritt sie)
+                    events = room.remove_stale(STALE_MEMBER_SEC) if room.status != "playing" else []
                 if events:
                     await broadcast(room_id, events)
+                kick_driver(room_id)
                 if sockets.get(room_id):
                     room.empty_since = None
                 elif room.empty_since is None:
@@ -182,6 +240,14 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None) -> FastAPI:
                         await broadcast(room_id, room.stand_up(member_id))
                     elif action == "ROLL":
                         await broadcast(room_id, room.roll(member_id, data.get("power")))
+                    elif action == "START":
+                        await broadcast(room_id, room.start(member_id))
+                    elif action == "NEW_ROUND":
+                        await broadcast(room_id, room.new_round(member_id))
+                    elif action == "ADD_BOT":
+                        await broadcast(room_id, room.add_bot(member_id, data.get("seat")))
+                    elif action == "REMOVE_BOT":
+                        await broadcast(room_id, room.remove_bot(member_id, data.get("seat")))
                     elif action == "GRAB":
                         await broadcast(room_id, room.grab(member_id, data.get("piece")))
                     elif action == "RELEASE":
@@ -192,6 +258,7 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None) -> FastAPI:
                         if events and events[-1]["event"]["type"] == "PIECE_RELEASED":
                             await send(websocket, {"type": "ERROR", "code": "DROP_REJECTED",
                                                    "piece": data.get("piece"), "message": "Dort kann die Figur nicht hin."})
+                kick_driver(room_id)
         except WebSocketDisconnect:
             pass
         except Exception as e:

@@ -267,6 +267,16 @@ export class TableScene {
         this.invalidate();
     }
 
+    /** Platz, der am Zug ist: Platzset leuchtet sanft auf (null = niemand) */
+    setTurnSeat(seat: number | null): void {
+        this.placemats.forEach((m, i) => {
+            const mat = m.material as THREE.MeshStandardMaterial;
+            mat.emissive.set(i === seat ? 0xffd9a0 : 0x000000);
+            mat.emissiveIntensity = i === seat ? 0.22 : 0;
+        });
+        this.invalidate();
+    }
+
     /** Hochkant-Bildschirm? (Namensschilder rücken dann weiter nach innen) */
     get isPortrait(): boolean {
         return this.camera.aspect < 0.8;

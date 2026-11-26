@@ -52,6 +52,19 @@ export interface PieceState {
     held_by: string | null;
 }
 
+/** Spielstand der Regeln (spielspezifisch; diese Felder nutzt der Tisch selbst) */
+export interface PlayState {
+    turn: number | null;
+    phase: 'roll' | 'move' | 'over' | string;
+    rolls_left?: number;
+    dice?: number | null;
+    seats?: number[];
+    finished?: number[];
+    /** erlaubte Züge des Spielers am Zug (nur in phase 'move') */
+    moves?: { piece: string; to: string }[];
+    [key: string]: unknown;
+}
+
 export interface TableState {
     room: string;
     game: { id: string; title: string; seats: number; seat_colors: string[] };
@@ -60,6 +73,9 @@ export interface TableState {
     layout: Layout;
     pieces: Record<string, PieceState>;
     last_roll: Roll | null;
+    /** null = freier Tisch ohne Regeln */
+    status: 'lobby' | 'playing' | 'finished' | null;
+    play: PlayState | null;
 }
 
 export type TableEvent =
@@ -69,7 +85,8 @@ export type TableEvent =
     | { type: 'HOST_CHANGED'; host_id: string | null }
     | { type: 'PIECE_GRABBED'; piece: string; by: string }
     | { type: 'PIECE_RELEASED'; piece: string }
-    | { type: 'PIECE_MOVED'; piece: string; from: string; to: string; by: string }
+    | { type: 'PIECE_MOVED'; piece: string; from: string; to: string; by: string; path?: string[]; capture?: string | null; reason?: string }
+    | { type: 'GAME_UPDATED'; status: TableState['status']; play: PlayState | null }
     | { type: 'DICE_ROLLED'; by: string; values: number[]; throw: ThrowSpec };
 
 export function applyEvent(state: TableState, ev: TableEvent): TableState {
@@ -88,6 +105,8 @@ export function applyEvent(state: TableState, ev: TableEvent): TableState {
             return withPiece(state, ev.piece, { held_by: null });
         case 'PIECE_MOVED':
             return withPiece(state, ev.piece, { field: ev.to, held_by: null });
+        case 'GAME_UPDATED':
+            return { ...state, status: ev.status, play: ev.play };
         case 'DICE_ROLLED':
             return { ...state, last_roll: { by: ev.by, values: ev.values, throw: ev.throw } };
         default:

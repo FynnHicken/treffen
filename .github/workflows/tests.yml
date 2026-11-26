@@ -83,10 +83,13 @@ jobs:
       - name: Server-Tests (Sitzplätze, Host, Präsenz, Reconnect)
         working-directory: /tmp
         run: python -I "$GITHUB_WORKSPACE/packages/tabletop-server/tests/test_tabletop_ws.py"
+      - name: Mensch-Regeln (gezielte Fälle + 100 Computer-Partien)
+        working-directory: /tmp
+        run: python -I "$GITHUB_WORKSPACE/games/mensch/tests/test_rules3d.py"
       - name: Mensch-3D-Client (TypeScript-Prüfung + Vite-Build)
         working-directory: games/mensch/client
         run: npm ci && npm run build
-      - name: Browser-Rauchtest (zwei Spieler, Präsenz, Render-on-Demand)
+      - name: Browser-Test (Lobby, Würfel, echte Partie mit Computer, Render-on-Demand)
         run: |
           (cd /tmp && python -u "$GITHUB_WORKSPACE/games/mensch/server3d/main.py" > /tmp/tisch.log 2>&1 &)
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8095/api/health >/dev/null && break; sleep 1; done

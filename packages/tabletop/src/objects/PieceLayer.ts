@@ -32,6 +32,8 @@ interface Vis {
     pos: THREE.Vector3;         // aktuelle Position (Fuß)
     goal: THREE.Vector3;        // Ziel beim Folgen (drag/held)
     hop?: { from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number; height: number; sound: boolean };
+    /** weitere Felder, über die die Figur Feld für Feld hüpft */
+    queue?: THREE.Vector3[];
     pendingField?: string;      // eigener Drop, auf Bestätigung wartend
     tilt: THREE.Vector2;
 }
@@ -42,6 +44,10 @@ export class PieceLayer {
     private vis = new Map<string, Vis>();
     private group = new THREE.Group();
     private snapRing: THREE.Mesh;
+    private targetRings: THREE.Mesh[] = [];       // erlaubte Ziele beim Ziehen
+    private hintRings = new Map<string, THREE.Mesh>();   // „diese Figur darf ziehen“
+    private downAt = new THREE.Vector2();
+    private dragDist = 0;
     private snapField: string | null = null;
     private dragging: Vis | null = null;
     private animating = false;
@@ -62,9 +68,9 @@ export class PieceLayer {
         this.snapRing.visible = false;
         table.scene.add(this.snapRing);
 
-        client.onState(s => this.syncState(s));
+        client.onState(s => { this.syncState(s); this.updateHints(); });
         client.onEvent(ev => {
-            if (ev.type === 'PIECE_MOVED') this.onMoved(ev.piece, ev.to, ev.by);
+            if (ev.type === 'PIECE_MOVED') this.onMoved(ev.piece, ev.to, ev.by, ev.path, ev.reason);
             else if (ev.type === 'PIECE_GRABBED' && ev.by !== client.you) this.onGrabbedByOther(ev.piece);
             else if (ev.type === 'PIECE_RELEASED') this.onReleased(ev.piece);
         });
@@ -143,7 +149,61 @@ export class PieceLayer {
         const s = this.lastState, me = this.client.me;
         const spec = s?.layout.pieces[id], ps = s?.pieces[id];
         if (!s || !me || me.seat === null || !spec || !ps) return false;
+        const targets = this.client.legalTargets(id);
+        if (targets !== null && targets.length === 0) return false;     // mit Regeln: nur Figuren mit Zug
         return spec.seat === me.seat && (ps.held_by === null || ps.held_by === this.client.you);
+    }
+
+    /** Erlaubte Ziele (mit Regeln) bzw. alle freien Felder (freier Tisch) */
+    private candidates(id: string): string[] {
+        const s = this.lastState;
+        if (!s) return [];
+        const legal = this.client.legalTargets(id);
+        if (legal !== null) return legal;
+        const occupied = new Set(Object.entries(s.pieces).filter(([pid]) => pid !== id).map(([, ps]) => ps.field));
+        return Object.keys(s.layout.fields).filter(f => !occupied.has(f));
+    }
+
+    private ring(color: number, inner: number, outer: number, opacity: number): THREE.Mesh {
+        const m = new THREE.Mesh(
+            new THREE.RingGeometry(inner, outer, 40),
+            new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
+        );
+        m.rotation.x = -Math.PI / 2;
+        this.table.scene.add(m);
+        return m;
+    }
+
+    private showTargets(fields: string[]): void {
+        while (this.targetRings.length < fields.length) this.targetRings.push(this.ring(0xffe6a8, 0.27, 0.33, 0.55));
+        this.targetRings.forEach((r, i) => {
+            r.visible = i < fields.length;
+            if (r.visible) {
+                const p = this.fieldPos(fields[i]);
+                r.position.set(p.x, this.opts.surfaceY + 0.004, p.z);
+            }
+        });
+        this.table.invalidate();
+    }
+
+    /** Dezenter Ring unter Figuren, die jetzt ziehen dürfen (statisch → kein Dauer-Rendern) */
+    private updateHints(): void {
+        const s = this.lastState, me = this.client.me;
+        const movable = new Set<string>();
+        if (s?.status === 'playing' && me && this.client.myTurn && s.play?.phase === 'move') {
+            for (const m of s.play.moves ?? []) movable.add(m.piece);
+        }
+        for (const [id, r] of this.hintRings) {
+            if (!movable.has(id)) { this.table.scene.remove(r); this.hintRings.delete(id); }
+        }
+        for (const id of movable) {
+            if (!this.hintRings.has(id)) this.hintRings.set(id, this.ring(0xfff4d6, 0.29, 0.36, 0.7));
+            const v = this.vis.get(id), r = this.hintRings.get(id)!;
+            const p = v && v.mode === 'rest' ? v.pos : this.fieldPos(s!.pieces[id].field);
+            r.position.set(p.x, this.opts.surfaceY + 0.004, p.z);
+            r.visible = v !== this.dragging;
+        }
+        this.table.invalidate();
     }
 
     private onPointerDown(ev: PointerEvent): void {
@@ -155,6 +215,11 @@ export class PieceLayer {
         ev.preventDefault();
         const v = this.vis.get(id)!;
         this.dragging = v;
+        this.downAt.set(ev.clientX, ev.clientY);
+        this.dragDist = 0;
+        this.showTargets(this.client.legalTargets(id) ?? []);
+        const hint = this.hintRings.get(id);
+        if (hint) hint.visible = false;
         v.mode = 'drag';
         v.goal.copy(v.pos).setY(this.opts.surfaceY + this.lift);
         this.client.grab(id);
@@ -179,6 +244,7 @@ export class PieceLayer {
     private onDragMove(ev: PointerEvent): void {
         const v = this.dragging;
         if (!v) return;
+        this.dragDist = Math.max(this.dragDist, this.downAt.distanceTo(new THREE.Vector2(ev.clientX, ev.clientY)));
         const p = this.table.pickPlane(ev.clientX, ev.clientY, this.opts.surfaceY);
         if (!p) return;
         const lim = this.table.tableSize / 2 - 0.4;
@@ -192,11 +258,11 @@ export class PieceLayer {
 
     private updateSnap(v: Vis, p: THREE.Vector3): void {
         const s = this.lastState;
-        let best: string | null = null, bestD = this.spacing * 0.55;
+        let best: string | null = null, bestD = this.spacing * 0.6;
         if (s) {
-            const occupied = new Set(Object.entries(s.pieces).filter(([id]) => id !== v.id).map(([, ps]) => ps.field));
-            for (const [fid, f] of Object.entries(s.layout.fields)) {
-                if (occupied.has(fid)) continue;
+            for (const fid of this.candidates(v.id)) {
+                const f = s.layout.fields[fid];
+                if (!f) continue;
                 const d = Math.hypot(f.x - p.x, f.z - p.z);
                 if (d < bestD) { bestD = d; best = fid; }
             }
@@ -217,9 +283,15 @@ export class PieceLayer {
         const v = this.dragging;
         this.dragging = null;
         this.snapRing.visible = false;
+        this.showTargets([]);
         if (!v) return;
-        const field = cancelled ? null : this.snapField;
+        let field = cancelled ? null : this.snapField;
         this.snapField = null;
+        // Antippen statt Ziehen: Gibt es genau ein erlaubtes Ziel, dorthin ziehen
+        if (!cancelled && this.dragDist < 8) {
+            const legal = this.client.legalTargets(v.id);
+            if (legal && legal.length === 1) field = legal[0];
+        }
         const current = this.lastState?.pieces[v.id]?.field;
         if (field && field !== current) {
             v.pendingField = field;
@@ -234,7 +306,7 @@ export class PieceLayer {
     }
 
     // ---------- Server-Ereignisse ----------
-    private onMoved(id: string, to: string, by: string): void {
+    private onMoved(id: string, to: string, by: string, path?: string[], reason?: string): void {
         const v = this.vis.get(id);
         if (!v) return;
         if (by === this.client.you && v.pendingField === to) {
@@ -242,6 +314,18 @@ export class PieceLayer {
             return;
         }
         v.pendingField = undefined;
+        if (reason === 'captured') {
+            // Geschlagen: hoher Bogen zurück ins Häuschen
+            this.flyTo(v, this.fieldPos(to), true, { height: 1.4, dur: 0.75 });
+            return;
+        }
+        if (path && path.length > 1 && v.mode !== 'held') {
+            // Feld für Feld hüpfen (Züge anderer, Computer)
+            const pts = path.map(f => this.fieldPos(f));
+            v.queue = pts.slice(1);
+            this.flyTo(v, pts[0], true, { height: 0.3, dur: 0.2 });
+            return;
+        }
         this.flyTo(v, this.fieldPos(to), true);
     }
 
@@ -272,13 +356,13 @@ export class PieceLayer {
     }
 
     // ---------- Animation ----------
-    private flyTo(v: Vis, to: THREE.Vector3, sound: boolean): void {
+    private flyTo(v: Vis, to: THREE.Vector3, sound: boolean, opt?: { height?: number; dur?: number }): void {
         const dist = Math.hypot(to.x - v.pos.x, to.z - v.pos.z);
         v.mode = 'hop';
         v.hop = {
             from: v.pos.clone(), to: to.clone(), t: 0,
-            dur: HOP_DURATION + Math.min(0.35, dist * 0.04),
-            height: Math.max(0.15, Math.min(0.6, dist * 0.12)) + Math.max(0, v.pos.y - this.opts.surfaceY) * 0.4,
+            dur: opt?.dur ?? HOP_DURATION + Math.min(0.35, dist * 0.04),
+            height: opt?.height ?? Math.max(0.15, Math.min(0.6, dist * 0.12)) + Math.max(0, v.pos.y - this.opts.surfaceY) * 0.4,
             sound
         };
         this.kick();
@@ -300,10 +384,17 @@ export class PieceLayer {
                     v.pos.y = THREE.MathUtils.lerp(h.from.y, h.to.y, k) + Math.sin(Math.PI * h.t) * h.height;
                     v.tilt.multiplyScalar(Math.max(0, 1 - dt * 10));
                     if (h.t >= 1) {
-                        v.mode = 'rest';
-                        v.hop = undefined;
-                        v.tilt.set(0, 0);
-                        if (h.sound) knock(0.55);
+                        const next = v.queue?.shift();
+                        if (h.sound) knock(next || v.queue ? 0.35 : 0.55, next ? 1.1 : 1);
+                        if (next) {
+                            v.hop = { from: v.pos.clone(), to: next, t: 0, dur: 0.2, height: 0.3, sound: true };
+                        } else {
+                            v.mode = 'rest';
+                            v.hop = undefined;
+                            v.queue = undefined;
+                            v.tilt.set(0, 0);
+                            this.updateHints();
+                        }
                     }
                 } else {
                     // drag/held: weich dem Ziel folgen und in Bewegungsrichtung neigen

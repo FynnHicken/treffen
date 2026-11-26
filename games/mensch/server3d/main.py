@@ -13,6 +13,7 @@ from tabletop_server import GameDef, create_app  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from layout import COLORS, LAYOUT, PALETTE  # noqa: E402
+from rules import MenschRules  # noqa: E402
 
 GAME = GameDef(
     "mensch",
@@ -21,6 +22,7 @@ GAME = GameDef(
     seat_colors=[PALETTE[c] for c in COLORS],
     min_players=2,
     layout=LAYOUT,
+    rules=MenschRules(),
 )
 CLIENT_DIST = Path(os.environ.get("MENSCH_CLIENT_DIST", Path(__file__).resolve().parents[1] / "static3d"))
 

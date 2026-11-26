@@ -60,3 +60,13 @@
     .tt-seat { padding: 5px 10px; font-size: 12px; }
     .tt-seat.free .tt-seat-name { display: none; }
 }
+
+/* Am Zug: Schild leuchtet in Spielerfarbe */
+.tt-seat.turn {
+    border-width: 2px;
+    border-color: var(--tt-color);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--tt-color) 35%, transparent), 0 0 22px color-mix(in srgb, var(--tt-color) 55%, transparent);
+}
+.tt-seat-action.bot { background: #4b5563; cursor: pointer; }
+.tt-seat-action.rm { background: transparent; border: 1px solid rgba(255,255,255,0.3); cursor: pointer; padding: 1px 7px; }
+.tt-seat-action { cursor: pointer; }

@@ -82,6 +82,46 @@ export class TableClient {
         return () => this.connectionListeners.delete(fn);
     }
 
+    start(): void {
+        this.socket.send({ action: 'START' });
+    }
+
+    newRound(): void {
+        this.socket.send({ action: 'NEW_ROUND' });
+    }
+
+    addBot(seat: number): void {
+        this.socket.send({ action: 'ADD_BOT', seat });
+    }
+
+    removeBot(seat: number): void {
+        this.socket.send({ action: 'REMOVE_BOT', seat });
+    }
+
+    /** Bin ich am Zug? (ohne Regeln: immer, wenn ich sitze) */
+    get myTurn(): boolean {
+        const s = this.state, me = this.me;
+        if (!s || !me || me.seat === null) return false;
+        if (!s.status) return true;
+        return s.status === 'playing' && s.play?.turn === me.seat;
+    }
+
+    /** Darf ich jetzt würfeln? */
+    get canRoll(): boolean {
+        const s = this.state;
+        if (!s || !this.me || this.me.seat === null) return false;
+        if (!s.status || s.status === 'lobby') return true;      // freier Tisch / Lobby: zum Ausprobieren
+        return this.myTurn && s.play?.phase === 'roll' && (s.play.rolls_left ?? 0) > 0;
+    }
+
+    /** Erlaubte Ziele einer Figur (null = freier Tisch, jedes freie Feld) */
+    legalTargets(piece: string): string[] | null {
+        const s = this.state;
+        if (!s?.status) return null;
+        if (!this.myTurn || s.play?.phase !== 'move') return [];
+        return (s.play.moves ?? []).filter(m => m.piece === piece).map(m => m.to);
+    }
+
     roll(power: number): void {
         this.socket.send({ action: 'ROLL', power });
     }

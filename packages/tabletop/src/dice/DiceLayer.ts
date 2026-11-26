@@ -79,7 +79,7 @@ export class DiceLayer {
     cupPosition(seat: number): THREE.Vector3 {
         const dir = this.table.seatDirection(seat);
         const right = new THREE.Vector3(dir.z, 0, -dir.x);
-        return dir.multiplyScalar(this.table.tableSize / 2 - 1.15).add(right.multiplyScalar(3.4));
+        return dir.multiplyScalar(this.table.tableSize / 2 - 1.15).add(right.multiplyScalar(2.45));
     }
 
     private syncState(s: TableState): void {
@@ -275,6 +275,7 @@ export class DiceLayer {
     private onPointerDown(ev: PointerEvent): void {
         const me = this.client.me;
         if (!me || me.seat === null || this.holding || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
+        if (!this.client.canRoll) return;              // nicht dran → Becher bleibt stehen, Kamera darf drehen
         const cup = this.cups.get(me.seat);
         if (!cup || !this.table.pickObjects(ev.clientX, ev.clientY, [cup]).length) return;
         ev.stopPropagation();

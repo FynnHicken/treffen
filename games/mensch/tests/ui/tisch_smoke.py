@@ -55,52 +55,6 @@ async def main():
         ok(await anna.evaluate("__tisch.presence.visibleCount") == 1, "Annas Bildschirm zeigt Bens Zeiger")
         await anna.screenshot(path=f"{OUT}/desktop-anna.png")
 
-        # ---- M2: Figuren ----
-        await anna.wait_for_function("__tisch.pieces.isResting()", timeout=5000)
-        n = await anna.evaluate("Object.keys(__tisch.client.state.pieces).length")
-        ok(n == 16, f"16 Figuren auf dem Brett ({n})")
-        start = await anna.evaluate("__tisch.pieces.screenPos('p-yellow-0')")
-        target = await anna.evaluate("__tisch.pieces.fieldScreenPos('t0')")
-        await anna.mouse.move(start["x"], start["y"])
-        await anna.mouse.down()
-        steps = 14
-        for i in range(1, steps + 1):
-            await anna.mouse.move(start["x"] + (target["x"] - start["x"]) * i / steps,
-                                  start["y"] + (target["y"] - start["y"]) * i / steps)
-            await anna.wait_for_timeout(35)
-        await ben.wait_for_timeout(300)
-        ok(await ben.evaluate("__tisch.pieces.modeOf('p-yellow-0')") == "held", "Ben sieht Annas Figur in der Luft (wird gehalten)")
-        await anna.screenshot(path=f"{OUT}/desktop-anna-zieht.png")
-        await anna.mouse.up()
-        await anna.wait_for_timeout(900)
-        f_anna = await anna.evaluate("__tisch.client.state.pieces['p-yellow-0'].field")
-        f_ben = await ben.evaluate("__tisch.client.state.pieces['p-yellow-0'].field")
-        ok(f_anna == "t0" and f_ben == "t0", f"Figur auf Startfeld A (Anna: {f_anna}, Ben: {f_ben})")
-        async def resting(page):
-            try:
-                await page.wait_for_function("__tisch.pieces.isResting()", timeout=30000)
-                return True
-            except Exception:
-                return False
-        ok(await resting(ben), "Bei Ben steht die Figur wieder ruhig")
-        # Ben (Grün) versucht Annas gelbe Figur zu greifen → geht nicht, Kamera dreht stattdessen
-        bp = await ben.evaluate("__tisch.pieces.screenPos('p-yellow-1')")
-        await ben.mouse.move(bp["x"], bp["y"]); await ben.mouse.down(); await ben.mouse.move(bp["x"] + 60, bp["y"]); await ben.mouse.up()
-        await anna.wait_for_timeout(500)
-        ok(await anna.evaluate("__tisch.client.state.pieces['p-yellow-1'].held_by") is None, "Fremde Figur nicht greifbar")
-        # Auf besetztes Feld ziehen → zurück
-        p1 = await anna.evaluate("__tisch.pieces.screenPos('p-yellow-1')")
-        t0 = await anna.evaluate("__tisch.pieces.fieldScreenPos('t0')")
-        await anna.mouse.move(p1["x"], p1["y"]); await anna.mouse.down()
-        for i in range(1, 11):
-            await anna.mouse.move(p1["x"] + (t0["x"] - p1["x"]) * i / 10, p1["y"] + (t0["y"] - p1["y"]) * i / 10)
-            await anna.wait_for_timeout(30)
-        await anna.mouse.up()
-        await anna.wait_for_timeout(1000)
-        ok(await anna.evaluate("__tisch.client.state.pieces['p-yellow-1'].field") == "h-yellow-1", "Auf besetztes Feld nicht möglich – Figur bleibt im Häuschen")
-        ok(await resting(anna), "…und ist zurückgeglitten")
-        await anna.screenshot(path=f"{OUT}/desktop-anna-brett.png")
-
         # ---- M3: Würfel ----
         async def dice_done(page):
             try:
@@ -108,7 +62,7 @@ async def main():
                 return True
             except Exception:
                 return False
-        await anna.click("#roll-btn")
+        await anna.evaluate("__tisch.dice.throwDice(0.6)")    # in der Lobby zum Ausprobieren
         await anna.wait_for_timeout(400)
         ok(await dice_done(anna) and await dice_done(ben), "Würfel per Knopf geworfen und liegen bei beiden")
         roll = await anna.evaluate("__tisch.client.state.last_roll.values")
@@ -143,14 +97,96 @@ async def main():
         ok(await ben.evaluate("__tisch.dice.topValues()") == lr["values"], "Auch dieser Wurf zeigt die Server-Zahl")
         await ben.screenshot(path=f"{OUT}/handy-ben-wurf.png")
 
-        # Ben setzt sich auf einen anderen freien Platz (Klick auf Schild)
-        await ben.evaluate("__tisch.client.sit(2)")
+        # ---- M4: Spiel mit Regeln ----
+        await anna.wait_for_timeout(1600)
+        bot_btn = await ben.query_selector('.tt-seat [data-act="bot"]')
+        ok(bot_btn is None, "Gast sieht keinen „+ Computer“-Knopf")
+        # Computer auf Rot (Platz 2): Knopf am Schild dieses Platzes
+        await anna.evaluate("""[...document.querySelectorAll('.tt-seat')].find(e => e.querySelector('[data-act=bot]') && e.style.getPropertyValue('--tt-color').toLowerCase() === '#d63a2f').querySelector('[data-act=bot]').click()""")
         await anna.wait_for_timeout(600)
-        ok(await anna.evaluate("__tisch.client.state.members.find(m => m.name === 'Ben').seat") == 2, "Platzwechsel kommt an")
-        await ben.wait_for_timeout(900)   # Kamerafahrt zum neuen Platz
-        await ben.screenshot(path=f"{OUT}/handy-ben.png")
+        ok(await ben.evaluate("__tisch.client.state.members.some(m => m.is_bot && m.seat === 2)"), "Host setzt Computer auf Rot – Ben sieht ihn")
+        await anna.click("#start-btn")
+        await anna.wait_for_function("__tisch.client.state.status === 'playing'", timeout=10000)
+        ok(True, "Spiel gestartet")
+        status = await anna.inner_text("#status")
+        ok("Du bist dran" in status, f"Anna: „{status}“")
+        ok(not await ben.evaluate("__tisch.client.canRoll"), "Ben darf in Annas Zug nicht würfeln")
+        before = await ben.evaluate("JSON.stringify(__tisch.client.state.last_roll)")
+        await ben.evaluate("__tisch.client.roll(0.5)")
+        await ben.wait_for_timeout(500)
+        ok(await ben.evaluate("JSON.stringify(__tisch.client.state.last_roll)") == before, "…auch nicht per Trick (Server lehnt ab)")
+        for p in (anna, ben):
+            await p.evaluate("window.__log = []; __tisch.client.onEvent(e => window.__log.push(e)); 0")
 
-        # Render-on-Demand: im Leerlauf keine neuen Frames
+        async def act(page, name, want_illegal=False):
+            """Ein Schritt eines Menschen: würfeln oder eine Figur ziehen (per Maus)."""
+            st = await page.evaluate("({my: __tisch.client.myTurn, roll: __tisch.client.canRoll, play: __tisch.client.state.play})")
+            if not st["my"]:
+                return None
+            if st["roll"]:
+                await page.evaluate("__tisch.dice.throwDice(0.7)")
+                await page.wait_for_timeout(1700)
+                return "roll"
+            if st["play"]["phase"] != "move":
+                return None
+            await page.wait_for_function("__tisch.pieces.isResting()", timeout=30000)
+            mv = st["play"]["moves"][0]
+            legal = [m["to"] for m in st["play"]["moves"] if m["piece"] == mv["piece"]]
+            src = await page.evaluate(f"__tisch.pieces.screenPos('{mv['piece']}')")
+            if want_illegal:
+                wrong = "t25" if "t25" not in legal else "t26"
+                dst = await page.evaluate(f"__tisch.pieces.fieldScreenPos('{wrong}')")
+                await drag(page, src, dst)
+                await page.wait_for_timeout(1200)
+                ok(await page.evaluate(f"__tisch.client.state.pieces['{mv['piece']}'].field") != wrong, f"{name}: Zug auf falsches Feld abgelehnt")
+                await page.wait_for_function("__tisch.pieces.isResting()", timeout=30000)
+                src = await page.evaluate(f"__tisch.pieces.screenPos('{mv['piece']}')")
+            if len(legal) == 1 and not want_illegal:
+                await page.mouse.click(src["x"], src["y"])          # Antippen genügt
+                how = "antippen"
+            else:
+                dst = await page.evaluate(f"__tisch.pieces.fieldScreenPos('{mv['to']}')")
+                await drag(page, src, dst)
+                how = "ziehen"
+            await page.wait_for_timeout(900)
+            field = await page.evaluate(f"__tisch.client.state.pieces['{mv['piece']}'].field")
+            ok(field == mv["to"], f"{name} zieht {mv['piece']} → {mv['to']} ({how})")
+            return "move"
+
+        async def drag(page, src, dst):
+            await page.mouse.move(src["x"], src["y"]); await page.mouse.down()
+            for i in range(1, 13):
+                await page.mouse.move(src["x"] + (dst["x"] - src["x"]) * i / 12, src["y"] + (dst["y"] - src["y"]) * i / 12)
+                await page.wait_for_timeout(25)
+            await page.mouse.up()
+
+        moved = {"Anna": 0, "Ben": 0}
+        illegal_done = False
+        for step in range(120):
+            for page, name in ((anna, "Anna"), (ben, "Ben")):
+                r = await act(page, name, want_illegal=(not illegal_done and name == "Anna"))
+                if r == "move":
+                    moved[name] += 1
+                    if name == "Anna":
+                        illegal_done = True
+            bot_moved = await anna.evaluate("window.__log.some(e => e.type === 'PIECE_MOVED' && e.by === 'bot_2')")
+            if moved["Anna"] and moved["Ben"] and bot_moved:
+                break
+            await anna.wait_for_timeout(400)
+        ok(moved["Anna"] >= 1 and moved["Ben"] >= 1, f"Beide Menschen haben gezogen ({moved})")
+        ok(bot_moved, "Der Computer hat selbst gewürfelt und gezogen")
+        seqs = await ben.evaluate("window.__log.length")
+        ok(seqs > 5, f"Ben hat alle Ereignisse mitbekommen ({seqs})")
+        await anna.screenshot(path=f"{OUT}/desktop-anna-spiel.png")
+        await ben.screenshot(path=f"{OUT}/handy-ben-spiel.png")
+
+        # Ben setzt sich auf einen anderen freien Platz (Klick auf Schild)
+        await ben.evaluate("__tisch.client.sit(3)")
+        await anna.wait_for_timeout(600)
+        ok(await anna.evaluate("__tisch.client.state.members.find(m => m.name === 'Ben').seat") == 1, "Im laufenden Spiel kein Platzwechsel")
+
+        # Render-on-Demand: im Leerlauf keine neuen Frames (warten, bis ein Mensch dran ist – dann ruht der Tisch)
+        await anna.wait_for_function("[0, 1].includes(__tisch.client.state.play.turn) && __tisch.dice.isResting() && __tisch.pieces.isResting()", timeout=60000)
         await anna.wait_for_timeout(3500)   # Zeiger blendet aus, Kamera steht
         f1 = await anna.evaluate("__tisch.table.framesRendered")
         await anna.wait_for_timeout(2000)
@@ -161,7 +197,7 @@ async def main():
         await ben.context.close()
         await anna.wait_for_timeout(800)
         off = await anna.evaluate("__tisch.client.state.members.find(m => m.name === 'Ben')")
-        ok(off and off["connected"] is False and off["seat"] == 2, "Ben getrennt, Platz reserviert")
+        ok(off and off["connected"] is False and off["seat"] == 1, "Ben getrennt, Platz bleibt (Computer vertritt ihn)")
         await anna.screenshot(path=f"{OUT}/desktop-anna-ben-weg.png")
 
         ok(not ea and not eb, f"Keine JS-Fehler {(ea + eb)[:3]}")

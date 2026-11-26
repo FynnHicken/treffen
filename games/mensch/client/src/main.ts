@@ -6,6 +6,7 @@ import {
     createPawn, DiceLayer, isTouchDevice, PieceLayer, Presence, SeatLabels, TableClient, TableScene, unlockAudioOnGesture
 } from '@treffen/tabletop';
 import { BOARD_THICKNESS, createBoard } from './board';
+import { setupHud } from './hud';
 
 const params = new URLSearchParams(location.search);
 const NAME_KEY = 'mensch_name';
@@ -84,8 +85,8 @@ async function start(): Promise<void> {
         obstacles: [{ x: 0, z: 0, w: BOARD_SIZE, d: BOARD_SIZE, h: BOARD_THICKNESS }]
     });
     const rollBtn = document.getElementById('roll-btn') as HTMLButtonElement;
-    rollBtn.addEventListener('click', () => dice.throwDice(0.6));
-    client.onState(s => { rollBtn.hidden = !s.members.some(m => m.id === client.you && m.seat !== null); });
+    rollBtn.addEventListener('click', () => { if (client.canRoll) dice.throwDice(0.6); });
+    setupHud(client, toast);
 
     client.onError(err => {
         if (err.code === 'DROP_REJECTED') toast('Dort kann die Figur nicht hin.');

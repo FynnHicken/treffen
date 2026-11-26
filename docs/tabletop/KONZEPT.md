@@ -1,6 +1,6 @@
 # Treffen-Spieltisch – Konzept
 
-> Stand: 2026-11-26 · Status: **abgestimmt · M1 ✅ · M2 ✅ · M3 ✅ · als Nächstes M4 (Regeln + Bots)** · Erstes Spiel: Mensch ärgere dich nicht
+> Stand: 2026-11-26 · Status: **abgestimmt · M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · als Nächstes M5 (Lobby/Hub, Persistenz, Feinschliff)** · Erstes Spiel: Mensch ärgere dich nicht
 
 ## 1. Ziel
 
@@ -89,6 +89,10 @@ Monopoly bleibt unverändert lauffähig und ist **Steinbruch** (Würfel, Hüpfen
 
 ## 6. Schnittstelle für ein Spiel (Server, Python)
 
+Umgesetzt in `packages/tabletop-server/tabletop_server/rules.py` (Doku im Dateikopf), Mensch-Regeln in
+`games/mensch/server3d/rules.py`. Abweichend vom Entwurf hier: Regeln arbeiten direkt auf `room.pieces`/
+`room.game` und liefern Ereignisse ohne Nummer; `public()` statt `view_for()` (Mensch hat keine geheimen Infos).
+
 ```python
 class Rules:
     def setup(self, players, settings) -> State                 # Anfangsaufstellung
@@ -127,7 +131,7 @@ Typen, Figuren (Modell, Farben), Würfel-Anzahl, Sitzplätze. Der Tisch baut dar
 | **M1 Leerer Tisch** ✅ | 3D-Tisch, Sitzplätze, Kamera mit Gesten, zwei Browser sehen sich (Präsenz-Zeiger), Hub-Ticket |
 | **M2 Gegenstände** ✅ | Mensch-Brett + Figuren: greifen, ziehen, einrasten, Sync über Server (noch ohne Regeln) |
 | **M3 Würfel** ✅ | Becher, Physik-Würfel, Ergebnis vom Server, Klang + Vibration |
-| **M4 Regeln** | Regel-Schnittstelle, Mensch-Regeln portiert, Zielvorschau, „gleitet zurück“, Bots |
+| **M4 Regeln** ✅ | Regel-Schnittstelle, Mensch-Regeln portiert, Zielvorschau, „gleitet zurück“, Bots |
 | **M5 Fertig** | Lobby, Einstellungen, Persistenz, Zuschauer, Handy-Feinschliff → ersetzt das heutige 2D-Mensch im Hub |
 | später | Karten/Hand/Stapel, Geld/Marker, freier Modus (Einstellung), weitere Spiele, Monopoly v2 |
 
