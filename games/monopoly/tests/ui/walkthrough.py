@@ -51,7 +51,7 @@ SETTLE_JS = """() => {
   if (mine && pa.type === 'TAX_CHOICE') g.payIncomeTax('flat');
   if (mine && pa.type === 'CARD_DRAWN' && g.confirmCard) g.confirmCard();
   if (mine && pa.type === 'BUY_OR_AUCTION' && pa.square) g.buyProperty(pa.square.index);
-  const open = [...document.querySelectorAll('.modal-overlay')].filter(m => getComputedStyle(m).display !== 'none' && m.id !== 'modal-lobby');
+  const open = [...document.querySelectorAll('.modal-overlay.open')].filter(m => m.id !== 'modal-lobby');
   open.forEach(m => g.closeModal && g.closeModal(m.id));
   const blocking = mine && ['TAX_CHOICE', 'CARD_DRAWN', 'DRAW_CARD', 'MOVE_TOKEN', 'BUY_OR_AUCTION'].includes(pa.type);
   return !blocking && open.length === 0;
