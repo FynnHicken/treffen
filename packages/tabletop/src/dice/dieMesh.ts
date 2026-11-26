@@ -47,8 +47,9 @@ function faceTexture(value: number): THREE.CanvasTexture {
     const c = cv.getContext('2d')!;
     // Elfenbein mit leichtem Verlauf zur Kante (wirkt gerundet)
     const g = c.createRadialGradient(s / 2, s / 2, s * 0.1, s / 2, s / 2, s * 0.75);
-    g.addColorStop(0, '#fbf6ea');
-    g.addColorStop(1, '#e9dfc8');
+    // Etwas gedämpftes Elfenbein: bleibt unter der Lampe unter Weiß, die Augen behalten Kontrast
+    g.addColorStop(0, '#ece3cf');
+    g.addColorStop(1, '#ddd1b6');
     c.fillStyle = g;
     c.fillRect(0, 0, s, s);
     const r = value === 1 ? s * 0.11 : s * 0.085;
@@ -74,8 +75,9 @@ let geometry: RoundedBoxGeometry | null = null;
 
 export function createDie(size: number): THREE.Mesh {
     if (!geometry) geometry = new RoundedBoxGeometry(size, size, size, 4, size * 0.14);
-    const mats = FACE_VALUES.map(v => new THREE.MeshPhysicalMaterial({
-        map: faceTexture(v), roughness: 0.32, clearcoat: 0.6, clearcoatRoughness: 0.2
+    // Matt-seidig statt lackiert: Glanzlichter breit und schwach, damit sie die Augen nie überstrahlen
+    const mats = FACE_VALUES.map(v => new THREE.MeshStandardMaterial({
+        map: faceTexture(v), roughness: 0.62, metalness: 0, envMapIntensity: 0.6
     }));
     const mesh = new THREE.Mesh(geometry, mats);
     mesh.castShadow = true;

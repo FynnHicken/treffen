@@ -117,6 +117,13 @@ async def main():
         ia, ib = await anna.evaluate("__tisch.dice.lastRollInfo()"), await ben.evaluate("__tisch.dice.lastRollInfo()")
         ok(ia["positions"] == ib["positions"], f"Würfel liegt bei beiden gleich ({ia['positions']}), Wurf dauert {ia['seconds']:.2f} s")
         await anna.screenshot(path=f"{OUT}/desktop-anna-wurf.png")
+        # Nahaufnahme von oben, im Reflex der Lampe (dort wurden die Augen früher überstrahlt)
+        await anna.evaluate("""(() => { const t = __tisch.table, p = __tisch.dice.lastRollInfo().positions[0];
+            t.controls.target.set(p[0], 0.2, p[2]); t.camera.position.set(p[0] + 0.15, 2.6, p[2] + 0.9);
+            t.controls.update(); t.invalidate(); })()""")
+        await anna.wait_for_timeout(600)
+        await anna.screenshot(path=f"{OUT}/desktop-wuerfel-nah.png", clip={"x": 520, "y": 250, "width": 400, "height": 400})
+        await anna.evaluate("__tisch.table.resetView(false)")
         # Becher greifen und schütteln
         await anna.wait_for_timeout(1600)    # Sperre nach dem letzten Wurf
         cup = await anna.evaluate("__tisch.dice.cupScreenPos(0)")
@@ -125,6 +132,9 @@ async def main():
         for i in range(24):
             await anna.mouse.move(cup["x"] + (40 if i % 2 else -40), cup["y"] + (15 if i % 3 else -15))
             await anna.wait_for_timeout(25)
+            if i == 12:
+                await anna.wait_for_timeout(800)
+                ok(await anna.evaluate("__tisch.dice.topValues().length") == 0, "Beim Schütteln liegt der Würfel im Becher (eingesammelt)")
         await anna.mouse.up()
         await anna.wait_for_timeout(500)
         ok(await dice_done(ben), "Becher geschüttelt → gewürfelt")

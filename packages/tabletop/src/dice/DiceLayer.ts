@@ -46,6 +46,12 @@ export class DiceLayer {
     private lastRollKey = '';
     private holding: { power: number; last: THREE.Vector2; t: number; motion: (e: DeviceMotionEvent) => void } | null = null;
     private shakingOthers = new Map<number, number>();      // Sitzplatz → Zeit des letzten Schüttel-Signals
+    /** Würfel werden gerade vom Tisch in einen Becher eingesammelt */
+    private gather: { seat: number; t: number; from: THREE.Vector3[]; fromQ: THREE.Quaternion[] } | null = null;
+    /** Wurf, der nach dem Einsammeln abgespielt wird */
+    private queued: { values: number[]; thr: { power: number; seed: number; seat: number } } | null = null;
+    /** In wessen Becher liegen die Würfel gerade (unsichtbar)? */
+    private inCup: number | null = null;
     private readonly size: number;
     private count = 1;
 
@@ -58,7 +64,11 @@ export class DiceLayer {
         client.onPresence((from, p) => {
             if (p?.hold !== 'cup') return;
             const seat = this.client.state?.members.find(m => m.id === from)?.seat;
-            if (seat != null) { this.shakingOthers.set(seat, performance.now()); this.animate(); }
+            if (seat != null) {
+                this.shakingOthers.set(seat, performance.now());
+                this.gatherInto(seat);          // wer schüttelt, hat die Würfel vorher eingesammelt
+                this.animate();
+            }
         });
         const container = table.renderer.domElement.parentElement!;
         container.addEventListener('pointerdown', ev => this.onPointerDown(ev), { capture: true });
@@ -104,18 +114,51 @@ export class DiceLayer {
 
     private onRolled(values: number[], thr: { power: number; seed: number; seat: number }, animate: boolean): void {
         this.lastRollKey = rollKey({ values, throw: thr });
-        this.recording = this.simulate(values, thr);
-        this.dice.forEach(d => { d.visible = true; });
         if (!animate) {
+            this.recording = this.simulate(values, thr);
+            this.dice.forEach(d => { d.visible = true; });
+            this.inCup = null;
             this.playTime = Infinity;
             this.applyFrame(this.recording.frames.length - 1, 0);
             this.table.invalidate();
             return;
         }
+        // Liegen die Würfel noch auf dem Tisch, erst in den Becher des Werfenden einsammeln
+        const onTable = this.dice.some(d => d.visible);
+        if (this.gather || (onTable && this.inCup !== thr.seat)) {
+            this.queued = { values, thr };
+            this.gatherInto(thr.seat);
+            return;
+        }
+        this.startPlayback(values, thr);
+    }
+
+    private startPlayback(values: number[], thr: { power: number; seed: number; seat: number }): void {
+        this.recording = this.simulate(values, thr);
+        this.dice.forEach(d => { d.visible = true; });
+        this.inCup = null;
         this.playTime = 0;
         this.nextImpact = 0;
+        this.applyFrame(0, 0);
         this.tipCup(thr.seat);
         if (thr.seat === this.client.me?.seat) vibrate([12, 30, 18]);
+        this.animate();
+    }
+
+    /** Würfel vom Tisch in den Becher eines Platzes holen (hüpfen im Bogen hinein, dann unsichtbar). */
+    private gatherInto(seat: number): void {
+        if (this.gather || this.inCup === seat) return;
+        const visible = this.dice.filter(d => d.visible);
+        if (!visible.length) { this.inCup = seat; return; }
+        if (this.playTime !== Infinity && this.recording) {         // falls noch rollend: sofort zum Endstand
+            this.applyFrame(this.recording.frames.length - 1, 0);
+            this.playTime = Infinity;
+        }
+        this.gather = {
+            seat, t: 0,
+            from: this.dice.map(d => d.position.clone()),
+            fromQ: this.dice.map(d => d.quaternion.clone())
+        };
         this.animate();
     }
 
@@ -250,6 +293,7 @@ export class DiceLayer {
         const DME = (window as any).DeviceMotionEvent;
         if (DME?.requestPermission) DME.requestPermission().catch(() => undefined);
         window.addEventListener('devicemotion', motion);
+        this.gatherInto(this.client.me!.seat!);
         this.holding = { power: 0.25, last: new THREE.Vector2(ev.clientX, ev.clientY), t: performance.now(), motion };
         vibrate(6);
         const move = (e: PointerEvent) => {
@@ -310,8 +354,34 @@ export class DiceLayer {
         this.playing = true;
         this.table.addAnimator(dt => {
             let busy = false;
+            // Einsammeln: im Bogen zur Becheröffnung, dabei leicht drehen
+            const g = this.gather;
+            if (g) {
+                g.t = Math.min(1, g.t + dt / 0.45);
+                const k = g.t * g.t * (3 - 2 * g.t);
+                const mouth = this.cupPosition(g.seat).setY(0.95);
+                this.dice.forEach((d, i) => {
+                    if (!d.visible) return;
+                    const from = g.from[i] ?? mouth;
+                    d.position.lerpVectors(from, mouth, k);
+                    d.position.y += Math.sin(Math.PI * g.t) * 0.9;
+                    d.quaternion.copy(g.fromQ[i] ?? d.quaternion)
+                        .multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(k * 4, k * 2, 0)));
+                    d.scale.setScalar(g.t > 0.85 ? 1 - (g.t - 0.85) / 0.15 * 0.6 : 1);
+                });
+                if (g.t >= 1) {
+                    this.dice.forEach(d => { d.visible = false; d.scale.setScalar(1); });
+                    knock(0.22, 2.7);
+                    this.inCup = g.seat;
+                    this.gather = null;
+                    const q = this.queued;
+                    this.queued = null;
+                    if (q) this.startPlayback(q.values, q.thr);
+                }
+                busy = true;
+            }
             const rec = this.recording;
-            if (rec && this.playTime !== Infinity) {
+            if (rec && this.playTime !== Infinity && !this.gather) {
                 this.playTime += dt;
                 const f = this.playTime * 120;
                 const i = Math.floor(f);
