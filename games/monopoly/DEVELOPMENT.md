@@ -47,7 +47,16 @@ Aufruf: **`http://127.0.0.1:8090/`** (nicht `localhost` – das löst auf diesem
 wo die rootless-Portweiterleitung nicht antwortet). Im WLAN: `http://<LAN-IP>:8090/`.
 
 Umgebungsvariablen: `PORT` (8090), `HOST` (0.0.0.0), `MONOPOLY_AWAY_GRACE_SEC` (30),
-`TREFFEN_TICKET_SECRET` (gemeinsam mit dem Party-Server; leer = Host per `is_host`-Flag wie früher, siehe Abschnitt 7).
+`TREFFEN_TICKET_SECRET` (gemeinsam mit dem Party-Server; leer = Host per `is_host`-Flag wie früher, siehe Abschnitt 7),
+`MONOPOLY_DB` (SQLite-Datei für Spielstände, Standard `data/monopoly.sqlite3`; leer = aus).
+
+**Spielstände** (`server/persistence.py`): Jeder Broadcast markiert den Raum als geändert, alle 2 s und
+beim Herunterfahren werden laufende/beendete Partien (nicht Lobbys) in SQLite geschrieben und beim Start
+wiederhergestellt (inkl. Client-Secrets; Abwesende übernimmt nach der Gnadenfrist der Computer). Beim Laden
+wird ein frisches `GameRoom`/`Player` erzeugt und mit den gespeicherten Feldern überschrieben → **neue
+Felder in `__init__` sind automatisch rückwärtskompatibel**. Felder umbenennen/umdeuten = `SCHEMA_VERSION`
+in `persistence.py` erhöhen (alte Stände werden dann verworfen). Compose mountet `./data/monopoly`.
+Der Dev-Server mit `-v .:/src:ro` kann nicht schreiben → Persistenz dort aus (Warnung im Log).
 
 ### Weitere Asset-Quellen außerhalb des Repos (Stand 2026-11-22)
 Unter `~/AGY/Treffen/` liegen alte Projektordner des Nutzers. Nichts davon ist im Repo; vor einer Übernahme
@@ -70,6 +79,7 @@ games/monopoly/tests/run_tests.sh rules    # | driver | settings | sim
 | Datei | Prüft |
 |---|---|
 | `test_rules_ws.py` | Host-Rechte, Zug-/Kaufprüfungen, Validierung, Chat-Bereinigung, Bankrott-Geldmenge |
+| `test_persistence_ws.py` | Partie → harter Server-Absturz (SIGKILL) → Neustart: Besitz, Geld, Host, Secret-Bindung erhalten; kaputter Eintrag wird übersprungen |
 | `test_auth_ws.py` | Spieler-ID an Client-Secret gebunden, keine Bot-ID-Übernahme, Host nur per gültigem Hub-Ticket (läuft mit `TREFFEN_TICKET_SECRET`) |
 | `test_driver_ws.py` | Bot-Treiber (nur Bots), Reaktionszeit während Bot-Zügen, Abwesenheit → Computer → Rückkehr, Reconnect-Reihenfolge, Zuschauer, 240 parallele Nachrichten |
 | `test_settings.py` | Gameplay-Paket G1–G10 im Prozess gegen den echten Server-Code (Fake-Sockets, Sleeps auf 0): Einstellungs-Rechte, Startgeld, Frei-Parken-Topf, Los-Gehalt, Gefängnis-Würfe, Spieldauer, Zug-Timer, Schwierigkeiten, Bot-Angebote + Cooldown, Handelsablauf, 30 Partien mit gemischten Regeln |
@@ -221,6 +231,7 @@ Es gibt bereits einen clientseitigen „Zug automatisch beenden“-Timer
 Legende: ✅ erledigt · 🚧 in Arbeit · ⬜ offen
 
 ### Erledigt
+- ✅ Persistenz P1 (2026-11-26) – laufende Partien überstehen Neustart/Update (SQLite, `persistence.py`)
 - ✅ Sicherheit S1 (2026-11-26) – Spieler-ID an Client-Secret gebunden, Bot-ID-Übernahme gesperrt,
   Host per signiertem Hub-Ticket, `create_room` entfernt (Details Abschnitt 7)
 - ✅ Block 1 – Zug-/Host-Prüfungen, Fehlerbehandlung, XSS, Bankrott-Geldmenge, Auktions-Timer-Blockade

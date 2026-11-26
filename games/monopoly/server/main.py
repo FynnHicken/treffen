@@ -23,6 +23,7 @@ INDEX_HTML = STATIC_DIR / "index.html"
 from game_state import GameRoom, TOKEN_OPTIONS, PLAYER_COLORS, SQUARES, MAX_PLAYERS, clean_text
 import bot_ai
 import auth
+import persistence
 
 app = FastAPI(title="Monopoly 3D Web Edition")
 
@@ -83,6 +84,7 @@ def delete_room(room_id: str):
     room_empty_since.pop(room_id, None)
     room_locks.pop(room_id, None)
     room_secrets.pop(room_id, None)
+    persistence.forget(room_id)
 
 def update_room_expiry(room_id: str, force_reset: bool = False):
     room = rooms.get(room_id)
@@ -167,11 +169,49 @@ async def tick_room_timers(room_id: str):
         kick_bot_driver(room_id)
 
 
+def restore_saved_rooms():
+    """Laufende Partien aus SQLite zurückholen (nach Neustart/Update des Servers)."""
+    for r_id, (room, secrets) in persistence.load_all().items():
+        if r_id in rooms:
+            continue
+        rooms[r_id] = room
+        room_secrets[r_id] = dict(secrets)
+        connections[r_id] = {}
+        room.log("🔄 Server wurde neu gestartet – das Spiel geht weiter.")
+        if room.status == "PLAYING":
+            # Wer nicht zurückkommt, wird nach der Gnadenfrist vom Computer vertreten
+            for p in room.players:
+                if not p.is_bot and not p.is_bankrupt:
+                    schedule_away_timer(r_id, p.id)
+            if room.auction_state:
+                schedule_auction_flow(r_id)
+
+
+async def persistence_loop():
+    while True:
+        await asyncio.sleep(persistence.FLUSH_INTERVAL_SEC)
+        try:
+            persistence.flush(rooms, room_secrets)
+        except Exception as e:
+            print(f"[Persistenz] Fehler beim Speichern: {e!r}")
+
+
 @app.on_event("startup")
 async def start_cleanup_task():
+    restore_saved_rooms()
     asyncio.create_task(cleanup_expired_rooms_loop())
+    asyncio.create_task(persistence_loop())
+
+
+@app.on_event("shutdown")
+async def save_on_shutdown():
+    for r_id in rooms:
+        persistence.mark_dirty(r_id)
+    persistence.flush(rooms, room_secrets)
+
 
 async def broadcast_room(room_id: str, message: dict):
+    persistence.mark_dirty(room_id)  # jede Zustandsänderung wird gebroadcastet → dann auch gespeichert
     if room_id in connections:
         payload = json.dumps(message)
         dead = []

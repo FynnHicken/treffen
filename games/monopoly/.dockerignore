@@ -1,5 +1,6 @@
-__pycache__
-*.pyc
-*.pyo
-.git
-.pytest_cache
+# Nicht ins Image: Laufzeitdaten, Tests, Screenshots im Projektordner (static/ bleibt vollständig)
+data/
+tests/
+images/
+/*.png
+__pycache__/

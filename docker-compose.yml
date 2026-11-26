@@ -134,6 +134,9 @@ services:
     restart: unless-stopped
     environment:
       - TREFFEN_TICKET_SECRET=${TREFFEN_TICKET_SECRET:-}
+    volumes:
+      # Laufende Partien (SQLite) – überstehen Neustart, Update und Neubau des Containers
+      - ./data/monopoly:/app/data
     ports:
       - "8090:8090"
     networks:

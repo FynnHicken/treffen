@@ -11,7 +11,7 @@ COPY games/skribbl ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-w -s" -tags timetzdata -o /scribblers ./cmd/scribblers
 
 # Stage 2: Build Guess The Price Client (Vite + React)
-FROM node:20-bookworm-slim AS gtp-client-builder
+FROM node:22-bookworm-slim AS gtp-client-builder
 WORKDIR /app
 COPY games/guess-the-price/apps/client/package*.json ./
 RUN npm install
@@ -20,7 +20,7 @@ ENV VITE_BASE_PATH=/price-guess/
 RUN npm run build
 
 # Stage 3: Final Runtime Image (Debian/Ubuntu slim with Node.js, Python, Nginx)
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 

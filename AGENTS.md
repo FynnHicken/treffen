@@ -84,12 +84,12 @@ ein Browser-Rauchtest des Hubs. **Rot = nicht deployen.** Status: `gh run list -
 - **Monopoly**: `games/monopoly/tests/run_tests.sh` (Podman oder Docker, nichts auf dem Host
   installieren). Details in DEVELOPMENT.md. Vor jedem Push laufen lassen.
 - **Hub-Sync-Server**: `party-server/test/server.test.mjs` (`node --test`). Lokal ohne Node auf dem Host:
-  `podman run --rm -v "$PWD/party-server":/app:ro,z docker.io/library/node:20-alpine sh -c 'cp -r /app /s && cd /s && npm ci --silent && npm test'`
+  `podman run --rm -v "$PWD/party-server":/app:ro,z docker.io/library/node:22-alpine sh -c 'cp -r /app /s && cd /s && npm ci --silent && npm test'`
 - **Hub im Browser**: `party-hub/tests/browser_smoke.py` (Playwright; Hub muss laufen, Aufruf im Dateikopf).
 - **Abhängigkeiten sind exakt gepinnt** (`requirements.txt`, `package-lock.json`). Updates bewusst machen:
   Version ändern → Tests → committen.
 - Auf diesem Rechner ist **kein Node/npm auf dem Host** – JS-Syntax per
-  `podman run --rm -v .:/j:ro,Z docker.io/library/node:20-alpine node --check /j/<datei>.js`.
+  `podman run --rm -v .:/j:ro,Z docker.io/library/node:22-alpine node --check /j/<datei>.js`.
 
 ## Aktueller Stand (zuletzt aktualisiert: 2026-11-26)
 
@@ -115,8 +115,10 @@ Erledigt und auf `main`:
     Abstimmung über Geräte hinweg repariert (`broadcastVotes` fehlte), Nginx-Resolver aus `resolv.conf`
     (feste, teils nicht existierende Resolver ließen Anfragen alle 10 s bis zu 5 s hängen).
 
+11. Monopoly-Spielstände in SQLite (2026-11-26): Partien überstehen Neustart/Update, Volume `./data/monopoly`.
+
 **Umbau-Plan (mit dem Nutzer am 2026-11-26 abgestimmt, Schritt für Schritt):** 1. ✅ Monopoly-Verbindungen
-absichern · 1b. ✅ CI + Hub-Tests · 2. Monopoly-Spielstände in SQLite speichern · 3. Vite + TypeScript, `game_client.js` in Module
+absichern · 1b. ✅ CI + Hub-Tests · 2. ✅ Monopoly-Spielstände in SQLite speichern · 3. Vite + TypeScript, `game_client.js` in Module
 zerlegen · 4. Hub-Client: Server als einzige Wahrheit (localStorage/BroadcastChannel-Abgleich raus), Spiele
 als Plug-ins mit Manifest statt fest verdrahtet · 5. Design/Handy. Performance-Notizen für später:
 `broadcast_room` sendet seriell unter dem Raum-Lock (langsamer Client bremst alle), volle `to_dict()` bei

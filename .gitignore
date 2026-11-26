@@ -36,6 +36,10 @@ build/
 !games/guess-the-price/apps/client/.env
 
 # Docker volumes and persistent state
+/data/
+games/monopoly/data/
+*.sqlite3
+*.sqlite3-*
 gtp-postgres-data/
 *.db
 *.db-journal

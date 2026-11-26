@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Führt alle Monopoly-Tests in Podman/Docker aus. Nichts wird auf dem Host installiert.
 #   ./games/monopoly/tests/run_tests.sh            # alle Tests
-#   ./games/monopoly/tests/run_tests.sh rules      # nur test_rules_ws.py (rules|auth|driver|settings|sim)
+#   ./games/monopoly/tests/run_tests.sh rules      # nur test_rules_ws.py (rules|auth|persist|driver|settings|sim)
 set -euo pipefail
 cd "$(dirname "$0")/.."            # -> games/monopoly
 ENGINE=$(command -v podman || command -v docker)
@@ -35,6 +35,7 @@ rc=0
 [[ $what == all || $what == rules  ]] && { run_ws_test test_rules_ws.py  || rc=1; }
 [[ $what == all || $what == auth   ]] && { run_ws_test test_auth_ws.py test-ticket-secret || rc=1; }
 [[ $what == all || $what == driver ]] && { run_ws_test test_driver_ws.py || rc=1; }
+[[ $what == all || $what == persist ]] && { run_inproc_test test_persistence_ws.py || rc=1; }
 [[ $what == all || $what == settings ]] && { run_inproc_test test_settings.py   || rc=1; }
 [[ $what == all || $what == sim    ]] && { run_inproc_test test_bot_ai_sim.py || rc=1; }
 echo; [[ $rc == 0 ]] && echo "✅ Alle Testdateien bestanden." || echo "❌ Mindestens eine Testdatei ist fehlgeschlagen."
