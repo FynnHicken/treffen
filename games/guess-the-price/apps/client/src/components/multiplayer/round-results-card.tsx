@@ -1,3 +1,4 @@
+import { PlayerAvatar } from './player-avatar';
 import { formatPrice } from '@/lib/utils';
 import { PlayerRoundResultsRecord } from '@/interfaces/mp.interfaces';
 import { Button } from '../ui/button';
@@ -56,6 +57,7 @@ export const RoundResultsCard = ({ results, playerName, isHost, onNextRound, onE
 								<div className='flex flex-col md:flex-row gap-2 items-start justify-start'>
 									<div className='flex gap-2 items-center justify-start'>
 										<h3 className='text-lg font-semibold'>#{i + 1}</h3>
+										<PlayerAvatar name={result.playerName} size={36} />
 										<h3 className='font-medium'>
 											{result.playerName} {playerName == result.playerName && '(du)'}
 										</h3>

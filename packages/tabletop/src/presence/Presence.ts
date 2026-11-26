@@ -6,6 +6,8 @@ import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import type { TableScene } from '../engine/TableScene';
 import type { PresenceData, TableClient } from '../net/TableClient';
+import type { Member } from '../net/state';
+import { avatarUrl } from '../ui/avatar';
 
 const FADE_AFTER_MS = 2500;
 
@@ -38,7 +40,7 @@ export class Presence {
             for (const [id, r] of this.remotes) {
                 const m = s.members.find(x => x.id === id);
                 if (!m || !m.connected) this.remove(id);
-                else this.style(r, m.name, m.color);
+                else this.style(r, m.name, m.color, m);
             }
         });
     }
@@ -80,17 +82,29 @@ export class Presence {
         const r: Remote = { group, ring, label, target: new THREE.Vector3(), lastSeen: performance.now(), down: false };
         this.remotes.set(id, r);
         const m = this.client.state?.members.find(x => x.id === id);
-        this.style(r, m?.name ?? '…', m?.color ?? '#ffffff');
+        this.style(r, m?.name ?? '…', m?.color ?? '#ffffff', m);
         return r;
     }
 
-    private style(r: Remote, name: string, color: string): void {
+    private style(r: Remote, name: string, color: string, m?: Member | null): void {
         for (const child of r.group.children) {
             const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
             if (mat && 'color' in mat) mat.color.set(color);
         }
         const el = r.label.element as HTMLDivElement;
-        el.textContent = name;
+        const url = avatarUrl(m);
+        if (el.dataset.name !== name || (el.dataset.avatar ?? '') !== (url ?? '')) {
+            el.dataset.name = name;
+            el.dataset.avatar = url ?? '';
+            el.textContent = name;
+            if (url) {
+                const img = document.createElement('img');
+                img.className = 'tt-avatar';
+                img.src = url;
+                img.alt = '';
+                el.prepend(img);
+            }
+        }
         el.style.setProperty('--tt-color', color);
         el.style.color = readableTextOn(color);
     }

@@ -117,6 +117,8 @@ async def main():
     h = await C("T1", "hubhost").open(ticket=ticket("T1", True))
     await settle()
     ok(a.state["host_id"] == "hubhost", "Gültiges Host-Ticket übernimmt Host (auch wenn jemand zuerst da war)")
+    ok(a.member("hubhost")["avatar"] == "/party-ws/avatar/T1/hub.svg", "Avatar-URL aus der Hub-ID im Ticket")
+    ok(a.member("alice")["avatar"] is None, "Ohne Ticket kein Avatar")
     g = await C("T1", "gast").open(ticket=ticket("T1", True))
     await settle()
     ok(a.state["host_id"] == "hubhost", "Host-Ticket wirkt nur einmal pro Raum")

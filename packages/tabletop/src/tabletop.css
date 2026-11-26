@@ -28,8 +28,13 @@
     border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
+.tt-avatar { display: inline-block; flex: none; border-radius: 50%; object-fit: cover; vertical-align: middle; }
+.tt-presence-label .tt-avatar { width: 18px; height: 18px; margin: -2px 5px -2px -4px; box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.35); }
+
 .tt-presence-label {
     --tt-color: #fff;
+    display: flex;
+    align-items: center;
     padding: 2px 7px;
     border-radius: 6px;
     background: var(--tt-color);

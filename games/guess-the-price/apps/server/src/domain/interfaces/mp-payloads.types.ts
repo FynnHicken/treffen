@@ -37,12 +37,14 @@ export interface PlayerLeavesOutgoingPayload {
 	playerName: string;
 	players: number;
 	playerNames?: string[];
+	playerAvatars?: Record<string, string>;
 }
 
 export interface PlayerJoinsOutgoingPayload {
 	playerName: string;
 	players: number;
 	playerNames?: string[];
+	playerAvatars?: Record<string, string>;
 	host?: string;
 }
 
@@ -54,6 +56,7 @@ export interface SessionDetailsOutgoingPayload {
 	sessionId: string;
 	players: number;
 	playerNames: string[];
+	playerAvatars: Record<string, string>;
 	fromHub: boolean;
 }
 

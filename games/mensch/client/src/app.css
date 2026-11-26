@@ -176,6 +176,8 @@ html, body {
     transition: background 0.3s, box-shadow 0.3s;
 }
 .status[hidden] { display: none; }
+.status .tt-avatar { width: 24px; height: 24px; margin: -4px 7px -3px 0; box-shadow: 0 0 0 2px rgba(255, 220, 170, 0.35); }
+.gameover-card li .tt-avatar { width: 26px; height: 26px; margin: -3px 8px -3px 0; }
 .status.mine {
     background: rgba(120, 72, 20, 0.88);
     border-color: rgba(255, 210, 140, 0.6);

@@ -58,6 +58,7 @@ export const useMultiplayerConnection = () => {
 				sessionId: sessionPayload.sessionId,
 				players: sessionPayload.players,
 				playerNames: sessionPayload.playerNames ?? [],
+				playerAvatars: sessionPayload.playerAvatars ?? {},
 				hostName: sessionPayload.host,
 			});
 			setPlayer({ ...playerPayload, isHost: playerPayload.isHost ?? sessionPayload.host === playerPayload.playerName });

@@ -9,6 +9,8 @@ export interface Member {
     color: string;
     connected: boolean;
     is_bot: boolean;
+    /** Avatar-Bild aus dem Hub (nur mit Hub-Ticket), sonst null */
+    avatar?: string | null;
 }
 
 /** Ablageplatz auf dem Brett (Tisch-Koordinaten, Mitte = 0,0; Platz 0 sitzt bei +z) */

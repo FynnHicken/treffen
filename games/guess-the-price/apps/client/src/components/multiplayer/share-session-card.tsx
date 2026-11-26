@@ -2,6 +2,7 @@ import { Copy, Joystick } from '@phosphor-icons/react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
 import { toast } from 'sonner';
+import { PlayerAvatar } from './player-avatar';
 
 interface Props {
 	isHost: boolean;
@@ -40,8 +41,9 @@ export const ShareSessionCard = ({ isHost, sessionId, playerNumber, playerName, 
 						{names.map(name => (
 							<li
 								key={name}
-								className={`px-3 py-2 rounded-md border text-sm font-medium dark:border-zinc-700 ${name === playerName ? 'border-cyan-400 dark:border-cyan-400' : ''}`}
+								className={`inline-flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-md border text-sm font-medium dark:border-zinc-700 ${name === playerName ? 'border-cyan-400 dark:border-cyan-400' : ''}`}
 							>
+								<PlayerAvatar name={name} size={28} />
 								{name}
 								{name === playerName && <span className='text-zinc-500'> (du)</span>}
 								{name === hostName && <span className='ml-1 text-amber-500 text-xs font-semibold'>HOST</span>}

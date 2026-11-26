@@ -21,18 +21,18 @@ export const useMpNotifications = () => {
 		const store = () => useMpStore.getState();
 
 		const onPlayerJoin = (payload: PlayerJoinsOutgoingPayload) => {
-			store().setPlayers(payload.players, payload.playerNames);
+			store().setPlayers(payload.players, payload.playerNames, payload.playerAvatars);
 			if (payload.host) store().setHost(payload.host);
 			if (payload.playerName !== store().playerName) toast.success(`${payload.playerName} ist dabei`);
 		};
 
 		const onPlayerLeave = (payload: PlayerLeavesOutgoingPayload) => {
-			store().setPlayers(payload.players, payload.playerNames);
+			store().setPlayers(payload.players, payload.playerNames, payload.playerAvatars);
 			toast.warning(`${payload.playerName} ist weg`);
 		};
 
 		const onPlayerReconnect = (payload: PLayerReconnectsOutgoingPayload) => {
-			store().setPlayers(payload.players, payload.playerNames);
+			store().setPlayers(payload.players, payload.playerNames, payload.playerAvatars);
 			if (payload.host) store().setHost(payload.host);
 			if (payload.playerName !== store().playerName) toast.info(`${payload.playerName} ist wieder da`);
 		};

@@ -411,10 +411,72 @@ setInterval(() => {
     }
 }, 1000);
 
+// Avatare als fertiges Bild für die Spiele: /party-ws/avatar/<RAUM>/<Spieler-ID>.svg
+// (.json liefert {color, face} – für Spiele, die selbst auf ein Canvas/WebGL zeichnen: ein SVG würde
+// dort je nach Browser das Canvas „verunreinigen“, ein data:-PNG nicht)
+// Die Spiele kennen die Spieler-ID aus dem Ticket und brauchen nur ein <img>; die Bilddaten
+// laufen so nicht durch ihre eigenen Protokolle. Gesicht und Farbe sind beim Beitritt geprüft
+// (sanitizeProfile), das SVG wird über <img> geladen (keine Skripte) und hat zusätzlich eine strenge CSP.
+const AVATAR_PATH_RE = /^\/(?:party-ws\/)?avatar\/([A-Za-z0-9_-]{1,32})\/([A-Za-z0-9_-]{1,64})\.(svg|json)$/;
+const DEFAULT_FACE_SVG = '<g transform="translate(22, 11) scale(0.56)"><circle cx="35" cy="42" r="7" fill="#111827"/>' +
+    '<circle cx="65" cy="42" r="7" fill="#111827"/><circle cx="37" cy="40" r="2.2" fill="#fff"/>' +
+    '<circle cx="67" cy="40" r="2.2" fill="#fff"/><path d="M33,62 Q50,76 67,62" fill="none" stroke="#111827" ' +
+    'stroke-width="6.5" stroke-linecap="round"/></g>';
+function avatarSvg(player) {
+    const color = COLOR_RE.test(player.color || '') ? player.color : '#6366f1';
+    const face = AVATAR_DATA_URL_RE.test(player.avatar || '')
+        ? `<image href="${player.avatar}" x="0" y="0" width="100" height="100"/>`
+        : DEFAULT_FACE_SVG;
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">' +
+        '<defs><clipPath id="c"><circle cx="50" cy="50" r="50"/></clipPath></defs><g clip-path="url(#c)">' +
+        '<rect width="100" height="100" fill="#1e293b" opacity="0.18"/>' +
+        `<path d="M14,104 C14,72 30,62 50,62 C70,62 86,72 86,104 Z" fill="${color}" stroke="#1e293b" stroke-width="5" stroke-linejoin="round"/>` +
+        `<circle cx="50" cy="39" r="28" fill="${color}" stroke="#1e293b" stroke-width="5"/>` +
+        '<path d="M31,24 A22,22 0 0,1 48,16" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="3.5" stroke-linecap="round"/>' +
+        `${face}</g></svg>`;
+}
+function serveAvatar(req, res, pathname) {
+    const m = AVATAR_PATH_RE.exec(pathname);
+    if (!m) return false;
+    const room = rooms.get(m[1].toUpperCase());
+    const player = room && room.players.get(m[2]);
+    if (!player) {
+        res.writeHead(404, { 'Cache-Control': 'no-store' });
+        res.end();
+        return true;
+    }
+    const asJson = m[3] === 'json';
+    const body = asJson
+        ? JSON.stringify({
+            color: COLOR_RE.test(player.color || '') ? player.color : '#6366f1',
+            face: AVATAR_DATA_URL_RE.test(player.avatar || '') ? player.avatar : null
+        })
+        : avatarSvg(player);
+    const etag = '"' + crypto.createHash('sha1').update(body).digest('base64url').slice(0, 16) + '"';
+    const headers = {
+        'Content-Type': asJson ? 'application/json' : 'image/svg+xml',
+        // kurz cachen, dann per ETag nachfragen: neue Gesichter kommen nach spätestens 30 s an
+        'Cache-Control': 'public, max-age=30, must-revalidate',
+        'ETag': etag,
+        'Content-Security-Policy': "default-src 'none'; img-src data:; style-src 'unsafe-inline'",
+        'X-Content-Type-Options': 'nosniff',
+        'Cross-Origin-Resource-Policy': 'same-origin'
+    };
+    if (req.headers['if-none-match'] === etag) {
+        res.writeHead(304, headers);
+        res.end();
+        return true;
+    }
+    res.writeHead(200, headers);
+    res.end(req.method === 'HEAD' ? undefined : body);
+    return true;
+}
+
 // HTTP Server for Healthchecks & Open Rooms Listing
 const server = http.createServer((req, res) => {
     try {
         const reqUrl = new URL(req.url, 'http://localhost');
+        if (serveAvatar(req, res, reqUrl.pathname)) return;
         if (reqUrl.pathname === '/rooms' || reqUrl.pathname === '/party-ws/rooms' || reqUrl.searchParams.get('rooms') === '1') {
             const now = Date.now();
             const activeRooms = [];

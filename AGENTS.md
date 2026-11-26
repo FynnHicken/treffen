@@ -134,6 +134,13 @@ Erledigt und auf `main`:
     Commons (`apps/client/public/products/`, Lizenzen in `QUELLEN.md`). Abhängigkeiten per `package-lock.json` gepinnt.
     Browser-Test: `party-hub/tests/gtp_via_hub.py`.
 
+16. Hub-Avatare in den Spielen (2026-11-26): Der party-server liefert jeden Avatar als Bild,
+    `/party-ws/avatar/<RAUM>/<Hub-Spieler-ID>.svg` (strenge CSP, ETag), und als `.json` ({color, face}) für
+    Canvas/WebGL. Die Spiele kennen die ID aus dem Hub-Ticket (`pid`), es fließen keine Bilddaten durch ihre
+    Protokolle. Eingebaut in Guess The Price (Warteraum, Ergebnis, Wertung; `PlayerAvatar`) und den Spieltisch
+    (Platzschilder, Zeiger, Statuszeile, Siegerehrung; `packages/tabletop/src/ui/avatar.ts`). Ohne Ticket gibt es
+    keinen Avatar (Anfangsbuchstabe bzw. nichts). Neues Spiel: `pid` aus dem Ticket → URL bauen → `<img>`.
+
 14. Hub-Lobby als Kachelraster (2026-11-26, Entwurf „F1 · Arcade × Bento“): `party-hub/tiles.js` (`HUB_TILES` –
     Kachel hinzufügen/entfernen = ein Eintrag), Stil in `party-hub/hub.css`. Bühne mit ausgewähltem Spiel, Einladen,
     Spieler, „Heute gespielt“ (Verlauf kommt vom Party-Server, `history` in `ROSTER_SYNC`), Abstimmung nur solange eine

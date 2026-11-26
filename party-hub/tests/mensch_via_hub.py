@@ -9,6 +9,7 @@ import asyncio, random, string, sys
 from playwright.async_api import async_playwright
 
 BASE = sys.argv[1].rstrip("/")
+SHOTS = sys.argv[2] if len(sys.argv) > 2 else None
 ROOM = "MHUB" + "".join(random.choices(string.digits, k=4))
 ARGS = ["--use-gl=swiftshader", "--enable-webgl", "--ignore-gpu-blocklist"]
 FAILS = []
@@ -67,6 +68,12 @@ async def main():
             names = await ft.evaluate("__tisch.client.state.members.map(m => [m.name, m.seat])")
             ok(sorted(n for n, _ in names) == ["Fynn", "Lukas"] and len({s for _, s in names}) == 2, f"Namen aus dem Hub, eigene Plätze: {names}")
             ok(await ft.is_visible("#start-btn") and not await fg.is_visible("#start-btn"), "Nur der Host sieht „Spiel starten“")
+            avatars = await ft.evaluate("__tisch.client.state.members.map(m => m.avatar)")
+            ok(all(a and a.startswith("/party-ws/avatar/") for a in avatars), f"Avatar-URLs aus dem Hub: {avatars}")
+            await ft.wait_for_function("__tisch.labels.avatarShown().filter(Boolean).length === 2", timeout=8000)
+            ok(True, "Avatare auf beiden Platzschildern")
+            if SHOTS:
+                await host.screenshot(path=f"{SHOTS}/mensch-avatare.png")
         ok(not he and not ge, f"Keine JS-Fehler im Hub ({(he + ge)[:2]})")
         await b.close()
     print("\n" + ("❌ %d Fehler" % len(FAILS) if FAILS else "✅ Mensch über den Hub bestanden"))

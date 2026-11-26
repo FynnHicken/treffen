@@ -23,6 +23,7 @@ const sessionDetails = (session: MpSession): SessionDetailsOutgoingPayload => ({
 	currentlyPlaying: !!session.currentRound,
 	players: session.connectedPlayers.length,
 	playerNames: session.playerNames,
+	playerAvatars: session.playerAvatars,
 	fromHub: session.fromHub,
 });
 
@@ -49,6 +50,7 @@ export const gameSessionSocketHandler = (io: Server, socket: Socket) => {
 			playerName,
 			players: session.connectedPlayers.length,
 			playerNames: session.playerNames,
+			playerAvatars: session.playerAvatars,
 			host: session.hostName,
 		} as PlayerJoinsOutgoingPayload);
 	};

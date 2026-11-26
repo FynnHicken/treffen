@@ -74,6 +74,18 @@ export class MpSession {
 		return this.connectedPlayers.map(p => p.name);
 	}
 
+	/**
+	 * Name → Avatar-Bild aus dem Hub (party-server rendert es aus Gesicht + Farbe).
+	 * Nur für Hub-Spieler mit Ticket (hubPid); auch Abwesende, damit die Wertung ihre Bilder behält.
+	 */
+	public get playerAvatars(): Record<string, string> {
+		if (!this.fromHub) return {};
+		const room = encodeURIComponent(this.id.replace(/^hub-/, ''));
+		return Object.fromEntries(
+			this.players.filter(p => p.hubPid).map(p => [p.name, `/party-ws/avatar/${room}/${encodeURIComponent(p.hubPid!)}.svg`]),
+		);
+	}
+
 	//Session management
 	public endSession() {
 		this.io
@@ -151,6 +163,7 @@ export class MpSession {
 				playerName: disconnectedPlayer.name,
 				players: this.connectedPlayers.length,
 				playerNames: this.playerNames,
+				playerAvatars: this.playerAvatars,
 			} as PlayerLeavesOutgoingPayload);
 
 		// Wer noch fehlt, ist vielleicht gerade gegangen – dann nicht bis zum Ende der Zeit warten

@@ -184,3 +184,26 @@ test('Gestartete Spiele landen im Verlauf, unbekannte Spiele werden ignoriert', 
     assert.ok(Math.abs(r.history[0].startedAt - Date.now()) < 5000, 'Startzeit stimmt');
     a.close(); b.close();
 });
+
+test('Avatar als SVG: Farbe + gemaltes Gesicht, unbekannte Spieler 404, ETag', async () => {
+    const face = 'data:image/png;base64,iVBORw0KGgo=';
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/?room=R9`);
+    await new Promise(r => ws.on('open', r));
+    ws.send(JSON.stringify({ type: 'JOIN', secret: 's', user: { id: 'p_alice', name: 'Alice', color: '#22c55e', avatar: face } }));
+    await sleep(150);
+    const url = `http://127.0.0.1:${port}/party-ws/avatar/r9/p_alice.svg`;
+    const res = await fetch(url);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'image/svg+xml');
+    assert.match(res.headers.get('content-security-policy'), /default-src 'none'/);
+    const svg = await res.text();
+    assert.ok(svg.includes('fill="#22c55e"'), 'Körperfarbe');
+    assert.ok(svg.includes(`href="${face}"`), 'Gesicht eingebettet');
+    const again = await fetch(url, { headers: { 'If-None-Match': res.headers.get('etag') } });
+    assert.equal(again.status, 304);
+    const json = await (await fetch(`http://127.0.0.1:${port}/party-ws/avatar/R9/p_alice.json`)).json();
+    assert.deepEqual(json, { color: '#22c55e', face });
+    assert.equal((await fetch(`http://127.0.0.1:${port}/party-ws/avatar/R9/niemand.svg`)).status, 404);
+    assert.equal((await fetch(`http://127.0.0.1:${port}/party-ws/avatar/R9/..%2Fx.svg`)).status, 404);
+    ws.close();
+});

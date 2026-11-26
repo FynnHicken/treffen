@@ -12,6 +12,7 @@ export { applyEvent } from './net/state';
 export type { Member, TableState, TableEvent, Layout, FieldSpec, PieceSpec, PieceState, Roll, ThrowSpec, SettingSpec, SettingValue } from './net/state';
 export { Presence } from './presence/Presence';
 export { SeatLabels } from './ui/SeatLabels';
+export { avatarUrl, avatarImgHtml, avatarCanvas } from './ui/avatar';
 export { SettingsPanel } from './ui/SettingsPanel';
 export { PieceLayer } from './objects/PieceLayer';
 export type { PieceLayerOptions } from './objects/PieceLayer';

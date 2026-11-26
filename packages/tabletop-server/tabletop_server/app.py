@@ -241,12 +241,15 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optio
 
                 async with lock(room_id):
                     if action == "JOIN":
+                        hub_pid = None
                         if auth.tickets_enabled():
                             ticket = auth.verify_ticket(data.get("ticket"), room_id)
                             wants_host = bool(ticket and ticket.get("host") is True)
+                            if ticket:   # Raumcode aus dem Ticket: so wie der Hub ihn schreibt (Großbuchstaben)
+                                hub_pid = (str(ticket.get("room", "")).upper(), ticket.get("pid"))
                         else:
                             wants_host = False
-                        events = room.join(member_id, data.get("name"), wants_host)
+                        events = room.join(member_id, data.get("name"), wants_host, hub_pid)
                         joined = True
                         await send(websocket, room.snapshot_for(member_id))
                         await broadcast(room_id, events, exclude=member_id)

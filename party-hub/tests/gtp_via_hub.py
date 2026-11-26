@@ -84,6 +84,9 @@ async def main():
         names = await fh.locator("li").all_inner_texts()
         ok(any("Lukas" in n for n in names) and any("Fynn" in n for n in names) and any("Mia" in n for n in names),
            f"Namen kommen aus dem Hub: {names}")
+        av = fh.get_by_test_id("gtp-avatar")
+        loaded = await av.evaluate_all("els => els.filter(e => e.complete && e.naturalWidth > 0).length")
+        ok(await av.count() == 3 and loaded == 3, f"Avatare aus dem Hub im Warteraum ({loaded}/3 geladen)")
         ok(await fh.get_by_test_id("gtp-start").is_visible(), "Hub-Host sieht „Los geht's“")
         ok(not await fg.get_by_test_id("gtp-start").is_visible(), "Gast sieht keinen Start-Knopf")
         await shot(host, "1-warteraum"); await shot(phone, "1-warteraum-handy")
@@ -130,6 +133,7 @@ async def main():
         await shot(host, "4-gesamt")
         body = await fh.locator("body").inner_text()
         ok("2 Runden gespielt" in body, "Gesamtwertung über 2 Runden")
+        ok(await fh.get_by_test_id("gtp-avatar").count() >= 3, "Avatare in der Gesamtwertung")
         fynn_entries = body.count("Fynn")
         ok(fynn_entries == 1, f"Fynn steht genau einmal in der Wertung (kein Doppel nach Neuladen): {fynn_entries}")
         ok("Auflösen" not in body, "Im Hub gibt es kein „Auflösen“ (die Gruppe bleibt zusammen)")

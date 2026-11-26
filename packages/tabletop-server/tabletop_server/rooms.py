@@ -45,6 +45,21 @@ class GameDef:
         return len(self.seat_colors)
 
 
+HUB_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+HUB_AVATAR_RE = re.compile(r"^/party-ws/avatar/[A-Za-z0-9_-]{1,64}/[A-Za-z0-9_-]{1,64}\.svg$")
+
+
+def hub_avatar_url(room_id: str, hub_pid) -> Optional[str]:
+    """Avatar-Bild des Hubs (party-server rendert es aus Gesicht + Farbe); .json daneben für Canvas."""
+    if not isinstance(hub_pid, str) or not HUB_ID_RE.match(hub_pid) or not HUB_ID_RE.match(room_id or ""):
+        return None
+    return f"/party-ws/avatar/{room_id}/{hub_pid}.svg"
+
+
+def hub_avatar_url_checked(value) -> Optional[str]:
+    return value if isinstance(value, str) and HUB_AVATAR_RE.match(value) else None
+
+
 class Member:
     def __init__(self, member_id: str, name: str):
         self.id = member_id
@@ -54,6 +69,7 @@ class Member:
         self.is_bot = False
         self.joined_at = time.time()
         self.disconnected_at: Optional[float] = None
+        self.avatar: Optional[str] = None      # Bild-URL aus dem Hub (party-server), nur mit Ticket
 
     def to_dict(self, game: GameDef) -> dict:
         return {
@@ -63,6 +79,7 @@ class Member:
             "color": game.seat_colors[self.seat] if self.seat is not None else "#9ca3af",
             "connected": self.connected,
             "is_bot": self.is_bot,
+            "avatar": self.avatar,
         }
 
 
@@ -133,17 +150,22 @@ class Room:
         taken = {m.seat for m in self.members.values() if m.seat is not None}
         return next((i for i in range(self.game_def.seats) if i not in taken), None)
 
-    def join(self, member_id: str, name: str, wants_host: bool) -> List[dict]:
-        """Beitreten bzw. zurückkehren. Gibt die zu sendenden Ereignisse zurück."""
+    def join(self, member_id: str, name: str, wants_host: bool, hub: Optional[tuple] = None) -> List[dict]:
+        """Beitreten bzw. zurückkehren. Gibt die zu sendenden Ereignisse zurück.
+        hub: (Raum, Spieler-ID) im Hub aus dem geprüften Ticket – daraus wird die Avatar-URL."""
         events = []
+        avatar = hub_avatar_url(*hub) if hub else None
         m = self.members.get(member_id)
         if m is None:
             m = Member(member_id, clean_text(name, NAME_MAX, f"Gast {len(self.members) + 1}"))
             m.seat = self.free_seat() if self.status == "lobby" else None   # laufendes Spiel → zuschauen
+            m.avatar = avatar
             self.members[member_id] = m
             events.append(self.next_event({"type": "MEMBER_JOINED", "member": m.to_dict(self.game_def)}))
         else:
-            changed = not m.connected
+            changed = not m.connected or (avatar is not None and avatar != m.avatar)
+            if avatar is not None:
+                m.avatar = avatar
             m.connected, m.disconnected_at = True, None
             new_name = clean_text(name, NAME_MAX, m.name)
             if new_name != m.name:
@@ -298,7 +320,8 @@ class Room:
         return {
             "v": self.SAVE_VERSION, "id": self.id, "game": self.game_def.id, "seq": self.seq,
             "host_id": self.host_id, "host_claimed": self.host_claimed, "secrets": dict(self.secrets),
-            "members": [{"id": m.id, "name": m.name, "seat": m.seat, "is_bot": m.is_bot, "joined_at": m.joined_at}
+            "members": [{"id": m.id, "name": m.name, "seat": m.seat, "is_bot": m.is_bot, "joined_at": m.joined_at,
+                         "avatar": m.avatar}
                         for m in self.members.values()],
             "pieces": {pid: {"field": p["field"]} for pid, p in self.pieces.items()},
             "last_roll": self.last_roll, "status": self.status, "state": self.game,
@@ -320,6 +343,7 @@ class Room:
             m = Member(str(md["id"]), str(md["name"]))
             m.seat, m.is_bot = md.get("seat"), bool(md.get("is_bot"))
             m.joined_at = float(md.get("joined_at", now))
+            m.avatar = hub_avatar_url_checked(md.get("avatar"))
             if not m.is_bot:
                 m.connected, m.disconnected_at = False, now
             room.members[m.id] = m
