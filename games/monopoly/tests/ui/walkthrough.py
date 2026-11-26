@@ -50,10 +50,10 @@ SETTLE_JS = """() => {
   const mine = st.current_player && st.players && g.getState && st.current_player.id === (st.players.find(p => p.name === 'Testi') || {}).id;
   if (mine && pa.type === 'TAX_CHOICE') g.payIncomeTax('flat');
   if (mine && pa.type === 'CARD_DRAWN' && g.confirmCard) g.confirmCard();
-  if (mine && pa.type === 'BUY_OR_AUCTION' && g.closeModal) g.closeModal('modal-deed');
+  if (mine && pa.type === 'BUY_OR_AUCTION' && pa.square) g.buyProperty(pa.square.index);
   const open = [...document.querySelectorAll('.modal-overlay')].filter(m => getComputedStyle(m).display !== 'none' && m.id !== 'modal-lobby');
   open.forEach(m => g.closeModal && g.closeModal(m.id));
-  const blocking = mine && ['TAX_CHOICE', 'CARD_DRAWN', 'DRAW_CARD', 'MOVE_TOKEN'].includes(pa.type);
+  const blocking = mine && ['TAX_CHOICE', 'CARD_DRAWN', 'DRAW_CARD', 'MOVE_TOKEN', 'BUY_OR_AUCTION'].includes(pa.type);
   return !blocking && open.length === 0;
 }"""
 
@@ -112,7 +112,7 @@ async def main():
             try:
                 result[name] = await run(pw, name, DEVICES[name])
             except Exception as e:
-                result[name] = {"abbruch": repr(e)[:400]}
+                result[name] = {"abbruch": repr(e)[:2000]}
         json.dump(result, open(f"{OUT}/report.json", "w"), ensure_ascii=False, indent=1)
         print(json.dumps(result, ensure_ascii=False, indent=1))
         # --check (CI): Abbruch oder Konsolenfehler → Exit-Code 1
