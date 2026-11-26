@@ -215,6 +215,8 @@ const partyState = {
             minPlayers: 2,
             maxPlayers: 12,
             desc: "Kreatives Zeichnen und Erraten im Freundeskreis. Durch unser neues Framework könnt ihr spannende Custom Modes wählen!",
+            cover: "assets/cover_skribbol.jpg",
+            minutes: 15,
             embedUrl: "/skribbl/"
         },
         uno: {
@@ -224,6 +226,8 @@ const partyState = {
             minPlayers: 2,
             maxPlayers: 8,
             desc: "Der fiese Kartenklassiker ohne Werbung. Ziehe 4, Aussetzen und Farbwünsche sorgen für beste Schadenfreude.",
+            cover: "assets/cover_sunos.jpg",
+            minutes: 10,
             embedUrl: "/uno/"
         },
         codenames: {
@@ -233,6 +237,8 @@ const partyState = {
             minPlayers: 2,
             maxPlayers: 12,
             desc: "Zwei Geheimdienstchefs geben geheime Ein-Wort-Hinweise. Welches Agenten-Team entschlüsselt zuerst alle eigenen Wörter?",
+            cover: "",
+            minutes: 20,
             embedUrl: "/codenames/"
         },
         price_guess: {
@@ -242,6 +248,8 @@ const partyState = {
             minPlayers: 1,
             maxPlayers: 12,
             desc: "Errate die Preise von echten Produkten! Klassischer Schätzmodus, Höher oder Niedriger (This or That) und Echtzeit-Mehrspieler mit Freunden.",
+            cover: "assets/cover_price.jpg",
+            minutes: 10,
             embedUrl: "/price-guess/"
         },
         monopoly: {
@@ -251,6 +259,8 @@ const partyState = {
             minPlayers: 2,
             maxPlayers: 8,
             desc: "Der legendäre Brettspiel-Klassiker in 3D mit deutscher 2012 ROM-Ausstattung, Straßenhandel, Häuserbau und Computergegnern!",
+            cover: "assets/cover_monopolio.jpg",
+            minutes: 60,
             embedUrl: "/monopoly/"
         },
         mensch: {
@@ -260,6 +270,9 @@ const partyState = {
             minPlayers: 1,
             maxPlayers: 4,
             desc: "Der Klassiker am 3D-Spieltisch: Becher schütteln, Figuren ziehen, rauswerfen. Freie Plätze übernehmen Computer, weitere Gäste schauen zu.",
+            cover: "assets/cover_mensch.jpg",
+            minutes: 30,
+            spectators: true, // mehr Gäste als Plätze → schauen zu
             embedUrl: "/mensch/"
         }
     },
@@ -273,6 +286,9 @@ const partyState = {
         mensch: 0
     },
     userVotedGame: null,
+    selectedGameId: null, // was die Bühne zeigt (nur lokal)
+    activeGame: null,     // { gameId, lobbyId } vom Server, solange ein Spiel läuft
+    history: [],          // gestartete Spiele des Raums (vom Server), für „Heute gespielt“
     hubSettings: { anyoneCanVote: false },
     activeModalGameId: null,
     currentLobbyId: null,
@@ -659,9 +675,6 @@ function initUserSession() {
     }
 
     // Room info in UI
-    const roomCodeEl = document.getElementById("roomCodeDisplay");
-    if (roomCodeEl) roomCodeEl.innerText = ROOM_CODE;
-
     const hudRoomCode = document.getElementById("hudRoomCode");
     if (hudRoomCode) hudRoomCode.innerText = ROOM_CODE;
 
@@ -815,59 +828,7 @@ function updateHeaderUserBadge() {
 }
 
 function renderPlayerRoster() {
-    const rosterEl = document.getElementById("playerRoster");
-    const countBadge = document.getElementById("playerCountBadge");
-    if (!rosterEl) return;
-
-    const count = partyState.players.length;
-    if (countBadge) {
-        countBadge.innerText = count === 1 ? "1 Freund" : `${count} Freunde`;
-    }
-
-    rosterEl.innerHTML = "";
-
-    const isHostMe = !!partyState.isHost;
-
-    partyState.players.forEach(p => {
-        const isMe = partyState.currentUser && p.id === partyState.currentUser.id;
-        const card = document.createElement("div");
-        card.className = `player-card ${p.isHost ? 'is-host' : ''}`;
-        
-        let hostBtnHtml = '';
-        if (isHostMe && !isMe) {
-            hostBtnHtml = `
-                <button class="transfer-host-btn" type="button" title="${escapeHtml(p.name)} zum Party-Leader machen">
-                    👑
-                </button>
-            `;
-        }
-
-        card.innerHTML = `
-            <div class="player-card-avatar" style="background: ${safeColor(p.color)}22; border: 2.5px solid ${safeColor(p.color)};">
-                ${renderAvatarHtml(p.avatar, p.color)}
-                <span class="status-dot"></span>
-            </div>
-            <div class="player-card-details">
-                <span class="player-card-name">
-                    ${escapeHtml(p.name)} ${p.isHost ? '👑' : ''} ${isMe ? '<small style="opacity:0.75; font-size:0.8em;">(Du)</small>' : ''}
-                </span>
-                <span class="player-card-tag">${escapeHtml(p.status || 'Bereit')}</span>
-            </div>
-            ${hostBtnHtml}
-        `;
-
-        if (isHostMe && !isMe) {
-            const btn = card.querySelector(".transfer-host-btn");
-            if (btn) {
-                btn.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    transferHostTo(p.id, p.name);
-                });
-            }
-        }
-
-        rosterEl.appendChild(card);
-    });
+    // Die Spielerliste ist jetzt eine Kachel (tiles.js); updateHostPermissionsUI zeichnet die Kacheln neu
     updateHostPermissionsUI();
 }
 
@@ -977,11 +938,6 @@ function renderHubSettings() {
 function applyHubSettingsUI() {
     const settingsBtn = document.getElementById("hubSettingsBtn");
     if (settingsBtn) settingsBtn.style.display = partyState.isHost ? "" : "none";
-    const allowed = canToggleVoting();
-    const toggleBtn = document.getElementById("toggleVoteBtn");
-    if (toggleBtn) toggleBtn.style.display = allowed ? "" : "none";
-    const closeBtn = document.getElementById("closeVoteBtn");
-    if (closeBtn) closeBtn.style.display = allowed ? "" : "none";
     const modal = document.getElementById("hubSettingsModal");
     if (modal && modal.style.display !== "none") {
         if (partyState.isHost) renderHubSettings(); else modal.style.display = "none";
@@ -1004,34 +960,9 @@ function updateHostPermissionsUI() {
     const isHost = !!partyState.isHost;
     applyHubSettingsUI();
 
-    // 1. Update Game Card buttons
-    document.querySelectorAll(".game-card:not(.roulette-card) .play-btn").forEach(btn => {
-        if (isHost) {
-            btn.classList.remove("waiting-host");
-            btn.innerText = "Spielen & Starten";
-            btn.title = "Spiel für alle Party-Gäste auswählen";
-        } else {
-            btn.classList.add("waiting-host");
-            btn.innerText = "Warten auf Host 👑";
-            btn.title = "Nur der Party-Leader kann ein Spiel starten";
-        }
-    });
+    renderHubTiles();
 
-    // 2. Update Roulette Button
-    const rouletteBtn = document.querySelector(".roulette-btn");
-    if (rouletteBtn) {
-        if (isHost) {
-            rouletteBtn.classList.remove("waiting-host");
-            rouletteBtn.innerText = "🎲 Zufälliges Spiel wählen";
-            rouletteBtn.title = "Zufälliges Spiel für alle Freunde auswählen";
-        } else {
-            rouletteBtn.classList.add("waiting-host");
-            rouletteBtn.innerText = "Warten auf Host 🎲";
-            rouletteBtn.title = "Nur der Party-Leader kann das Roulette drehen";
-        }
-    }
-
-    // 3. Update Game Modal Controls if open
+    // Spiel-Fenster (Bereit-Prüfung), falls offen
     const launchBtn = document.getElementById("launchGameBtn");
     const nonHostWait = document.getElementById("modalNonHostWait");
     const nonHostWaitText = document.getElementById("modalNonHostWaitText");
@@ -1224,6 +1155,9 @@ function handleServerMessage(data) {
             if (data.hubSettings && typeof data.hubSettings === "object") {
                 partyState.hubSettings = { ...partyState.hubSettings, ...data.hubSettings };
             }
+
+            partyState.activeGame = (data.activeGame && data.activeGame.gameId) ? data.activeGame : null;
+            if (Array.isArray(data.history)) partyState.history = data.history;
 
             // Signiertes Spiel-Ticket (Host-Nachweis für Spiele wie Monopoly), kommt pro Person
             if (typeof data.gameTicket === "string") partyState.gameTicket = data.gameTicket;
@@ -1492,38 +1426,13 @@ document.addEventListener("DOMContentLoaded", () => {
         syncPresence();
         setupChannelListener();
         loadVotesFromStorage();
+        renderHubTiles();
         // Heartbeat every 1.5 seconds to refresh presence and prune dead tabs
         setInterval(syncPresence, 1500);
     }
-    setupFilters();
     setupEventListeners();
     initThemeSystem();
 });
-
-function setupFilters() {
-    const filterButtons = document.querySelectorAll(".filter-pill");
-    filterButtons.forEach(btn => {
-        btn.addEventListener("click", () => {
-            filterButtons.forEach(b => b.classList.remove("active"));
-            btn.classList.add("active");
-
-            const filter = btn.dataset.filter;
-            const cards = document.querySelectorAll(".game-card");
-            cards.forEach(card => {
-                if (filter === "all") {
-                    card.style.display = "flex";
-                } else {
-                    const cat = card.dataset.category || "";
-                    if (cat.includes(filter)) {
-                        card.style.display = "flex";
-                    } else {
-                        card.style.display = "none";
-                    }
-                }
-            });
-        });
-    });
-}
 
 function setupEventListeners() {
     const copyLinkBtn = document.getElementById("copyLinkBtn");
@@ -1537,9 +1446,7 @@ function setupEventListeners() {
     const changeRoomBtn = document.getElementById("changeRoomBtn");
     if (changeRoomBtn) changeRoomBtn.addEventListener("click", openCodeModal);
 
-    document.getElementById("toggleVoteBtn").addEventListener("click", toggleVoteMode);
     document.getElementById("hubSettingsBtn").addEventListener("click", window.openHubSettingsModal);
-    document.getElementById("closeVoteBtn").addEventListener("click", toggleVoteMode);
     document.getElementById("backToHubBtn").addEventListener("click", exitActiveGame);
     
     // User profile badge click
@@ -1548,167 +1455,12 @@ function setupEventListeners() {
         userBadge.addEventListener("click", openProfileModal);
     }
 
-    // Keyboard shortcut 'T' to quickly cycle themes (when not typing in an input)
-    document.addEventListener("keydown", (e) => {
-        if (e.key === "t" || e.key === "T") {
-            const tag = document.activeElement ? document.activeElement.tagName.toLowerCase() : "";
-            if (tag !== "input" && tag !== "textarea") {
-                cycleTheme();
-            }
-        }
-    });
 }
 
-// ==========================================================================
-// Modular Multi-Theme System
-// ==========================================================================
-
-const THEMES = [
-    {
-        id: "doodle",
-        name: "Doodle Skizze",
-        icon: "✏️",
-        desc: "Klassischer Skribbl-Stil auf kariertem Notizpapier",
-        swatches: ["#ffffff", "#3b82f6", "#1e293b"]
-    },
-    {
-        id: "cyber-arcade",
-        name: "Cyber Arcade",
-        icon: "🕹️",
-        desc: "Dunkle Cyber-Lounge mit Neon-Cyan & Magenta Glows",
-        swatches: ["#080a12", "#00f0ff", "#ff007f"]
-    },
-    {
-        id: "glassmorphism",
-        name: "Modern Glass",
-        icon: "✨",
-        desc: "Elegante Milchglas-Karten mit sanftem Farbnebel",
-        swatches: ["#0b0f19", "#6366f1", "#ec4899"]
-    },
-    {
-        id: "cozy-lounge",
-        name: "Cozy Lounge",
-        icon: "🪵",
-        desc: "Warmer Kaminabend mit Mahagoni, Bernstein & Gold",
-        swatches: ["#171310", "#d97706", "#fef3c7"]
-    },
-    {
-        id: "retro-arcade",
-        name: "Retro Pop Art",
-        icon: "👾",
-        desc: "Knallige 90er-Jahre Arcade mit mutigen Kontrasten",
-        swatches: ["#1e1b4b", "#facc15", "#38bdf8"]
-    },
-    {
-        id: "clean-light",
-        name: "Nordic Clean",
-        icon: "☀️",
-        desc: "Minimalistischer, aufgeräumter Studio-Look",
-        swatches: ["#f8fafc", "#2563eb", "#ffffff"]
-    }
-];
-
+// Festes Design (Arcade-Kacheln). themes.css liefert die Farben für die Fenster.
 function initThemeSystem() {
-    const savedTheme = localStorage.getItem("partyhub_theme") || "cyber-arcade";
-    applyTheme(savedTheme, false);
-
-    const dropdownBtn = document.getElementById("themeDropdownBtn");
-    const dropdownMenu = document.getElementById("themeDropdownMenu");
-    const optionsContainer = document.getElementById("themeOptionsList");
-
-    if (optionsContainer) {
-        optionsContainer.innerHTML = "";
-        THEMES.forEach(t => {
-            const item = document.createElement("div");
-            item.className = `theme-option-item ${t.id === savedTheme ? "active" : ""}`;
-            item.dataset.themeId = t.id;
-            item.innerHTML = `
-                <div class="theme-option-info">
-                    <span class="theme-option-icon">${t.icon}</span>
-                    <div class="theme-option-text">
-                        <span class="theme-option-name">${t.name}</span>
-                        <span class="theme-option-desc">${t.desc}</span>
-                    </div>
-                </div>
-                <div class="theme-swatches">
-                    ${t.swatches.map(c => `<span class="theme-swatch" style="background: ${c};"></span>`).join("")}
-                </div>
-            `;
-            item.addEventListener("click", (e) => {
-                e.stopPropagation();
-                applyTheme(t.id, true);
-                closeThemeDropdown();
-            });
-            optionsContainer.appendChild(item);
-        });
-    }
-
-    if (dropdownBtn && dropdownMenu) {
-        dropdownBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            const isOpen = dropdownMenu.classList.contains("show");
-            if (isOpen) {
-                closeThemeDropdown();
-            } else {
-                openThemeDropdown();
-            }
-        });
-
-        // Close on click outside
-        document.addEventListener("click", (e) => {
-            const wrapper = document.getElementById("themePickerWrapper");
-            if (wrapper && !wrapper.contains(e.target)) {
-                closeThemeDropdown();
-            }
-        });
-    }
+    document.documentElement.setAttribute("data-theme", "cyber-arcade");
 }
-
-function openThemeDropdown() {
-    const btn = document.getElementById("themeDropdownBtn");
-    const menu = document.getElementById("themeDropdownMenu");
-    if (btn) btn.classList.add("open");
-    if (menu) menu.classList.add("show");
-}
-
-function closeThemeDropdown() {
-    const btn = document.getElementById("themeDropdownBtn");
-    const menu = document.getElementById("themeDropdownMenu");
-    if (btn) btn.classList.remove("open");
-    if (menu) menu.classList.remove("show");
-}
-
-function applyTheme(themeId, notify = true) {
-    const theme = THEMES.find(t => t.id === themeId) || THEMES[0];
-    document.documentElement.setAttribute("data-theme", theme.id);
-    localStorage.setItem("partyhub_theme", theme.id);
-
-    const iconEl = document.getElementById("currentThemeIcon");
-    const nameEl = document.getElementById("currentThemeName");
-    if (iconEl) iconEl.innerText = theme.icon;
-    if (nameEl) nameEl.innerText = theme.name;
-
-    // Update active highlight in menu
-    document.querySelectorAll(".theme-option-item").forEach(el => {
-        if (el.dataset.themeId === theme.id) {
-            el.classList.add("active");
-        } else {
-            el.classList.remove("active");
-        }
-    });
-
-    if (notify) {
-        showToast(`Design aktiviert: ${theme.icon} ${theme.name}`);
-    }
-}
-
-// Quick Cycle (z. B. per Tastatur 'T' oder Shortcut)
-window.cycleTheme = function() {
-    const currentThemeId = document.documentElement.getAttribute("data-theme") || "cyber-arcade";
-    const currentIndex = THEMES.findIndex(t => t.id === currentThemeId);
-    const nextIndex = (currentIndex + 1) % THEMES.length;
-    applyTheme(THEMES[nextIndex].id, true);
-};
 
 // ==========================================================================
 function ensureCurrentUser() {
@@ -2119,6 +1871,7 @@ function startGameView(game, lobbyId) {
     }
 
     overlay.classList.add("active");
+    renderHubTiles();
 }
 
 function exitActiveGame() {
@@ -2133,7 +1886,8 @@ function doExitGameView() {
     const iframe = document.getElementById("gameIframe");
     overlay.classList.remove("active");
     iframe.src = "about:blank";
-    showToast("Zurück im Wohnzimmer!");
+    showToast("Zurück in der Lobby!");
+    renderHubTiles();
 }
 
 // ==========================================================================
@@ -2186,71 +1940,8 @@ function toggleVoteMode() {
 }
 
 function applyVoteStateUI() {
-    const banner = document.getElementById("voteBanner");
-    const toggleBtn = document.getElementById("toggleVoteBtn");
-
-    if (partyState.isVotingActive) {
-        if (banner) banner.style.display = "block";
-        if (toggleBtn) {
-            toggleBtn.classList.add("active");
-            toggleBtn.innerText = "✕ Abstimmung aktiv";
-        }
-        enableCardVoting();
-    } else {
-        if (banner) banner.style.display = "none";
-        if (toggleBtn) {
-            toggleBtn.classList.remove("active");
-            toggleBtn.innerText = "🗳️ Abstimmung";
-        }
-        disableCardVoting();
-    }
-}
-
-function enableCardVoting() {
-    Object.keys(partyState.games).forEach(gameId => {
-        const counter = document.getElementById(`vote-${gameId}`);
-        if (counter) {
-            counter.style.display = "block";
-            counter.querySelector(".vote-count").innerText = partyState.votes[gameId] || 0;
-        }
-
-        const card = document.querySelector(`[data-game-id="${gameId}"]`);
-        if (card) {
-            const actions = card.querySelector(".card-actions");
-            let voteBtn = actions.querySelector(".vote-card-btn");
-            if (!voteBtn) {
-                voteBtn = document.createElement("button");
-                voteBtn.className = "vote-card-btn";
-                voteBtn.innerText = "✋ Stimme abgeben";
-                voteBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    castVote(gameId);
-                };
-                actions.appendChild(voteBtn);
-            }
-            voteBtn.style.display = "block";
-            if (partyState.userVotedGame === gameId) {
-                voteBtn.classList.add("voted");
-                voteBtn.innerText = "✅ Deine Stimme";
-            } else {
-                voteBtn.classList.remove("voted");
-                voteBtn.innerText = "✋ Stimme abgeben";
-            }
-        }
-    });
-}
-
-function disableCardVoting() {
-    Object.keys(partyState.games).forEach(gameId => {
-        const counter = document.getElementById(`vote-${gameId}`);
-        if (counter) counter.style.display = "none";
-
-        const card = document.querySelector(`[data-game-id="${gameId}"]`);
-        if (card) {
-            const voteBtn = card.querySelector(".vote-card-btn");
-            if (voteBtn) voteBtn.style.display = "none";
-        }
-    });
+    // Abstimmung ist eine Kachel (tiles.js), Stimmen stehen auf den Spiel-Kacheln
+    renderHubTiles();
 }
 
 function castVote(gameId) {

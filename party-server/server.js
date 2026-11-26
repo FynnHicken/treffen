@@ -57,6 +57,7 @@ function defaultHubSettings() {
 }
 
 const KNOWN_GAME_IDS = ['skribbol', 'uno', 'codenames', 'price_guess', 'monopoly', 'mensch'];
+const HISTORY_LIMIT = 12; // so viele gestartete Spiele merkt sich ein Raum („Heute gespielt“)
 
 class Room {
     constructor(code) {
@@ -70,6 +71,7 @@ class Room {
         this.isVotingActive = false;
         this.activeModalGameId = null;
         this.activeGame = null;
+        this.history = []; // gestartete Spiele dieses Raums: { gameId, startedAt } (neueste zuletzt)
         this.gameSettings = {};
         this.hostId = null;
         this.creatorId = null;
@@ -337,6 +339,7 @@ class Room {
             votes: this.votes,
             activeModalGameId: this.activeModalGameId,
             activeGame: this.activeGame,
+            history: this.history,
             gameSettings: this.gameSettings,
             hubSettings: this.hubSettings,
             expiresAt: this.expiresAt,
@@ -575,15 +578,16 @@ wss.on('connection', (ws, req) => {
                         console.warn(`[Room ${room.code}] Non-host tried to launch game.`);
                         break;
                     }
-                    room.activeGame = {
-                        gameId: data.gameId,
-                        lobbyId: data.lobbyId || null
-                    };
+                    if (!KNOWN_GAME_IDS.includes(data.gameId)) break;
+                    const lobbyId = (typeof data.lobbyId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(data.lobbyId)) ? data.lobbyId : null;
+                    room.activeGame = { gameId: data.gameId, lobbyId };
+                    room.history.push({ gameId: data.gameId, startedAt: Date.now() });
+                    if (room.history.length > HISTORY_LIMIT) room.history.splice(0, room.history.length - HISTORY_LIMIT);
                     room.activeModalGameId = null;
                     room.broadcast({
                         type: 'LAUNCH_GAME',
                         gameId: data.gameId,
-                        lobbyId: data.lobbyId || null
+                        lobbyId
                     });
                     room.broadcastRoster();
                     break;

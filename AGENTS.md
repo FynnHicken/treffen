@@ -128,6 +128,11 @@ Erledigt und auf `main`:
 
 11. Monopoly-Spielstände in SQLite (2026-11-26): Partien überstehen Neustart/Update, Volume `./data/monopoly`.
 
+14. Hub-Lobby als Kachelraster (2026-11-26, Entwurf „F1 · Arcade × Bento“): `party-hub/tiles.js` (`HUB_TILES` –
+    Kachel hinzufügen/entfernen = ein Eintrag), Stil in `party-hub/hub.css`. Bühne mit ausgewähltem Spiel, Einladen,
+    Spieler, „Heute gespielt“ (Verlauf kommt vom Party-Server, `history` in `ROSTER_SYNC`), Abstimmung nur solange eine
+    läuft. Feste Arcade-Optik, der Design-Umschalter ist entfallen. Spieldaten (Cover, Dauer) in `partyState.games`.
+
 13. Treffen-Spieltisch M1–M5 (2026-11-26): Mensch ärgere dich nicht in 3D im Hub (`/mensch/`, Host per Ticket),
     Hausregeln in der Lobby, Spielstände in SQLite (Volume `./data/mensch`), ein Becher wird herumgereicht.
     Der 2D-Prototyp (`games/mensch/server`, `static`) wurde ersetzt.

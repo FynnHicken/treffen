@@ -6,74 +6,34 @@
     <title>Treffen – Dein Spieleabend</title>
     <link rel="stylesheet" href="styles.css?v=2.6">
     <link rel="stylesheet" href="themes.css?v=2.5">
+    <link rel="stylesheet" href="hub.css?v=1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Comic+Neue:wght@400;700&family=Orbitron:wght@600;800&family=Outfit:wght@400;600;700&family=Patrick+Hand&family=Plus+Jakarta+Sans:wght@600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Orbitron:wght@600;800&family=Plus+Jakarta+Sans:wght@600;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <!-- Top Party Bar -->
-    <header class="party-header">
-        <div class="header-left">
-            <div class="logo">
-                <img src="assets/logo.jpg" alt="Treffen Mascot" class="logo-doodle-img">
-                <span class="logo-text">Treffen<span class="highlight">.</span></span>
-            </div>
-            <div class="room-pill" title="Aktueller Party-Code">
-                <span class="live-dot-badge" id="liveIndicator" title="Live-Synchronisation verbunden"></span>
-                <div class="room-code-tag" id="roomCodeTag" title="Klicken zum Kopieren">
-                    <span class="room-label">Code:</span>
-                    <span class="room-code" id="roomCodeDisplay">------</span>
-                </div>
-                <div class="room-pill-actions">
-                    <button class="icon-btn" id="copyLinkBtn" title="Code & Link kopieren">
-                        📋
-                    </button>
-                    <button class="icon-btn" id="qrCodeBtn" title="QR-Code für Smartphones anzeigen">
-                        📱
-                    </button>
-                    <button class="icon-btn" id="changeRoomBtn" title="Code eingeben oder wechseln">
-                        ✏️
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <div class="header-right">
-            <!-- Theme Switcher Dropdown with Live Previews -->
-            <div class="theme-picker-wrapper" id="themePickerWrapper">
-                <button class="theme-dropdown-btn" id="themeDropdownBtn" title="Design wechseln">
-                    <span id="currentThemeIcon">🕹️</span>
-                    <span id="currentThemeName">Cyber Arcade</span>
-                    <span class="chevron">▼</span>
-                </button>
-                <div class="theme-dropdown-menu" id="themeDropdownMenu">
-                    <div class="theme-menu-header">🎨 Design & Stil wählen</div>
-                    <div id="themeOptionsList">
-                        <!-- Dynamically populated via app.js -->
-                    </div>
-                </div>
-            </div>
-            <button class="action-btn hub-settings-btn" id="hubSettingsBtn" title="Raum-Einstellungen (nur Host)" style="display: none;">
-                ⚙️
-            </button>
-            <button class="action-btn vote-mode-btn" id="toggleVoteBtn">
-                🗳️ Abstimmung
-            </button>
-            <div class="user-badge" id="currentUserBadge" title="Profil bearbeiten (Klicken)">
-                <div class="avatar-small" id="userAvatar"></div>
-                <div class="user-info">
-                    <span class="user-name" id="userNameDisplay">Lukas</span>
-                    <span class="user-role host" id="userRoleDisplay">👑 Party-Host</span>
-                </div>
-            </div>
-        </div>
+    <!-- Kopfzeile -->
+    <header class="hub-header">
+        <div class="hub-logo">TREFFEN<span>_</span></div>
+        <span class="online-pill"><span class="live-dot-badge" id="liveIndicator" title="Live-Synchronisation verbunden"></span><span id="onlineCount">ONLINE</span></span>
+        <div class="hub-header-spacer"></div>
+        <button type="button" class="icon-square" id="hubSettingsBtn" title="Raum-Einstellungen (nur Host)" aria-label="Raum-Einstellungen" style="display: none;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+        </button>
+        <button type="button" class="user-badge" id="currentUserBadge" title="Profil bearbeiten">
+            <span class="avatar-small" id="userAvatar"></span>
+            <span class="user-info">
+                <span class="user-name" id="userNameDisplay">…</span>
+                <span class="user-role" id="userRoleDisplay"></span>
+            </span>
+        </button>
     </header>
 
     <!-- Global Persistent Nav during active game -->
     <div class="active-game-overlay" id="activeGameOverlay">
         <div class="game-hud">
             <button class="hud-btn back-to-hub" id="backToHubBtn">
-                🏠 Zurück zum Wohnzimmer
+                ← Zur Lobby
             </button>
             <div class="hud-center">
                 <span class="hud-game-icon" id="hudGameIcon">🎮</span>
@@ -90,216 +50,17 @@
         </div>
     </div>
 
-    <!-- Main Content: The Living Room -->
-    <main class="living-room-container" id="mainContainer">
-        <!-- Party / Player Bar -->
-        <section class="couch-section">
-            <div class="section-header">
-                <h2>🎉 Party <span class="badge" id="playerCountBadge">1 Freund</span></h2>
-                <span class="couch-hint">Party ist synchronisiert</span>
+    <!-- Lobby: Kachelraster. Welche Kacheln es gibt, steht in tiles.js (HUB_TILES). -->
+    <main class="hub-main" id="mainContainer">
+        <!-- Einzelraum wird nach 60 s gelöscht, solange niemand dazukommt -->
+        <div class="expiry-banner" id="soloRoomExpiryBanner" style="display: none;">
+            <div class="expiry-row">
+                <span>⏳ Allein im Raum: Er wird in <strong id="soloRoomExpirySec">60s</strong> gelöscht. Sobald jemand beitritt, bleibt er offen.</span>
+                <button type="button" class="btn-outline small" onclick="extendRoomTtl()">+60 s</button>
             </div>
-            <!-- 60s Solo Room Auto-Delete Countdown Banner -->
-            <div id="soloRoomExpiryBanner" style="display: none; margin-bottom: 12px; padding: 10px 14px; border-radius: 12px; border: 2px solid rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.1); flex-direction: column; gap: 6px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-                    <span style="font-size: 0.85rem; font-weight: 700;">
-                        ⏳ Ungenutzter Einzelraum wird in <strong id="soloRoomExpirySec" style="color: #f59e0b;">60s</strong> automatisch gelöscht (sobald ein 2. Spieler beitritt, stoppt der Timer)
-                    </span>
-                    <button type="button" class="action-btn-sm" onclick="extendRoomTtl()" style="padding: 4px 10px; font-size: 0.78rem;">🔄 +60s verlängern</button>
-                </div>
-                <div style="width: 100%; height: 6px; background: rgba(0,0,0,0.18); border-radius: 4px; overflow: hidden;">
-                    <div id="soloRoomExpiryBar" style="width: 100%; height: 100%; background: linear-gradient(90deg, #22c55e, #f59e0b, #ef4444); transition: width 0.2s linear;"></div>
-                </div>
-            </div>
-            <div class="player-roster" id="playerRoster">
-                <!-- Dynamically populated players -->
-            </div>
-        </section>
-
-        <!-- Active Vote Banner (Hidden by default) -->
-        <section class="vote-banner" id="voteBanner" style="display: none;">
-            <div class="vote-banner-content">
-                <div class="vote-icon">🗳️</div>
-                <div class="vote-text">
-                    <h3>Spiele-Abstimmung ist aktiv!</h3>
-                    <p>Wähle dein Lieblingsspiel für die nächste Runde. Jeder hat 1 Stimme.</p>
-                </div>
-                <button class="action-btn-sm" id="closeVoteBtn">Abstimmung beenden</button>
-            </div>
-        </section>
-
-        <!-- Game Catalog -->
-        <section class="catalog-section">
-            <div class="section-header">
-                <h2>🎮 Spiele</h2>
-            </div>
-
-            <div class="games-grid" id="gamesGrid">
-                <!-- Game Card 1: skribbl -->
-                <div class="game-card featured" data-game-id="skribbol" data-min="2" data-max="12">
-                    <div class="card-media">
-                        <img src="assets/cover_skribbol.jpg" alt="skribbl Doodle Cover" class="card-cover-img">
-                        <span class="card-badge live">Bereit</span>
-                    </div>
-                    <div class="card-body">
-                        <div class="card-title-row">
-                            <h3>skribbl</h3>
-                        </div>
-                        <div class="card-tags">
-                            <span class="tag">👥 2–12 Spieler</span>
-                        </div>
-                    </div>
-                    <div class="card-actions">
-                        <div class="vote-counter" id="vote-skribbol" style="display: none;">
-                            <span class="vote-count">0</span> Stimmen
-                        </div>
-                        <button class="play-btn" onclick="openGameModal('skribbol')">
-                            Spielen & Starten
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Game Card 2: UNO -->
-                <div class="game-card" data-game-id="uno" data-min="2" data-max="8">
-                    <div class="card-media">
-                        <img src="assets/cover_sunos.jpg" alt="UNO Doodle Cover" class="card-cover-img">
-                        <span class="card-badge live">Bereit</span>
-                    </div>
-                    <div class="card-body">
-                        <div class="card-title-row">
-                            <h3>UNO</h3>
-                        </div>
-                        <div class="card-tags">
-                            <span class="tag">👥 2–8 Spieler</span>
-                        </div>
-                    </div>
-                    <div class="card-actions">
-                        <div class="vote-counter" id="vote-uno" style="display: none;">
-                            <span class="vote-count">0</span> Stimmen
-                        </div>
-                        <button class="play-btn" onclick="openGameModal('uno')">
-                            Spielen & Starten
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Game Card 3: Codenames -->
-                <div class="game-card" data-game-id="codenames" data-min="2" data-max="12">
-                    <div class="card-media" style="background: linear-gradient(135deg, #1e293b, #334155); display: flex; align-items: center; justify-content: center; height: 160px; font-size: 4rem;">
-                        <span>🕵️‍♂️</span>
-                        <span class="card-badge live">Bereit</span>
-                    </div>
-                    <div class="card-body">
-                        <div class="card-title-row">
-                            <h3>Codenames</h3>
-                        </div>
-                        <div class="card-tags">
-                            <span class="tag">👥 2–12 Spieler</span>
-                        </div>
-                    </div>
-                    <div class="card-actions">
-                        <div class="vote-counter" id="vote-codenames" style="display: none;">
-                            <span class="vote-count">0</span> Stimmen
-                        </div>
-                        <button class="play-btn" onclick="openGameModal('codenames')">
-                            Spielen & Starten
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Game Card 4: Guess The Price -->
-                <div class="game-card" data-game-id="price_guess" data-min="1" data-max="12">
-                    <div class="card-media">
-                        <img src="assets/cover_price.jpg" alt="Guess The Price Cover" class="card-cover-img">
-                        <span class="card-badge live">Bereit</span>
-                    </div>
-                    <div class="card-body">
-                        <div class="card-title-row">
-                            <h3>Guess The Price</h3>
-                        </div>
-                        <div class="card-tags">
-                            <span class="tag">👥 1–12+ Spieler</span>
-                        </div>
-                    </div>
-                    <div class="card-actions">
-                        <div class="vote-counter" id="vote-price_guess" style="display: none;">
-                            <span class="vote-count">0</span> Stimmen
-                        </div>
-                        <button class="play-btn" onclick="openGameModal('price_guess')">
-                            Spielen & Starten
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Game Card 5: Monopoly 3D -->
-                <div class="game-card" data-game-id="monopoly" data-min="2" data-max="8">
-                    <div class="card-media">
-                        <img src="assets/cover_monopolio.jpg" alt="Monopoly 3D Cover" class="card-cover-img">
-                        <span class="card-badge live">Bereit</span>
-                    </div>
-                    <div class="card-body">
-                        <div class="card-title-row">
-                            <h3>Monopoly 3D</h3>
-                        </div>
-                        <div class="card-tags">
-                            <span class="tag">👥 2–8 Spieler</span>
-                        </div>
-                    </div>
-                    <div class="card-actions">
-                        <div class="vote-counter" id="vote-monopoly" style="display: none;">
-                            <span class="vote-count">0</span> Stimmen
-                        </div>
-                        <button class="play-btn" onclick="openGameModal('monopoly')">
-                            Spielen & Starten
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Game Card: Mensch ärgere dich nicht (Treffen-Spieltisch) -->
-                <div class="game-card" data-game-id="mensch" data-min="1" data-max="4">
-                    <div class="card-media">
-                        <img src="assets/cover_mensch.jpg" alt="Mensch ärgere dich nicht – 3D-Spieltisch" class="card-cover-img">
-                        <span class="card-badge live">Neu</span>
-                    </div>
-                    <div class="card-body">
-                        <div class="card-title-row">
-                            <h3>Mensch ärgere dich nicht</h3>
-                        </div>
-                        <div class="card-tags">
-                            <span class="tag">👥 1–4 Spieler + Zuschauer</span>
-                        </div>
-                    </div>
-                    <div class="card-actions">
-                        <div class="vote-counter" id="vote-mensch" style="display: none;">
-                            <span class="vote-count">0</span> Stimmen
-                        </div>
-                        <button class="play-btn" onclick="openGameModal('mensch')">
-                            Spielen & Starten
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Game Card 6: Slot Machine (Einarmiger Bandit - Game Picker) -->
-                <div class="game-card roulette-card" data-game-id="random" data-category="quick">
-                    <div class="card-media random-bg">
-                        <div class="card-icon-big">🎰</div>
-                    </div>
-                    <div class="card-body">
-                        <div class="card-title-row">
-                            <h3>Einarmiger Bandit</h3>
-                        </div>
-                        <div class="card-tags">
-                            <span class="tag">👥 2–12 Spieler</span>
-                            <span class="tag" style="background: rgba(236,72,153,0.18); color: #be185d;">✨ Casino Mode</span>
-                        </div>
-                    </div>
-                    <div class="card-actions">
-                        <button class="action-btn roulette-btn" onclick="openSlotMachineModal()" title="Zufälliges Spiel über die Slot Machine auslosen">
-                            🎰 Hebel ziehen
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </section>
+            <div class="expiry-track"><div id="soloRoomExpiryBar"></div></div>
+        </div>
+        <div class="tile-grid" id="tileGrid"></div>
     </main>
 
     <!-- Slot Machine / Einarmiger Bandit Modal -->
@@ -679,6 +440,7 @@
     <div class="toast" id="toast">Link kopiert!</div>
 
     <script src="avatar.js?v=1"></script>
-    <script src="app.js?v=settings1"></script>
+    <script src="app.js?v=tiles1"></script>
+    <script src="tiles.js?v=1"></script>
 </body>
 </html>

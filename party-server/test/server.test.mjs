@@ -168,3 +168,19 @@ test('Ungültiger Raumcode wird abgelehnt', async () => {
     const code = await new Promise(r => ws.on('close', c => r(c)));
     assert.equal(code, 1008);
 });
+
+test('Gestartete Spiele landen im Verlauf, unbekannte Spiele werden ignoriert', async () => {
+    const a = await client('R8', 'alice');
+    const b = await client('R8', 'bob');
+    await a.waitFor(rosterWith(2));
+    a.send({ type: 'LAUNCH_GAME', gameId: 'gibtsnicht' });
+    await sleep(150);
+    assert.ok(!b.msgs.some(m => m.type === 'LAUNCH_GAME'), 'unbekanntes Spiel startet nicht');
+    a.send({ type: 'LAUNCH_GAME', gameId: 'uno', lobbyId: '<script>' });
+    const l = await b.waitFor(m => m.type === 'LAUNCH_GAME');
+    assert.equal(l.lobbyId, null, 'ungültige Lobby-ID wird verworfen');
+    const r = await b.waitFor(m => m.type === 'ROSTER_SYNC' && m.history && m.history.length === 1);
+    assert.equal(r.history[0].gameId, 'uno');
+    assert.ok(Math.abs(r.history[0].startedAt - Date.now()) < 5000, 'Startzeit stimmt');
+    a.close(); b.close();
+});

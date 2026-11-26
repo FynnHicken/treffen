@@ -1,4 +1,4 @@
-"""Browser-Rauchtest für den Hub: zwei Personen betreten einen Raum, Host-Einstellungen, Abstimmung.
+"""Browser-Rauchtest für den Hub: zwei Personen betreten einen Raum, Kacheln, Host-Einstellungen, Abstimmung.
 
 Braucht laufenden Hub (Nginx + party-server), z. B. per ./start.sh, dann:
     podman run --rm --network=host -v "$PWD/party-hub/tests":/t:ro,z localhost/mono-ui-test \
@@ -44,6 +44,13 @@ async def main():
 
         ok(await visible(host, "#hubSettingsBtn"), "Host sieht ⚙️ Raum-Einstellungen")
         ok(not await visible(guest, "#hubSettingsBtn"), "Gast sieht keine Raum-Einstellungen")
+        ok(await host.locator('[data-tile="players"] .slot').count() == 2, "Spieler-Kachel zeigt beide")
+        ok(await host.locator('[data-tile^="game-"]').count() >= 6, "Spiele-Kacheln sind da")
+        ok(await visible(host, "#stageStartBtn"), "Host sieht START auf der Bühne")
+        ok(not await visible(guest, "#stageStartBtn"), "Gast sieht keinen START-Knopf")
+        ok(not await visible(guest, "#voteBanner"), "Ohne Abstimmung keine Abstimmungs-Kachel")
+        await guest.click('[data-game-id="uno"] .game-btn')
+        ok("UNO" in await guest.locator(".stage-title").inner_text(), "Klick auf eine Spiel-Kachel zeigt das Spiel auf der Bühne")
         ok(await visible(host, "#toggleVoteBtn"), "Host sieht Abstimmungs-Knopf")
         ok(not await visible(guest, "#toggleVoteBtn"), "Gast sieht Abstimmungs-Knopf nicht (Standard: nur Host)")
 
@@ -51,9 +58,10 @@ async def main():
         await host.click("#toggleVoteBtn")
         await guest.wait_for_timeout(800)
         ok(await visible(guest, "#voteBanner"), "Abstimmung des Hosts kommt beim Gast an")
-        await guest.locator('[data-game-id="monopoly"] .vote-card-btn').click()
+        await guest.click('[data-game-id="monopoly"] .game-btn')
+        await guest.click("#stageVoteBtn")
         await host.wait_for_timeout(800)
-        count = await host.locator("#vote-monopoly .vote-count").inner_text()
+        count = await host.locator('[data-game-id="monopoly"] .vote-count').inner_text()
         ok(count.strip() == "1", f"Stimme des Gasts kommt beim Host an (Monopoly: {count})")
         await host.click("#closeVoteBtn")
         await guest.wait_for_timeout(800)
