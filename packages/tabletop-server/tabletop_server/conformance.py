@@ -6,6 +6,8 @@ Spiel, wird die CI rot, bevor es live geht.
     from tabletop_server.conformance import check_game
     check_game(GAME, games=20, settings={"bot_level": 1})
 
+Der Runner setzt TABLETOP_CONFORMANCE=1 – ein Spiel darf dann einen schnellen Computer nehmen (z. B. kein Stockfish).
+
 Geprüft wird ohne Netzwerk direkt am Raum:
   - Computer spielen ganze Partien bis zum Ende (kein Hängenbleiben, keine Ausnahme)
   - Ereignisse sind lückenlos nummeriert, haben einen Typ und sind als JSON versendbar

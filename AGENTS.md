@@ -148,7 +148,9 @@ Erledigt und auf `main`:
     Infos, `PIECE_CHANGED` (Figur wechselt die Art), Antippen → Ziel antippen, Computer rechnet außerhalb des Raum-Locks,
     Pflicht-Prüfung für jedes Tisch-Spiel in der CI. Mensch (API 1) läuft unverändert über `LegacyRules`.
     **Schach** (`/schach/`, Port 8096): Holzbrett, gedrechselte Figuren, Geschlagene neben dem Brett, Rochade per
-    Königszug, Umwandlung automatisch zur Dame, Computer in 3 Stufen (Hausregel), Matt/Patt/Remis-Regeln.
+    Königszug, Umwandlung automatisch zur Dame, Matt/Patt/Remis-Regeln. Computer: **Stockfish 19** in 5 Stufen (Hausregel),
+    ein Prozess für alle Partien, ~250 MB nur solange gespielt wird; Ersatz = eingebauter Python-Computer
+    (`games/schach/README.md`, Stockfish-Download mit Prüfsumme: `games/schach/tools/fetch_stockfish.py`, GPL-3.0).
     Zuggenerator per Perft geprüft (`games/schach/tests/test_rules.py`). Konzept & Fahrplan E2.1–E2.3:
     `docs/tabletop/KONZEPT.md` §12.
 

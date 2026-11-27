@@ -72,8 +72,13 @@ jobs:
       - name: Pflicht-Prüfung aller Tisch-Spiele (Engine-Version, Computer-Partien, Speichern/Laden)
         working-directory: /tmp
         run: python -I "$GITHUB_WORKSPACE/packages/tabletop-server/tests/test_conformance.py" 10
-      - name: Schach-Regeln (Perft, Sonderzüge, Partie-Ende, Computer)
+      - name: Stockfish holen (offizielles Release, Prüfsumme)
+        run: python games/schach/tools/fetch_stockfish.py /tmp/stockfish
+      - name: Schach-Regeln (Perft, Sonderzüge, Partie-Ende, Computer, Stockfish)
         working-directory: /tmp
+        env:
+          STOCKFISH_PATH: /tmp/stockfish/stockfish
+          SCHACH_REQUIRE_STOCKFISH: "1"
         run: python -I "$GITHUB_WORKSPACE/games/schach/tests/test_rules.py"
       - name: Mensch-Regeln (gezielte Fälle + 100 Computer-Partien)
         working-directory: /tmp
@@ -97,7 +102,7 @@ jobs:
             python -u tests/ui/tisch_smoke.py http://127.0.0.1:8095 /shots
       - name: Schach im Browser (Desktop + Handy, Antippen, Schlagen, Computer)
         run: |
-          (cd /tmp && TABLETOP_DB= python -u "$GITHUB_WORKSPACE/games/schach/server/main.py" > /tmp/schach.log 2>&1 &)
+          (cd /tmp && TABLETOP_DB= STOCKFISH_PATH=/tmp/stockfish/stockfish python -u "$GITHUB_WORKSPACE/games/schach/server/main.py" > /tmp/schach.log 2>&1 &)
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8096/api/health >/dev/null && break; sleep 1; done
           docker run --rm --network=host -v "$PWD/games/schach":/work:ro -v /tmp/tisch-shots:/shots -w /work treffen-ui-test \
             python -u tests/ui/schach_smoke.py http://127.0.0.1:8096 /shots

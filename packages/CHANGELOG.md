@@ -25,6 +25,12 @@ Engine – es gibt keine „alten Stände“ einzelner Spiele, solange die CI gr
 
 ---
 
+## 2.0.1 – 2026-11-27
+
+- Pflicht-Prüfung (`tests/test_conformance.py`) setzt `TABLETOP_CONFORMANCE=1` für jedes Spiel. Spiele dürfen dann einen
+  schnellen Computer nehmen (Schach: eingebauter statt Stockfish), damit die Prüfung kurz bleibt. Keine Änderung für Spiele,
+  die das nicht beachten.
+
 ## 2.0.0 – 2026-11-27
 
 Erste Version mit Nummer. Neue Regel-Schnittstelle für Spiele jenseits von „würfeln und ziehen“; Schach als erstes Spiel darauf.

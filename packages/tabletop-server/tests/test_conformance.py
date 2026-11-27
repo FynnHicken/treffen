@@ -43,7 +43,8 @@ else:
 mains = sorted(p for p in ROOT.glob("games/*/server/main.py") if "tabletop_server" in p.read_text(encoding="utf-8"))
 print(f"== Pflicht-Prüfung: {len(mains)} Tisch-Spiel(e), je {GAMES} Partien ==")
 for main in mains:
-    env = {**os.environ, "TABLETOP_DB": ""}      # keine Spielstand-Datei anlegen
+    # keine Spielstand-Datei; TABLETOP_CONFORMANCE: Spiele dürfen schnelle Computer nehmen (z. B. kein Stockfish)
+    env = {**os.environ, "TABLETOP_DB": "", "TABLETOP_CONFORMANCE": "1"}
     r = subprocess.run([sys.executable, "-I", "-c", CHILD, str(main), str(ROOT / "packages" / "tabletop-server"), str(GAMES)],
                        capture_output=True, text=True, env=env, cwd="/tmp", timeout=900)
     out = (r.stdout + r.stderr).rstrip()

@@ -11,19 +11,31 @@ Alles läuft über das Anfassen der Figuren – keine Rückfragen:
 Die eigentliche Schachlogik steht in chess.py (geprüft mit Perft-Zahlen); hier wird sie auf Figuren-IDs und
 Felder des Tisches abgebildet.
 """
+import os
 import random
 from typing import Dict, List, Optional
 
 from chess import Move, Position, best_move, sq_index, sq_name
 from layout import COLORS, SHORT
 from tabletop_server.rules import GameRules
+from stockfish_uci import engine
 
 KIND_OF = {v: k for k, v in SHORT.items()}      # "Q" → "queen"
-LEVELS = {  # Stärke des Computers: Suchtiefe, Zeit (s), Spielraum in Hundertstel-Bauern
+# Stärke des Computers (Hausregel bot_level). Stockfish: Bedenkzeit (ms), Elo-Grenze bzw. „Skill Level“.
+STOCKFISH_LEVELS = {
+    1: {"movetime_ms": 80, "skill": 0},          # Anfänger: macht echte Fehler
+    2: {"movetime_ms": 300, "elo": 1500},        # Gelegenheitsspieler
+    3: {"movetime_ms": 400, "elo": 1900},        # Vereinsspieler
+    4: {"movetime_ms": 600, "elo": 2400},        # Meister
+    5: {"movetime_ms": 1000},                    # volle Stärke
+}
+# Ersatz ohne Stockfish (eingebauter Python-Computer): Suchtiefe, Zeit (s), Spielraum in Hundertstel-Bauern
+LEVELS = {
     1: (1, 0.5, 140),
     2: (2, 1.0, 25),
     3: (4, 2.5, 6),
 }
+LEVELS[4] = LEVELS[5] = LEVELS[3]
 
 REASONS = {
     "checkmate": "Schachmatt",
@@ -40,8 +52,8 @@ class SchachRules(GameRules):
     shared_view = True          # kein Geheimwissen: alle sehen dasselbe (eine Berechnung für alle)
     conformance_settings = {"bot_level": 1}   # Pflicht-Prüfung: schneller Computer
     settings_schema = {
-        "bot_level": {"default": 2, "label": "Stärke des Computers", "min": 1, "max": 3,
-                      "hint": "1 = Anfänger, 2 = Gelegenheitsspieler, 3 = denkt mehrere Züge voraus"},
+        "bot_level": {"default": 2, "label": "Stärke des Computers", "min": 1, "max": 5,
+                      "hint": "1 Anfänger · 2 Gelegenheitsspieler · 3 Vereinsspieler · 4 Meister · 5 volle Stärke (Stockfish)"},
     }
 
     # ---------- Stellung ↔ Tisch ----------
@@ -181,11 +193,33 @@ class SchachRules(GameRules):
         g = room.game or {}
         if g.get("phase") != "move" or g.get("turn") != seat:
             return None
-        depth, budget, tolerance = LEVELS.get(int(g.get("settings", {}).get("bot_level", 2)), LEVELS[2])
+        level = int(g.get("settings", {}).get("bot_level", 2))
         pos = self.position(room)
-        m = best_move(pos, depth, budget, random.Random(), tuple(g.get("history") or ()), tolerance)
+        legal = self._legal(room)
+        m = self._stockfish_move(pos, level, legal)
+        if m is None:      # kein Stockfish (oder Fehler) → eingebauter Computer
+            depth, budget, tolerance = LEVELS.get(level, LEVELS[2])
+            m = best_move(pos, depth, budget, random.Random(), tuple(g.get("history") or ()), tolerance)
         if m is None:
             return None
         if m.promo and m.promo != "Q":
             m = Move(m.frm, m.to, "Q", m.flag)
         return {"type": "move", "piece": self._board_map(room)[m.frm], "to": sq_name(m.to)}
+
+    @staticmethod
+    def _stockfish_move(pos: Position, level: int, legal: List[Move]) -> Optional[Move]:
+        """Zug von Stockfish, nur wenn er am Tisch erlaubt ist (Umwandlung wird zur Dame). Sonst None."""
+        if os.environ.get("TABLETOP_CONFORMANCE") or os.environ.get("SCHACH_STOCKFISH") == "off":
+            return None                     # Pflicht-Prüfung: schneller eingebauter Computer
+        sf = engine()
+        if not sf.available:
+            return None
+        cfg = STOCKFISH_LEVELS.get(level, STOCKFISH_LEVELS[2])
+        uci = sf.best_move(pos.fen(), cfg["movetime_ms"], cfg.get("elo"), cfg.get("skill"))
+        if not uci or len(uci) < 4:
+            return None
+        try:
+            frm, to = sq_index(uci[:2]), sq_index(uci[2:4])
+        except (ValueError, IndexError):
+            return None
+        return next((m for m in legal if m.frm == frm and m.to == to), None)

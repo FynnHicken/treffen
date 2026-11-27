@@ -3,6 +3,7 @@
     python -I games/schach/tests/test_rules.py
 """
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -16,6 +17,7 @@ from tabletop_server import GameDef, Room  # noqa: E402
 from tabletop_server.conformance import check_game  # noqa: E402
 from layout import LAYOUT, SEAT_COLORS  # noqa: E402
 from rules import SchachRules  # noqa: E402
+import stockfish_uci  # noqa: E402
 
 FAILS = []
 
@@ -139,17 +141,54 @@ def main():
     ok(r.game["result"]["winners"] == [], "Remis: keine Sieger")
 
     print("== Computer ==")
+    os.environ["SCHACH_STOCKFISH"] = "off"             # hier: eingebauter Python-Computer
     r = new_room({"bot_level": 3})
     t = time.time()
     a = r.bot_plan(0)
-    ok(a is not None and a["type"] == "move", f"Stufe 3 findet einen Zug ({time.time() - t:.2f} s)")
+    ok(a is not None and a["type"] == "move", f"Python-Computer Stufe 3 findet einen Zug ({time.time() - t:.2f} s)")
     # Matt in 1 wird gefunden: Weiß Dh5xf7# nach 1.e4 e5 2.Lc4 Sc6 3.Dh5 Sf6??
     r = new_room({"bot_level": 2})
     play(r, "e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6")
     a = r.bot_plan(0)
-    ok(a == {"type": "move", "piece": "w-Q-d1", "to": "f7"}, f"Computer sieht das Schäfermatt ({a})")
+    ok(a == {"type": "move", "piece": "w-Q-d1", "to": "f7"}, f"Python-Computer sieht das Schäfermatt ({a})")
+    del os.environ["SCHACH_STOCKFISH"]
+
+    print("== Stockfish ==")
+    path = stockfish_uci.find_binary()
+    if not path:
+        ok(not os.environ.get("SCHACH_REQUIRE_STOCKFISH"), "Stockfish nicht gefunden (STOCKFISH_PATH) – übersprungen")
+    else:
+        sf = stockfish_uci.engine()
+        r = new_room({"bot_level": 5})
+        play(r, "e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6")
+        t = time.time()
+        a = r.bot_plan(0)
+        ok(a == {"type": "move", "piece": "w-Q-d1", "to": "f7"}, f"Stockfish (Stufe 5) setzt matt: {a} ({time.time() - t:.2f} s)")
+        ok(sf.proc is not None, "ein Stockfish-Prozess läuft (startet beim ersten Zug)")
+        for level in range(1, 6):
+            r = new_room({"bot_level": level})
+            play(r, "e2e4")
+            t = time.time()
+            a = r.bot_plan(1)
+            legal = any(m["piece"] == a["piece"] and m["to"] == a["to"] for m in r.play_state()["moves"]) if a else False
+            ok(legal and time.time() - t < 3, f"Stufe {level}: erlaubter Zug {a['to'] if a else None} in {time.time() - t:.2f} s")
+        sf.proc.kill()                                   # Absturz nachstellen
+        sf.proc.wait()
+        r = new_room({"bot_level": 2})
+        ok(r.bot_plan(0) is not None and sf.proc is not None and sf.proc.poll() is None, "nach Absturz neu gestartet")
+        r = new_room({"bot_level": 4})
+        play(r, "a2a4", "b7b5", "a4b5", "a7a6", "b5a6", "c8b7", "a6b7", "b8c6")
+        a = r.bot_plan(0)
+        ok(a is not None and r.apply_action("w", 0, a) != [], f"Umwandlungs-Stellung: Stockfish-Zug wird am Tisch angenommen ({a})")
+    broken = stockfish_uci.Stockfish("/gibt/es/nicht")
+    ok(not broken.available and broken.best_move("8/8/8/8/8/8/8/K6k w - - 0 1", 50) is None, "ohne Stockfish: kein Absturz")
+    os.environ["SCHACH_STOCKFISH"] = "off"
+    r = new_room({"bot_level": 5})
+    ok(r.bot_plan(0) is not None, "Ersatz: eingebauter Computer spielt, wenn Stockfish fehlt/aus ist")
+    del os.environ["SCHACH_STOCKFISH"]
 
     print("== Pflicht-Prüfung (Engine) ==")
+    os.environ["TABLETOP_CONFORMANCE"] = "1"
     check_game(GAME, games=5, settings={"bot_level": 1})
 
     print()
