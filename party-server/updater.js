@@ -233,7 +233,8 @@ export function verifyHubHostTicket(token, secret) {
     }
     try {
         const payload = JSON.parse(Buffer.from(body.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
-        if (payload.exp && Date.now() > payload.exp) return { ok: false, error: 'Host-Ticket abgelaufen.' };
+        const expMs = payload.exp ? (payload.exp < 1e12 ? payload.exp * 1000 : payload.exp) : 0;
+        if (expMs && Date.now() > expMs) return { ok: false, error: 'Host-Ticket abgelaufen.' };
         if (!payload.host) return { ok: false, error: 'Nur der Host darf Updates verwalten.' };
         return { ok: true, payload };
     } catch {
