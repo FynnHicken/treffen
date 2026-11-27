@@ -1,7 +1,8 @@
 """Regeln „Mensch ärgere dich nicht“ für den Spieltisch (portiert aus dem früheren 2D-Prototyp).
 
-Arbeitet direkt auf den Feld-IDs des Layouts: Laufbahn t0…t39, Häuschen h-<farbe>-0…3, Ziel g-<farbe>-0…3.
-Platz = Farbe: 0 Gelb (Start t0), 1 Grün (t10), 2 Rot (t20), 3 Schwarz (t30).
+Arbeitet direkt auf den Feld-IDs des Layouts: Laufbahn t0…t(10N−1), Häuschen h-<farbe>-0…3, Ziel g-<farbe>-0…3.
+Platz = Farbe: 0 Gelb (Start t0), 1 Grün (t10), 2 Rot (t20), 3 Schwarz (t30), beim 6er/8er-Brett weiter
+Blau (t40), Orange (t50), Lila (t60), Weiß (t70). Ein Regel-Objekt je Brett: MenschRules(farben).
 
 Regeln (Hausregeln per Host in der Lobby: `clear_start` Standard an, `must_capture` Standard aus):
 - Wer keine Figur auf der Laufbahn hat, darf bis zu 3× würfeln, um eine 6 zu bekommen.
@@ -14,14 +15,10 @@ Regeln (Hausregeln per Host in der Lobby: `clear_start` Standard an, `must_captu
 """
 from typing import Dict, List, Optional
 
-from layout import COLORS, START_INDEX
+from layout import colors_for
 from tabletop_server.rules import Rules
 
-TRACK_LEN = 40
-
-
-def seat_color(seat: int) -> str:
-    return COLORS[seat]
+TRACK_LEN = 40          # klassisches Brett (ältere Aufrufer); je Brett: rules.track_len
 
 
 class MenschRules(Rules):
@@ -32,6 +29,16 @@ class MenschRules(Rules):
                          "hint": "Wer eine fremde Figur schlagen kann, muss es tun."},
     }
     min_players = 2
+
+    def __init__(self, colors=None):
+        self.colors = list(colors or colors_for(4))
+        self.track_len = 10 * len(self.colors)
+        self.start_index = {c: 10 * i for i, c in enumerate(self.colors)}
+        # Pflicht-Prüfung: mehr Spieler und längere Laufbahn → längere Partien
+        self.conformance_max_steps = int(6000 * (len(self.colors) / 4) ** 2)   # 8er: Ø ≈ 11 600
+
+    def seat_color(self, seat: int) -> str:
+        return self.colors[seat]
 
     # ---------- Hilfen ----------
     @staticmethod
@@ -47,7 +54,7 @@ class MenschRules(Rules):
         return int(field.rsplit("-", 1)[1])
 
     def _pieces_of(self, room, seat: int) -> Dict[str, str]:
-        color = seat_color(seat)
+        color = self.seat_color(seat)
         return {pid: p["field"] for pid, p in room.pieces.items() if pid.startswith(f"p-{color}-")}
 
     def _at(self, room, field: str) -> Optional[str]:
@@ -55,17 +62,17 @@ class MenschRules(Rules):
 
     def _steps(self, seat: int, field: str) -> int:
         """Zurückgelegte Felder auf der Laufbahn (0 = Startfeld)."""
-        return (self._track_idx(field) - START_INDEX[seat_color(seat)]) % TRACK_LEN
+        return (self._track_idx(field) - self.start_index[self.seat_color(seat)]) % self.track_len
 
     def _owner_seat(self, pid: str) -> int:
-        return COLORS.index(pid.split("-")[1])
+        return self.colors.index(pid.split("-")[1])
 
     # ---------- Ablauf ----------
     def setup(self, room) -> List[dict]:
         seats = sorted(m.seat for m in room.members.values() if m.seat is not None)
         events = []
         # Alle Figuren ins Häuschen (neue Runde)
-        for pid, spec in room.game_def.layout["pieces"].items():
+        for pid, spec in room.layout["pieces"].items():
             if room.pieces[pid]["field"] != spec["field"]:
                 frm = room.pieces[pid]["field"]
                 room.pieces[pid] = {"field": spec["field"], "held_by": None}
@@ -122,9 +129,9 @@ class MenschRules(Rules):
         r = g.get("dice")
         if g.get("turn") != seat or not r:
             return []
-        color = seat_color(seat)
+        color = self.seat_color(seat)
         mine = self._pieces_of(room, seat)
-        start = f"t{START_INDEX[color]}"
+        start = f"t{self.start_index[color]}"
         moves: List[dict] = []
         in_home = [pid for pid, f in mine.items() if self._kind(f) == "home"]
         goal_taken = {self._goal_idx(f) for f in mine.values() if self._kind(f) == "goal"}
@@ -140,19 +147,19 @@ class MenschRules(Rules):
             if kind == "track":
                 steps = self._steps(seat, f) + r
                 idx = self._track_idx(f)
-                if steps < TRACK_LEN:
-                    to = f"t{(idx + r) % TRACK_LEN}"
+                if steps < self.track_len:
+                    to = f"t{(idx + r) % self.track_len}"
                     occupant = self._at(room, to)
                     if occupant and occupant in mine:
                         continue
-                    path = [f"t{(idx + s) % TRACK_LEN}" for s in range(1, r + 1)]
+                    path = [f"t{(idx + s) % self.track_len}" for s in range(1, r + 1)]
                     moves.append({"piece": pid, "to": to, "path": path, "capture": occupant, "type": "track"})
-                elif steps <= TRACK_LEN + 3:
-                    goal = steps - TRACK_LEN
+                elif steps <= self.track_len + 3:
+                    goal = steps - self.track_len
                     if any(k in goal_taken for k in range(0, goal + 1)):
                         continue
-                    track_left = TRACK_LEN - 1 - self._steps(seat, f)
-                    path = [f"t{(idx + s) % TRACK_LEN}" for s in range(1, track_left + 1)]
+                    track_left = self.track_len - 1 - self._steps(seat, f)
+                    path = [f"t{(idx + s) % self.track_len}" for s in range(1, track_left + 1)]
                     path += [f"g-{color}-{k}" for k in range(0, goal + 1)]
                     moves.append({"piece": pid, "to": f"g-{color}-{goal}", "path": path, "capture": None, "type": "enter_goal"})
             elif kind == "goal":
@@ -212,7 +219,7 @@ class MenschRules(Rules):
     def _threatened(self, room, field: str, seat: int) -> bool:
         idx = self._track_idx(field)
         for d in range(1, 7):
-            pid = self._at(room, f"t{(idx - d) % TRACK_LEN}")
+            pid = self._at(room, f"t{(idx - d) % self.track_len}")
             if pid and self._owner_seat(pid) != seat:
                 return True
         return False
@@ -221,8 +228,8 @@ class MenschRules(Rules):
         ms = self.moves(room, seat)
         if not ms:
             return None
-        color = seat_color(seat)
-        start = f"t{START_INDEX[color]}"
+        color = self.seat_color(seat)
+        start = f"t{self.start_index[color]}"
         in_home = any(self._kind(f) == "home" for f in self._pieces_of(room, seat).values())
 
         def score(m: dict) -> float:

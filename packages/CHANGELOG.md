@@ -25,6 +25,37 @@ Engine – es gibt keine „alten Stände“ einzelner Spiele, solange die CI gr
 
 ---
 
+## 2.1.0 – 2026-11-27
+
+Spielvarianten: Ein Spiel kann mehrere Bretter/Spielarten mitbringen, jede mit eigener Platzzahl und eigenen Regeln.
+Erstes Spiel damit: Mensch ärgere dich nicht für 4, 6 und 8 (Mensch 1.1.0).
+
+**Neu**
+- **`Variant`** (`tabletop_server.rooms`, exportiert): `Variant(id, titel, seat_colors, layout, rules, seat_angles?,
+  players?, hint?)`; `GameDef(…, variants=[…], auto_variant=True|False, variant_label="…")`. Die erste Variante ist der
+  Standard. Bestehende Spiele (ein Brett) ändern nichts – sie haben intern eine Variante `standard`.
+- **Hausregel „Spielvariante“** kommt von der Engine (Schlüssel `variant`, erscheint nur bei mehreren Varianten). Mit
+  `auto_variant` gibt es „automatisch (nach Spielerzahl)“: Kommt jemand in die volle Lobby, wechselt der Tisch auf das
+  nächstgrößere Brett und gibt ihm einen Platz; steht jemand auf, geht es zurück. Kein Dialog, keine Rückfrage.
+- **Ereignis `BOARD_CHANGED`** (nur in der Lobby): neues `game` (Plätze, Farben, Lage), `layout`, `pieces`, `members`,
+  `settings`, `settings_schema`. Passen die Plätze nicht mehr, rücken alle der Reihe nach zusammen; wer keinen Platz hat,
+  schaut zu (Menschen vor Computern).
+- **Lage der Plätze** (`seat_angles` in Grad, 0 = unten, im Uhrzeigersinn): Partner können nebeneinander sitzen.
+  Client: `TableScene.setSeats(n, winkel)`, `seatAngle()`, `onSeatsChanged()`, `setFocusRadius()`; Platzsets und
+  Namensschilder bauen sich bei einem Wechsel selbst neu (SeatLabels übernimmt die Werte aus dem Zustand).
+- **`to_move` im Spielstand**: Der Raum ergänzt die Liste der Plätze, die handeln dürfen. `TableClient.myTurn` nutzt
+  sie – mehrere Plätze gleichzeitig am Zug sind möglich.
+- **Figuren nach Regeln (API 2)**: Ob ein Platz eine Figur greifen darf, entscheiden allein `can_touch`/`actions` der
+  Regeln, nicht mehr das feste `seat` im Layout (Team-Figuren, Figuren, die den Besitzer wechseln). API 1 wie bisher.
+- Optional an Regeln: `can_start(room)` (genügt die Besetzung), `conformance_max_steps` (lange Spiele in der Prüfung).
+- `SettingSpec.labels`: Anzeigetexte für Auswahlwerte. `DiceLayer.setObstacles()`, runde Hindernisse (`r`).
+- Spielstände speichern die Variante; `/api/health` listet `variants`, `/api/rooms` die Variante je Raum.
+- Pflicht-Prüfung spielt **jede Variante** einzeln (mit deren `conformance_settings`); bei mehreren Plätzen am Zug
+  wechselt sie zufällig zwischen ihnen. Neuer Test `tests/test_variants.py`.
+
+**Kompatibel**: Mensch-Regeln bleiben API 1. Das klassische 4er-Brett ist Feld für Feld gleich (Test vergleicht),
+alte Spielstände laden weiter. Clients ohne `BOARD_CHANGED`-Kenntnis würden es ignorieren – neu laden hilft.
+
 ## 2.0.1 – 2026-11-27
 
 - Pflicht-Prüfung (`tests/test_conformance.py`) setzt `TABLETOP_CONFORMANCE=1` für jedes Spiel. Spiele dürfen dann einen

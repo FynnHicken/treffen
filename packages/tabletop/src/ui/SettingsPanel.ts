@@ -82,6 +82,7 @@ function row(key: string, spec: SettingSpec, value: SettingValue, editable: bool
     if (!options.length && typeof spec.default === 'number' && spec.min != null && spec.max != null) {
         for (let n = spec.min; n <= spec.max; n++) options.push(n);
     }
-    const opts = options.map(o => `<option value="${escapeHtml(String(o))}"${o === value ? ' selected' : ''}>${escapeHtml(String(o))}</option>`).join('');
+    const text = (o: SettingValue) => spec.labels?.[String(o)] ?? String(o);
+    const opts = options.map(o => `<option value="${escapeHtml(String(o))}"${o === value ? ' selected' : ''}>${escapeHtml(text(o))}</option>`).join('');
     return `<div class="tt-settings-row">${label}<select id="${id}" data-key="${escapeHtml(key)}"${dis}>${opts}</select></div>`;
 }

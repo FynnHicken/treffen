@@ -109,7 +109,9 @@ export class TableClient {
         const s = this.state, me = this.me;
         if (!s || !me || me.seat === null) return false;
         if (!s.status) return true;
-        return s.status === 'playing' && s.play?.turn === me.seat;
+        if (s.status !== 'playing' || !s.play) return false;
+        if (Array.isArray(s.play.to_move)) return s.play.to_move.includes(me.seat);
+        return s.play.turn === me.seat;
     }
 
     /** Darf ich jetzt würfeln? */

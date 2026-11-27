@@ -9,20 +9,35 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]                     # Repo-Wurzel
 sys.path.insert(0, os.environ.get("TABLETOP_SERVER_PATH", str(ROOT / "packages" / "tabletop-server")))
 
-from tabletop_server import GameDef, create_app  # noqa: E402
+from tabletop_server import GameDef, Variant, create_app  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from layout import COLORS, LAYOUT, PALETTE  # noqa: E402
+from layout import LAYOUTS, PALETTE, colors_for  # noqa: E402
 from rules import MenschRules  # noqa: E402
+
+GAME_VERSION = "1.1.0"      # 1.1.0: Bretter für 6 und 8 Spieler
+
+
+def _board(n: int, title: str, players: tuple, hint: str) -> Variant:
+    colors = colors_for(n)
+    # Sitzplätze im Uhrzeigersinn = Zugreihenfolge: Gelb, Grün, Rot, Schwarz (, Blau, Orange, Lila, Weiß)
+    return Variant(str(n), title, [PALETTE[c] for c in colors], layout=LAYOUTS[n], rules=MenschRules(colors),
+                   players=players, hint=hint)
+
 
 GAME = GameDef(
     "mensch",
     "Mensch ärgere dich nicht",
-    # Sitzplätze im Uhrzeigersinn = Zugreihenfolge: Gelb, Grün, Rot, Schwarz
-    seat_colors=[PALETTE[c] for c in COLORS],
     min_players=2,
-    layout=LAYOUT,
-    rules=MenschRules(),
+    version=GAME_VERSION,
+    # „automatisch“: Das Brett wächst in der Lobby mit, sobald mehr Leute sitzen wollen
+    variants=[
+        _board(4, "Klassisch für 2–4", (1, 4), "Kreuz mit 40 Feldern"),
+        _board(6, "Großes Brett für 5–6", (5, 6), "Stern mit 60 Feldern"),
+        _board(8, "Riesenbrett für 7–8", (7, 8), "Stern mit 80 Feldern"),
+    ],
+    auto_variant=True,
+    variant_label="Brett",
 )
 CLIENT_DIST = Path(os.environ.get("MENSCH_CLIENT_DIST", Path(__file__).resolve().parents[1] / "static"))
 

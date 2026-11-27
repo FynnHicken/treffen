@@ -4,7 +4,12 @@
 import { escapeHtml } from '@treffen/boardgame-kit';
 import { avatarImgHtml, type TableClient, type TableState } from '@treffen/tabletop';
 
-const COLOR_NAMES = ['Gelb', 'Grün', 'Rot', 'Schwarz'];
+const COLOR_NAMES: Record<string, string> = {
+    yellow: 'Gelb', green: 'Grün', red: 'Rot', black: 'Schwarz', blue: 'Blau', orange: 'Orange', purple: 'Lila', white: 'Weiß'
+};
+/** Farbe eines Platzes (Reihenfolge der Palette = Sitzplätze, 4er/6er/8er-Brett) */
+const colorName = (s: TableState, seat: number | null | undefined) =>
+    COLOR_NAMES[Object.keys(s.layout.palette ?? {})[seat ?? 0] ?? ''] ?? `Platz ${(seat ?? 0) + 1}`;
 
 export function setupHud(client: TableClient, toast: (t: string) => void): void {
     const status = document.getElementById('status')!;
@@ -19,7 +24,7 @@ export function setupHud(client: TableClient, toast: (t: string) => void): void 
 
     const name = (s: TableState, seat: number | null | undefined) => {
         const m = s.members.find(x => x.seat === seat);
-        return m ? (m.id === client.you ? 'Du' : m.name) : COLOR_NAMES[seat ?? 0];
+        return m ? (m.id === client.you ? 'Du' : m.name) : colorName(s, seat);
     };
     /** Avatar (aus dem Hub) + escapter Name – für HTML */
     const who = (s: TableState, seat: number | null | undefined) =>
@@ -59,7 +64,7 @@ export function setupHud(client: TableClient, toast: (t: string) => void): void 
         if (s.status === 'finished' && s.play) {
             const medals = ['🥇', '🥈', '🥉', '4.'];
             const rows = (s.play.finished ?? []).map((seat, i) =>
-                `<li><span>${medals[i] ?? i + 1 + '.'}</span> ${who(s, seat)} <small>(${COLOR_NAMES[seat]})</small></li>`).join('');
+                `<li><span>${medals[i] ?? i + 1 + '.'}</span> ${who(s, seat)} <small>(${colorName(s, seat)})</small></li>`).join('');
             over.innerHTML = `<div class="gameover-card"><h2>🏁 Spiel vorbei</h2><ol>${rows}</ol>${
                 client.isHost ? '<button id="newround-btn">Neue Runde</button>' : '<p>Der Host kann eine neue Runde starten.</p>'}</div>`;
             over.hidden = false;

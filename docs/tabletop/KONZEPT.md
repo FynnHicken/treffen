@@ -134,9 +134,10 @@ Typen, Figuren (Modell, Farben), Würfel-Anzahl, Sitzplätze. Der Tisch baut dar
 | **M4 Regeln** ✅ | Regel-Schnittstelle, Mensch-Regeln portiert, Zielvorschau, „gleitet zurück“, Bots |
 | **M5 Fertig** ✅ | Im Hub (`/mensch/`, Host per Ticket), Hausregeln in der Lobby (⚙️), Spielstände in SQLite, Zuschauer, ein Becher für alle; 2D-Prototyp entfernt |
 | **E2.0 Engine 2** ✅ | Versionsnummer, Regel-API 2 (Aktionen), Ansicht je Platz, `PIECE_CHANGED`, Antippen → Ziel antippen, Pflicht-Prüfung für alle Spiele; **Schach** als zweites Spiel (§12) |
-| E2.1 Ein Server für alle | Alle Tisch-Spiele in einem Container, `game.json` je Spiel, Hub liest die Spieleliste vom Server (§12.5) |
-| E2.2 Karten | Karte, Stapel, Hand (aufgefächert am eigenen Platz, nur für den Besitzer sichtbar); erstes Kartenspiel (Mau-Mau) |
-| E2.3 Eingreifen & Marker | Mehrere dürfen gleichzeitig handeln (`to_move` mit mehreren Plätzen), Zähler/Marker/Geld; ein Spiel im Stil von Munchkin mit eigenen Karten |
+| **E2.1 Spielvarianten** ✅ | Mehrere Bretter je Spiel (`Variant`), automatisch nach Spielerzahl, Lage der Plätze frei, mehrere Plätze gleichzeitig am Zug, Figuren nach Regeln; **Mensch für 4/6/8**, Schach-Varianten (§12.7) |
+| E2.2 Ein Server für alle | Alle Tisch-Spiele in einem Container, `game.json` je Spiel, Hub liest die Spieleliste vom Server (§12.5) |
+| E2.3 Karten | Karte, Stapel, Hand (aufgefächert am eigenen Platz, nur für den Besitzer sichtbar); erstes Kartenspiel (Mau-Mau) |
+| E2.4 Eingreifen & Marker | Eingreifen außerhalb des eigenen Zugs, Zähler/Marker/Geld; ein Spiel im Stil von Munchkin mit eigenen Karten |
 | später | Freier Modus (Einstellung), Raster-/Hex-Bretter aus Daten, `createTableApp` (gemeinsames Client-Gerüst), Monopoly v2 |
 
 ## 10. Lokal ausprobieren (ohne Python/Node auf dem Host)
@@ -170,7 +171,8 @@ Pflicht-Prüfung aller Tisch-Spiele: `python -I packages/tabletop-server/tests/t
 | Erstes Spiel | Mensch ärgere dich nicht (einfache Regeln, schnell gespielt) |
 | Optik | **Realistisch-warm**: Holztisch, weiches Licht, echte Materialien – Spieleabend am Küchentisch |
 | Material | **Selbst modellieren** (einfache, saubere Formen per Code), keine fremden Assets → keine Lizenzfragen |
-| Spielerzahl Mensch | **Klassisch 4**; 6er-Brett später als zweites Brett möglich |
+| Spielerzahl Mensch | Klassisch 4; **seit 2026-11-27 auch Bretter für 6 und 8** (wachsen in der Lobby automatisch mit) |
+| Mehr Spieler (2026-11-27) | Mensch bis 8; Schach in **allen Varianten** für mehr als 2: Teamschach, Tandem, Vierschach |
 | Server | **Gemeinsames Python-Paket** für alle Tisch-Spiele (`packages/tabletop-server`) |
 | Engine-Version (2026-11-27) | **Versionsnummer für die Engine**, damit man immer weiß, welches Spiel welche Version hat (§12.1) |
 | Bedienung (2026-11-27) | **Rückfragen an Spieler minimal halten.** Möglichst alles über Handgriffe am Tisch, damit das Brettspiel-Gefühl bleibt (§12.3) |
@@ -260,10 +262,30 @@ auf „Ordner anlegen“.
 | Würfel, Figuren auf Feldern, Schlagen, Bots, Hausregeln | ✅ 1.x | Mensch, Ludo, Leiterspiel |
 | Aktionen, Art wechseln, Antippen → Ziel, Computer mit Bedenkzeit | ✅ 2.0 | Schach, Dame, Mühle, Halma, Reversi |
 | Ansicht je Platz (Geheimes) | ✅ 2.0 (Server) | Grundlage für alle Kartenspiele |
-| Karten, Stapel, Hand (Client + Aktionen) | E2.2 | Mau-Mau, Rommé, Kniffel-Block |
-| Gleichzeitig handeln, Eingreifen, Marker/Zähler/Geld | E2.3 | Spiele im Stil von Munchkin, Catan, Monopoly v2 |
+| Mehrere Bretter je Spiel, Platzzahl/Lage je Brett, mehrere gleichzeitig am Zug, Figuren wechseln den Besitzer | ✅ 2.1 | Mensch 6/8, Teamschach, Tandem, Vierschach |
+| Karten, Stapel, Hand (Client + Aktionen) | E2.3 | Mau-Mau, Rommé, Kniffel-Block |
+| Eingreifen außerhalb des Zugs, Marker/Zähler/Geld | E2.4 | Spiele im Stil von Munchkin, Catan, Monopoly v2 |
 | Bretter aus Daten (Raster, Hex), Plättchen mit Drehung | später | Go, Catan, Carcassonne-artige Legespiele |
 | Freier Modus ohne Regeln | später | beliebige Spiele „wie am echten Tisch“ |
+
+### 12.7 Spielvarianten (Engine 2.1)
+
+Ein Spiel kann mehrere Spielarten mitbringen – jede mit eigenem Brett, eigener Platzzahl, eigenen Regeln:
+
+```python
+GAME = GameDef("mensch", "Mensch ärgere dich nicht", version="1.1.0", auto_variant=True, variant_label="Brett",
+               variants=[Variant("4", "Klassisch für 2–4", farben4, layout=L4, rules=MenschRules(c4), players=(1, 4)),
+                         Variant("6", "Großes Brett für 5–6", farben6, layout=L6, rules=MenschRules(c6), players=(5, 6)),
+                         Variant("8", "Riesenbrett für 7–8", farben8, layout=L8, rules=MenschRules(c8), players=(7, 8))])
+```
+
+- Der Host wählt in den Hausregeln (Schlüssel `variant`). Mit `auto_variant` gibt es „automatisch“: Will jemand in die
+  volle Lobby, wechselt der Tisch auf das nächstgrößere Brett und gibt ihm den Platz – keine Frage an irgendwen.
+- Ein Wechsel geht nur in der Lobby und kommt als ein Ereignis `BOARD_CHANGED`. Plätze rücken der Reihe nach zusammen.
+- `seat_angles` legt fest, wo die Plätze am Tisch liegen (Partner nebeneinander); ohne Angabe gleichmäßig.
+- Regeln greifen auf `room.layout`, `room.seats`, `room.seat_colors` zu (nicht `room.game_def.…`).
+- Client: Platzsets/Namensschilder folgen von selbst; das Spiel baut sein Brett neu, wenn sich `state.layout` ändert
+  (Beispiel `games/mensch/client/src/main.ts`), und gibt dem Würfel ggf. neue Hindernisse (`dice.setObstacles`).
 
 Hinweis: Kommerzielle Spiele (Munchkin, Catan …) nur als **eigene Umsetzung der Mechanik** mit eigenen Karten,
 Texten und Grafiken – keine Kopie von Kartentexten, Namen oder Bildern.

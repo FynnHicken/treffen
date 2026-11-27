@@ -2,9 +2,10 @@
  * Mensch ärgere dich nicht – 3D-Spieltisch (läuft eigenständig auf Port 8095 oder im Hub unter /mensch/).
  */
 import './app.css';
+import * as THREE from 'three';
 import {
-    createPawn, DiceLayer, isTouchDevice, PieceLayer, Presence, SeatLabels, SettingsPanel, TableClient, TableScene,
-    unlockAudioOnGesture
+    createPawn, DiceLayer, ENGINE_VERSION, isTouchDevice, PieceLayer, Presence, SeatLabels, SettingsPanel, TableClient,
+    TableScene, unlockAudioOnGesture, type Layout, type Obstacle
 } from '@treffen/tabletop';
 import { BOARD_THICKNESS, createBoard } from './board';
 import { setupHud } from './hud';
@@ -69,22 +70,43 @@ async function start(): Promise<void> {
     new SettingsPanel(client, document.querySelector('.top-center')!);
     unlockAudioOnGesture();
 
-    // Brett, sobald das Layout vom Server da ist
-    let boardBuilt = false;
+    // Würfel: rollen im Streifen zwischen Brett und Tischkante; das Brett ist ein Hindernis
+    const obstaclesFor = (layout: Layout): Obstacle[] => {
+        const size = layout.board?.size ?? 11 * 0.8 + 0.9;
+        return layout.board?.shape === 'round'
+            ? [{ x: 0, z: 0, w: size, d: size, r: size / 2, h: BOARD_THICKNESS }]
+            : [{ x: 0, z: 0, w: size, d: size, h: BOARD_THICKNESS }];
+    };
+    const dice = new DiceLayer(table, client, { obstacles: obstaclesFor({ fields: {}, pieces: {} }) });
+
+    // Brett, sobald das Layout vom Server da ist – und neu, wenn der Host ein anderes Brett wählt (4/6/8)
+    let board: THREE.Group | null = null;
+    let boardLayout: Layout | null = null;
     client.onState(s => {
-        if (boardBuilt || !s.layout?.board) return;
-        boardBuilt = true;
-        table.scene.add(createBoard(s.layout, table.renderer.capabilities.getMaxAnisotropy(), !isTouchDevice()));
+        if (!s.layout?.board || s.layout === boardLayout) return;
+        boardLayout = s.layout;
+        if (board) {
+            table.scene.remove(board);
+            board.traverse(o => {
+                const m = o as THREE.Mesh;
+                m.geometry?.dispose();
+                const mat = m.material as THREE.MeshStandardMaterial | undefined;
+                mat?.map?.dispose();
+                mat?.dispose();
+            });
+        }
+        board = createBoard(s.layout, table.renderer.capabilities.getMaxAnisotropy(), !isTouchDevice());
+        table.scene.add(board);
+        dice.setObstacles(obstaclesFor(s.layout));
         table.invalidate();
     });
     const pieces = new PieceLayer(table, client, {
         surfaceY: BOARD_THICKNESS,
-        createMesh: (_id, spec, layout) => createPawn(layout.palette?.[spec.color ?? ''] ?? '#999')
-    });
-    // Würfel: rollen im Streifen zwischen Brett und Tischkante; das Brett ist ein Hindernis
-    const BOARD_SIZE = 11 * 0.8 + 0.9;
-    const dice = new DiceLayer(table, client, {
-        obstacles: [{ x: 0, z: 0, w: BOARD_SIZE, d: BOARD_SIZE, h: BOARD_THICKNESS }]
+        createMesh: (_id, spec, layout) => {
+            const pawn = createPawn(layout.palette?.[spec.color ?? ''] ?? '#999');
+            pawn.scale.setScalar(Math.min(1, (layout.board?.spacing ?? 0.8) / 0.8));    // kleinere Felder → kleinere Figuren
+            return pawn;
+        }
     });
     const rollBtn = document.getElementById('roll-btn') as HTMLButtonElement;
     rollBtn.addEventListener('click', () => { if (client.canRoll) dice.throwDice(0.6); });
@@ -97,6 +119,10 @@ async function start(): Promise<void> {
     const dot = document.getElementById('conn-dot')!;
     client.onConnection(ok => dot.classList.toggle('ok', ok));
     setTimeout(() => document.getElementById('hint')?.classList.add('fade'), 6000);
+    client.onState(s => {
+        const v = document.getElementById('versions');
+        if (v) v.textContent = `Mensch ${s.game.version ?? '?'} · Spieltisch ${ENGINE_VERSION}`;
+    });
 
     // Für Tests und Fehlersuche
     (window as any).__tisch = { table, client, presence, pieces, dice, labels };

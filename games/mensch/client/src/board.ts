@@ -1,6 +1,6 @@
 /**
  * Das Mensch-Brett als bedruckter Karton: Druckbild auf Canvas (selbst gezeichnet), Kartonkante darunter.
- * Felder/Positionen kommen aus dem Server-Layout (games/mensch/server/layout.py).
+ * Felder/Positionen kommen aus dem Server-Layout (games/mensch/server/layout.py): eckig (4er) oder rund (6er/8er).
  */
 import * as THREE from 'three';
 import { seededRandom, type Layout } from '@treffen/tabletop';
@@ -9,11 +9,13 @@ export const BOARD_THICKNESS = 0.12;
 
 export function createBoard(layout: Layout, anisotropy: number, hiRes: boolean): THREE.Group {
     const size = layout.board?.size ?? 9.7;
+    const round = layout.board?.shape === 'round';
     const group = new THREE.Group();
 
     // Kartonkörper (dunkelblaue Kaschierung wie bei vielen Spielbrettern, Kanten leicht heller)
     const body = new THREE.Mesh(
-        new THREE.BoxGeometry(size, BOARD_THICKNESS, size),
+        round ? new THREE.CylinderGeometry(size / 2, size / 2, BOARD_THICKNESS, 96)
+            : new THREE.BoxGeometry(size, BOARD_THICKNESS, size),
         new THREE.MeshStandardMaterial({ color: 0x1f2c4a, roughness: 0.85 })
     );
     body.position.y = BOARD_THICKNESS / 2;
@@ -26,7 +28,7 @@ export function createBoard(layout: Layout, anisotropy: number, hiRes: boolean):
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = anisotropy;
     const top = new THREE.Mesh(
-        new THREE.PlaneGeometry(size, size),
+        round ? new THREE.CircleGeometry(size / 2, 96) : new THREE.PlaneGeometry(size, size),
         new THREE.MeshPhysicalMaterial({ map: tex, roughness: 0.55, clearcoat: 0.25, clearcoatRoughness: 0.4 })
     );
     top.rotation.x = -Math.PI / 2;
@@ -62,7 +64,11 @@ function drawBoard(layout: Layout, size: number, px: number): HTMLCanvasElement 
     // Rahmenlinie
     c.strokeStyle = '#3b2a1a';
     c.lineWidth = k * 0.05;
-    c.strokeRect(k * 0.18, k * 0.18, px - k * 0.36, px - k * 0.36);
+    if (layout.board?.shape === 'round') {
+        c.beginPath(); c.arc(px / 2, px / 2, px / 2 - k * 0.18, 0, Math.PI * 2); c.stroke();
+    } else {
+        c.strokeRect(k * 0.18, k * 0.18, px - k * 0.36, px - k * 0.36);
+    }
 
     const fields = layout.fields;
     const track = Object.entries(fields).filter(([, f]) => f.kind === 'track' || f.kind === 'start')
@@ -114,11 +120,12 @@ function drawBoard(layout: Layout, size: number, px: number): HTMLCanvasElement 
         }
         if (f.kind === 'start' || (f.kind === 'home' && f.index === 0)) {
             // Beschriftung zum Platz der jeweiligen Farbe gedreht (Platz 0 unten, im Uhrzeigersinn)
+            const seats = Math.max(1, Object.keys(pal).length);
             const seat = Math.max(0, Object.keys(pal).indexOf(f.color ?? ''));
-            const dark = f.color === 'yellow';
+            const dark = f.color === 'yellow' || f.color === 'white' || f.color === 'orange';
             c.save();
             c.translate(cx, cy);
-            c.rotate((seat * Math.PI) / 2);
+            c.rotate((seat * Math.PI * 2) / seats);
             c.fillStyle = dark ? '#3b2a12' : '#fff8e6';
             c.font = `700 ${Math.round(R * 1.05)}px Georgia, "Times New Roman", serif`;
             c.textAlign = 'center';

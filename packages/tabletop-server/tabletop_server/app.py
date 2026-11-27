@@ -181,13 +181,15 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optio
 
     @app.get("/api/health")
     async def health():
-        return {"ok": True, "game": game.id, "rooms": len(rooms), **{k: v for k, v in game.info().items() if k != "id"}}
+        return {"ok": True, "game": game.id, "rooms": len(rooms), **{k: v for k, v in game.info().items() if k != "id"},
+                "variants": [{**v.info(), "rules_api": v.rules.api_version if v.rules else None}
+                             for v in game.variants.values()]}
 
     @app.get("/api/rooms")
     async def list_rooms():
         return {"rooms": [
             {"room": r.id, "members": sum(1 for m in r.members.values() if m.connected),
-             "seats": game.seats, "taken": sum(1 for m in r.members.values() if m.seat is not None)}
+             "seats": r.seats, "variant": r.variant_id, "taken": sum(1 for m in r.members.values() if m.seat is not None)}
             for r in rooms.values() if sockets.get(r.id)
         ]}
 

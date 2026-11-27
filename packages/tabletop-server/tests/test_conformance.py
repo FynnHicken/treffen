@@ -3,7 +3,8 @@
 Findet jedes Spiel unter games/*/server/main.py, das den Spieltisch nutzt, und lässt Computer ganze Partien
 spielen – jedes Spiel in einem eigenen Python-Prozess (Module wie layout/rules heißen überall gleich).
     python -I packages/tabletop-server/tests/test_conformance.py [Partien je Spiel]
-Ein Spiel kann über `conformance_settings` an seinen Regeln Hausregeln für den Test setzen (z. B. schneller Computer).
+Jede Variante eines Spiels wird geprüft. Ein Spiel kann über `conformance_settings` an seinen Regeln Hausregeln für den
+Test setzen (z. B. schneller Computer).
 """
 import os
 import subprocess
@@ -19,8 +20,9 @@ sys.path.insert(0, sys.argv[2])
 ns = runpy.run_path(sys.argv[1], run_name="conformance")
 from tabletop_server.conformance import check_game
 game = ns["GAME"]
-check_game(game, games=int(sys.argv[3]), settings=getattr(game.rules, "conformance_settings", None))
-print(f"  OK   {game.id}: Version {game.version}, Engine {game.info()['engine']}, Regel-API {game.rules_api}")
+check_game(game, games=int(sys.argv[3]))
+print(f"  OK   {game.id}: Version {game.version}, Engine {game.info()['engine']}, Regel-API {game.rules_api}, "
+      f"{len(game.variants)} Variante(n)")
 '''
 
 fails = []

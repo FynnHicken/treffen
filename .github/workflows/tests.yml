@@ -69,6 +69,9 @@ jobs:
       - name: Server-Tests (Sitzplätze, Host, Präsenz, Reconnect)
         working-directory: /tmp
         run: python -I "$GITHUB_WORKSPACE/packages/tabletop-server/tests/test_tabletop_ws.py"
+      - name: Spielvarianten (Brett wächst mit, Plätze rücken zusammen, Speichern/Laden)
+        working-directory: /tmp
+        run: python -I "$GITHUB_WORKSPACE/packages/tabletop-server/tests/test_variants.py"
       - name: Pflicht-Prüfung aller Tisch-Spiele (Engine-Version, Computer-Partien, Speichern/Laden)
         working-directory: /tmp
         run: python -I "$GITHUB_WORKSPACE/packages/tabletop-server/tests/test_conformance.py" 10
@@ -100,6 +103,10 @@ jobs:
           mkdir -p /tmp/tisch-shots
           docker run --rm --network=host -v "$PWD/games/mensch":/work:ro -v /tmp/tisch-shots:/shots -w /work treffen-ui-test \
             python -u tests/ui/tisch_smoke.py http://127.0.0.1:8095 /shots
+      - name: Mensch-Bretter für 6 und 8 im Browser (Wechsel in der Lobby, Handy, Computer-Partie zu acht)
+        run: |
+          docker run --rm --network=host -v "$PWD/games/mensch":/work:ro -v /tmp/tisch-shots:/shots -w /work treffen-ui-test \
+            python -u tests/ui/boards_smoke.py http://127.0.0.1:8095 /shots
       - name: Schach im Browser (Desktop + Handy, Antippen, Schlagen, Computer)
         run: |
           (cd /tmp && TABLETOP_DB= STOCKFISH_PATH=/tmp/stockfish/stockfish python -u "$GITHUB_WORKSPACE/games/schach/server/main.py" > /tmp/schach.log 2>&1 &)

@@ -268,8 +268,8 @@ const partyState = {
             title: "Mensch ärgere dich nicht",
             icon: "🎲",
             minPlayers: 1,
-            maxPlayers: 4,
-            desc: "Der Klassiker am 3D-Spieltisch: Becher schütteln, Figuren ziehen, rauswerfen. Freie Plätze übernehmen Computer, weitere Gäste schauen zu.",
+            maxPlayers: 8,
+            desc: "Der Klassiker am 3D-Spieltisch: Becher schütteln, Figuren ziehen, rauswerfen. Bis 4 auf dem Kreuz, ab 5 wächst das Brett von selbst zum Stern für 6 oder 8. Freie Plätze übernehmen Computer.",
             cover: "assets/cover_mensch.jpg",
             minutes: 30,
             spectators: true, // mehr Gäste als Plätze → schauen zu

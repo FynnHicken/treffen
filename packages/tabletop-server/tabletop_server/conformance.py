@@ -8,6 +8,9 @@ Spiel, wird die CI rot, bevor es live geht.
 
 Der Runner setzt TABLETOP_CONFORMANCE=1 – ein Spiel darf dann einen schnellen Computer nehmen (z. B. kein Stockfish).
 
+Jede Variante (rooms.Variant) wird einzeln geprüft, mit ihren `conformance_settings` (an den Regeln).
+Längere Spiele (z. B. Mensch zu acht) setzen an den Regeln `conformance_max_steps`.
+
 Geprüft wird ohne Netzwerk direkt am Raum:
   - Computer spielen ganze Partien bis zum Ende (kein Hängenbleiben, keine Ausnahme)
   - Ereignisse sind lückenlos nummeriert, haben einen Typ und sind als JSON versendbar
@@ -16,6 +19,7 @@ Geprüft wird ohne Netzwerk direkt am Raum:
   - Spielstand übersteht Speichern + Laden mitten in der Partie (gleicher Stand danach)
 """
 import json
+import random
 from typing import Optional
 
 from .rooms import GameDef, Room
@@ -38,22 +42,45 @@ def _comparable(room: Room) -> dict:
 
 
 def check_game(game: GameDef, games: int = 10, max_steps: int = 4000, settings: Optional[dict] = None,
-               save_every: int = 37, log=print) -> dict:
-    _check(game.rules is not None, "Spiel hat keine Regeln")
-    fields = game.layout.get("fields", {})
+               save_every: int = 37, log=print, variants=None) -> dict:
+    """Alle Varianten (oder nur `variants`) prüfen. settings gilt zusätzlich zu den conformance_settings der Regeln."""
+    total = {"games": 0, "steps": 0, "events": 0}
+    for vid in (variants or list(game.variants)):
+        v = game.variants[vid]
+        s = {**(getattr(v.rules, "conformance_settings", None) or {}), **(settings or {})}
+        steps = max(max_steps, int(getattr(v.rules, "conformance_max_steps", 0) or 0))
+        st = _check_variant(game, vid, games, steps, s, save_every)
+        for k in total:
+            total[k] += st[k]
+        if log:
+            name = game.id if len(game.variants) == 1 else f"{game.id}/{vid}"
+            log(f"  OK   {name}: {st['games']} Computer-Partien, {st['steps']} Züge, {st['events']} Ereignisse")
+    return total
+
+
+def _check_variant(game: GameDef, vid: str, games: int, max_steps: int, settings: dict, save_every: int) -> dict:
+    v = game.variants[vid]
+    _check(v.rules is not None, f"Variante {vid} hat keine Regeln")
+    fields = v.layout.get("fields", {})
     stats = {"games": 0, "steps": 0, "events": 0}
+    rng = random.Random(7)
     for n in range(games):
         room = Room(f"CONF{n}", game)
         room.ROLL_LOCK_SEC = 0                       # Würfel müssen hier nicht ausrollen
         room.join("host", "Host", False)
-        for seat in range(game.seats):
+        if len(game.variants) > 1:
+            room.set_settings("host", {"variant": vid})
+        _check(room.variant_id == vid, f"Variante {vid} lässt sich nicht wählen")
+        room.stand_up("host")
+        for seat in range(room.seats):
             if room.member_at(seat) is None:
                 room.add_bot("host", seat)
+        _check(room.variant_id == vid, f"Variante {vid}: Computer hinzufügen wechselt das Brett")
         if settings:
             room.set_settings("host", settings)
         seq = room.seq
         events = room.start("host")
-        _check(room.status == "playing", f"Partie {n}: START hat nicht gestartet")
+        _check(room.status == "playing", f"{vid} Partie {n}: START hat nicht gestartet")
 
         def consume(msgs, where):
             nonlocal seq
@@ -70,20 +97,20 @@ def check_game(game: GameDef, games: int = 10, max_steps: int = 4000, settings: 
         steps = 0
         while room.status == "playing":
             steps += 1
-            _check(steps <= max_steps, f"Partie {n}: nach {max_steps} Schritten nicht zu Ende")
+            _check(steps <= max_steps, f"{vid} Partie {n}: nach {max_steps} Schritten nicht zu Ende")
             for pid, p in room.pieces.items():
                 _check(p["field"] in fields, f"Partie {n}: Figur {pid} auf unbekanntem Feld {p['field']}")
-            for seat in range(game.seats):
+            for seat in range(room.seats):
                 for a in room.rules.actions(room, seat):
                     _check(isinstance(a.get("type"), str), "Aktion ohne Typ")
                     if a["type"] == "move":
                         _check(a.get("piece") in room.pieces and a.get("to") in fields,
                                f"Partie {n}: Zug auf unbekanntes Feld/Figur {a}")
-            for seat in list(range(game.seats)) + [None]:
+            for seat in list(range(room.seats)) + [None]:
                 json.dumps(room.play_state(seat))
             movers = room.rules.to_move(room)
             _check(movers, f"Partie {n}: niemand am Zug, aber Partie läuft")
-            seat = movers[0]
+            seat = movers[0] if len(movers) == 1 else rng.choice(movers)   # mehrere gleichzeitig (Tandem)
             action = room.bot_plan(seat)
             _check(action is not None, f"Partie {n}: Computer findet keine Aktion für Platz {seat}")
             msgs = room.bot_apply(seat, action)
@@ -100,7 +127,6 @@ def check_game(game: GameDef, games: int = 10, max_steps: int = 4000, settings: 
         stats["games"] += 1
         stats["steps"] += steps
         _check(room.status == "finished", f"Partie {n}: endet nicht sauber")
+        _check(room.variant_id == vid, f"Partie {n}: Variante nach Speichern/Laden verloren")
         json.dumps(room.state())
-    if log:
-        log(f"  OK   {game.id}: {stats['games']} Computer-Partien, {stats['steps']} Züge, {stats['events']} Ereignisse")
     return stats

@@ -19,7 +19,12 @@ kommen in späteren MINOR-Versionen dazu; bestehende Spiele merken davon nichts.
         def apply(self, room, seat, action) -> list|None:   # Aktion ausführen; None = nicht erlaubt
         def view(self, room, seat) -> dict: ...             # was dieser Platz sieht (seat None = Zuschauer)
 
-Optional: `to_move` (wer gerade handeln darf), `bot_action` (Wahl des Computers), `can_touch`.
+Optional: `to_move` (wer gerade handeln darf, auch mehrere Plätze gleichzeitig), `bot_action` (Wahl des Computers),
+`can_touch` (darf dieser Platz die Figur greifen – bei API 2 entscheiden das allein die Regeln, Figuren dürfen also
+den Besitzer wechseln oder einem Team gehören), `can_start` (genügt die Besetzung, z. B. beide Teams besetzt).
+
+Mehrere Spielarten eines Spiels (Engine 2.1): je Variante ein eigenes Regel-Objekt, siehe rooms.Variant.
+Brett, Figuren und Plätze der aktuellen Variante: room.layout, room.seats, room.seat_colors.
 
 Ereignisse, die Regeln zurückgeben, sind Dicts wie {"type": "PIECE_MOVED", ...}; der Raum nummeriert sie.
 Figurenpositionen stehen in room.pieces[id]["field"]; Regeln ändern sie dort und melden PIECE_MOVED.
@@ -27,6 +32,7 @@ Wechselt eine Figur ihre Art (z. B. Bauer → Dame): room.pieces[id]["kind"] set
 
 Damit der Tisch Zug und Ende anzeigen kann, gehören in den Spielstand (`view`):
   "turn": Platz am Zug (oder None), "phase": "over" am Ende, "result": {"winners": [Plätze], "reason": "..."}.
+  "to_move" (Liste der Plätze, die handeln dürfen) setzt der Raum selbst aus `to_move`, wenn die Ansicht es nicht hat.
 
 API 1 – `Rules` (Mensch ärgere dich nicht, Engine 1.x)
 -------------------------------------------------------

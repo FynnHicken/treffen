@@ -34,6 +34,24 @@ export class SeatLabels {
     private lastState: TableState | null = null;
 
     constructor(private table: TableScene, private client: TableClient) {
+        this.build();
+        new ResizeObserver(() => this.place()).observe(table.renderer.domElement);
+        client.onState(s => this.render(s));
+        // Spielvariante gewechselt → andere Plätze: Schilder neu
+        table.onSeatsChanged(() => {
+            this.build();
+            if (this.lastState) this.render(this.lastState);
+        });
+    }
+
+    private build(): void {
+        const table = this.table;
+        for (const pl of this.plates) {
+            table.scene.remove(pl.group, pl.chips);
+            pl.chips.element.remove();
+            pl.texture.dispose();
+        }
+        this.plates = [];
         for (let s = 0; s < table.seats; s++) {
             const canvas = document.createElement('canvas');
             canvas.width = CW; canvas.height = CH;
@@ -69,8 +87,6 @@ export class SeatLabels {
             this.plates.push({ group, canvas, texture, key: '', text: '', chips, botChip: false, hasAvatar: false });
         }
         this.place();
-        new ResizeObserver(() => this.place()).observe(table.renderer.domElement);
-        client.onState(s => this.render(s));
     }
 
     /** Gravuren auf den Platzsets ausrichten; Knöpfe seitlicher Plätze hochkant (Handy) untereinander stellen. */
@@ -80,7 +96,7 @@ export class SeatLabels {
         const half = this.table.tableSize / 2;
         this.plates.forEach((pl, s) => {
             const dir = this.table.seatDirection(s);
-            const a = (s / this.table.seats) * Math.PI * 2;
+            const a = this.table.seatAngle(s);
             const opposite = dir.dot(own) < -0.5;
             const p = this.table.seatPosition(s, 0.85);
             pl.group.position.set(p.x, 0.009, p.z);
@@ -107,6 +123,8 @@ export class SeatLabels {
 
     private render(state: TableState): void {
         this.lastState = state;
+        // Plätze der aktuellen Spielvariante (wechselt nur in der Lobby; baut bei Änderung die Schilder neu)
+        this.table.setSeats(state.game.seats, state.game.seat_angles ?? null);
         const me = this.client.me;
         const seatBefore = this.table.ownSeatIndex;
         this.table.setOwnSeat(me?.seat ?? null);

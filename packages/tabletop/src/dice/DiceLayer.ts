@@ -17,8 +17,8 @@ import { createDie, normalForValue, topValue } from './dieMesh';
 import { createCup } from './cup';
 
 export interface Obstacle {
-    /** Mittelpunkt und Maße eines Hindernisses auf dem Tisch (z. B. das Brett) */
-    x: number; z: number; w: number; d: number; h: number;
+    /** Mittelpunkt und Maße eines Hindernisses auf dem Tisch (z. B. das Brett); r: rund (Radius) statt w×d */
+    x: number; z: number; w: number; d: number; h: number; r?: number;
 }
 
 export interface DiceLayerOptions {
@@ -69,6 +69,11 @@ export class DiceLayer {
     private inCup: number | null = null;
     private readonly size: number;
     private count = 1;
+
+    /** Hindernisse ändern (anderes Brett). Alle Clients müssen dieselben haben – Würfe werden überall gleich simuliert. */
+    setObstacles(obstacles: Obstacle[]): void {
+        this.opts = { ...this.opts, obstacles };
+    }
 
     constructor(private table: TableScene, private client: TableClient, private opts: DiceLayerOptions = {}) {
         this.size = opts.dieSize ?? 0.42;
@@ -255,7 +260,16 @@ export class DiceLayer {
         wall(0, -half - 0.5, 2 * half + 2, 1, 3);
         wall(half + 0.5, 0, 1, 2 * half + 2, 3);
         wall(-half - 0.5, 0, 1, 2 * half + 2, 3);
-        for (const o of this.opts.obstacles ?? []) wall(o.x, o.z, o.w, o.d, Math.max(o.h, 0.45));
+        for (const o of this.opts.obstacles ?? []) {
+            const h = Math.max(o.h, 0.45);
+            if (o.r) {
+                const b = new CANNON.Body({ mass: 0, material: tableMat, shape: new CANNON.Cylinder(o.r, o.r, h, 32) });
+                b.position.set(o.x, h / 2, o.z);
+                world.addBody(b);
+            } else {
+                wall(o.x, o.z, o.w, o.d, h);
+            }
+        }
 
         // Start: aus dem Becher heraus, Richtung links entlang des eigenen Streifens
         const seat = thr.seat;

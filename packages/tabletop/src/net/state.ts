@@ -42,7 +42,7 @@ export interface Roll {
 }
 
 export interface Layout {
-    board?: { kind: string; size: number; spacing?: number };
+    board?: { kind: string; size: number; spacing?: number; [key: string]: unknown };
     dice?: { count: number; sides: number };
     palette?: Record<string, string>;
     fields: Record<string, FieldSpec>;
@@ -65,6 +65,8 @@ export interface SettingSpec {
     min?: number;
     max?: number;
     choices?: SettingValue[];
+    /** Anzeigetexte für choices (z. B. Spielvariante: {"6": "Großes Brett für 5–6"}) */
+    labels?: Record<string, string>;
 }
 
 /** Spielstand der Regeln (spielspezifisch; diese Felder nutzt der Tisch selbst) */
@@ -75,15 +77,33 @@ export interface PlayState {
     dice?: number | null;
     seats?: number[];
     finished?: number[];
+    /** Plätze, die gerade handeln dürfen (Engine 2.1; Tandem-Schach: zwei gleichzeitig) */
+    to_move?: number[];
     /** erlaubte Züge des Spielers am Zug (nur in phase 'move') */
     moves?: { piece: string; to: string }[];
     [key: string]: unknown;
 }
 
+/** Spiel + aktuelle Variante (Engine 2.1: Plätze, Farben und Lage gehören zur Variante) */
+export interface GameInfo {
+    id: string;
+    title: string;
+    seats: number;
+    seat_colors: string[];
+    /** Lage der Plätze in Grad (0 = unten, im Uhrzeigersinn); null = gleichmäßig */
+    seat_angles?: number[] | null;
+    variant?: string;
+    variant_title?: string;
+    variants?: { id: string; title: string; seats: number }[];
+    version?: string;
+    engine?: string;
+    rules_api?: number | null;
+}
+
 export interface TableState {
     room: string;
     /** version = Version des Spiels, engine = Version des Spieltisch-Servers, rules_api = Fassung der Regel-Schnittstelle */
-    game: { id: string; title: string; seats: number; seat_colors: string[]; version?: string; engine?: string; rules_api?: number | null };
+    game: GameInfo;
     host_id: string | null;
     members: Member[];
     layout: Layout;
@@ -108,7 +128,11 @@ export type TableEvent =
     | { type: 'PIECE_CHANGED'; piece: string; kind: string; by?: string; reason?: string }
     | { type: 'GAME_UPDATED'; status: TableState['status']; play: PlayState | null }
     | { type: 'DICE_ROLLED'; by: string; values: number[]; throw: ThrowSpec }
-    | { type: 'SETTINGS_UPDATED'; settings: Record<string, SettingValue> };
+    | { type: 'SETTINGS_UPDATED'; settings: Record<string, SettingValue> }
+    | {
+        type: 'BOARD_CHANGED'; variant: string; game: GameInfo; layout: Layout; pieces: Record<string, PieceState>;
+        members: Member[]; settings: Record<string, SettingValue>; settings_schema: Record<string, SettingSpec>;
+    };
 
 export function applyEvent(state: TableState, ev: TableEvent): TableState {
     switch (ev.type) {
@@ -134,6 +158,12 @@ export function applyEvent(state: TableState, ev: TableEvent): TableState {
             return { ...state, last_roll: { by: ev.by, values: ev.values, throw: ev.throw } };
         case 'SETTINGS_UPDATED':
             return { ...state, settings: ev.settings };
+        case 'BOARD_CHANGED':
+            // Andere Spielvariante (nur in der Lobby): neues Brett, neue Plätze
+            return {
+                ...state, game: ev.game, layout: ev.layout, pieces: ev.pieces, members: ev.members, play: null,
+                settings: ev.settings, settings_schema: ev.settings_schema, last_roll: null
+            };
         default:
             return state;   // unbekannte Ereignisse (neuere Server-Version) ignorieren
     }

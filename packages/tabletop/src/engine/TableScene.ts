@@ -12,8 +12,10 @@ import { feltTexture, woodTextures } from './materials';
 
 export interface TableSceneOptions {
     container: HTMLElement;
-    /** Anzahl Sitzplätze rund um den Tisch (gleichmäßig verteilt, Platz 0 = „unten“) */
+    /** Anzahl Sitzplätze rund um den Tisch (gleichmäßig verteilt, Platz 0 = „unten“); später: setSeats() */
     seats: number;
+    /** Lage der Plätze in Grad (0 = unten, im Uhrzeigersinn von oben; 90 = links). Ohne: gleichmäßig. */
+    seatAngles?: number[] | null;
     /** Kantenlänge der quadratischen Tischplatte */
     tableSize?: number;
     /** Radius des Spielbereichs, der immer ins Bild passen soll (Brett + etwas Rand) */
@@ -33,9 +35,11 @@ export class TableScene {
     readonly controls: OrbitControls;
     /** Ebene der Tischoberfläche (y = 0) – für Zeiger/Ablage */
     readonly tableTop: THREE.Mesh;
-    readonly seats: number;
+    seats: number;
     readonly tableSize: number;
-    readonly focusRadius: number;
+    focusRadius: number;
+    private seatAngles: number[] | null = null;
+    private seatListeners = new Set<() => void>();
 
     private container: HTMLElement;
     private needsRender = true;
@@ -52,6 +56,7 @@ export class TableScene {
     constructor(opts: TableSceneOptions) {
         this.container = opts.container;
         this.seats = opts.seats;
+        this.seatAngles = opts.seatAngles ?? null;
         this.tableSize = opts.tableSize ?? 14;
         this.focusRadius = opts.focusRadius ?? 6.2;
         const mobile = isTouchDevice();
@@ -182,11 +187,50 @@ export class TableScene {
         return radius / Math.sin(fov / 2);
     }
 
+    /** Winkel (Bogenmaß) eines Sitzplatzes: Platz 0 unten (+z), im Uhrzeigersinn (von oben gesehen) weiter. */
+    seatAngle(seat: number): number {
+        const deg = this.seatAngles?.[seat];
+        return deg != null ? THREE.MathUtils.degToRad(deg) : (seat / this.seats) * Math.PI * 2;
+    }
+
     /** Richtung (Einheitsvektor in der Tischebene) von der Mitte zu einem Sitzplatz. */
     seatDirection(seat: number): THREE.Vector3 {
-        // Platz 0 unten (+z), im Uhrzeigersinn (von oben gesehen) weiter: links, oben, rechts
-        const a = (seat / this.seats) * Math.PI * 2;
+        const a = this.seatAngle(seat);
         return new THREE.Vector3(-Math.sin(a), 0, Math.cos(a));
+    }
+
+    /**
+     * Andere Zahl oder Lage der Plätze (Spielvariante gewechselt, Engine 2.1). Platzsets werden neu gelegt,
+     * Namensschilder & Co. hören über onSeatsChanged zu.
+     */
+    setSeats(seats: number, angles: number[] | null = null): void {
+        const same = seats === this.seats && JSON.stringify(angles ?? null) === JSON.stringify(this.seatAngles);
+        if (same) return;
+        this.seats = seats;
+        this.seatAngles = angles;
+        for (const m of this.placemats) {
+            this.scene.remove(m);
+            m.geometry.dispose();
+            (m.material as THREE.Material).dispose();
+        }
+        this.placemats = [];
+        this.buildPlacemats();
+        if (this.ownSeat >= seats) this.ownSeat = 0;
+        for (const fn of this.seatListeners) fn();
+        this.resetView(true);
+    }
+
+    onSeatsChanged(fn: () => void): () => void {
+        this.seatListeners.add(fn);
+        return () => this.seatListeners.delete(fn);
+    }
+
+    /** Spielbereich, der immer ins Bild passen soll (größeres Brett → größerer Radius) */
+    setFocusRadius(r: number): void {
+        if (Math.abs(r - this.focusRadius) < 1e-3) return;
+        this.focusRadius = r;
+        this.resize();
+        this.resetView(true);
     }
 
     /** Punkt an der Tischkante vor einem Sitzplatz (für Namensschilder, Platzsets). */
@@ -346,7 +390,7 @@ export class TableScene {
             mesh.rotation.x = -Math.PI / 2;
             const p = this.seatPosition(s, 0.85);
             mesh.position.set(p.x, 0.004, p.z);
-            mesh.rotation.z = (s / this.seats) * Math.PI * 2;
+            mesh.rotation.z = this.seatAngle(s);
             mesh.receiveShadow = true;
             this.placemats.push(mesh);
             this.scene.add(mesh);

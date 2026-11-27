@@ -181,9 +181,12 @@ export class PieceLayer {
         const s = this.lastState, me = this.client.me;
         const spec = s?.layout.pieces[id], ps = s?.pieces[id];
         if (!s || !me || me.seat === null || !spec || !ps) return false;
+        if (ps.held_by !== null && ps.held_by !== this.client.you) return false;
         const targets = this.client.legalTargets(id);
-        if (targets !== null && targets.length === 0) return false;     // mit Regeln: nur Figuren mit Zug
-        return spec.seat === me.seat && (ps.held_by === null || ps.held_by === this.client.you);
+        // Mit Regeln entscheiden allein die erlaubten Züge (Team-Figuren, Figuren mit neuem Besitzer);
+        // freier Tisch: nur eigene Figuren
+        if (targets !== null) return targets.length > 0;
+        return spec.seat === me.seat;
     }
 
     /** Erlaubte Ziele (mit Regeln) bzw. alle freien Felder (freier Tisch) */
