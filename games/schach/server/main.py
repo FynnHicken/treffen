@@ -9,23 +9,38 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]                     # Repo-Wurzel
 sys.path.insert(0, os.environ.get("TABLETOP_SERVER_PATH", str(ROOT / "packages" / "tabletop-server")))
 
-from tabletop_server import GameDef, create_app  # noqa: E402
+from tabletop_server import GameDef, Variant, create_app  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from layout import LAYOUT, SEAT_COLORS  # noqa: E402
+from layout import (LAYOUT, SEAT_COLORS, TANDEM_LAYOUT, TANDEM_SEAT_COLORS, TEAM_LAYOUT,  # noqa: E402
+                    V_SEAT_COLORS, VIER_LAYOUT)
 from rules import SchachRules  # noqa: E402
+from tandem import TandemRules  # noqa: E402
+from vierer import VierRules  # noqa: E402
 from stockfish_uci import find_binary  # noqa: E402
 
-GAME_VERSION = "1.1.0"     # Version des Spiels (SemVer); Engine-Version kommt aus tabletop_server
+GAME_VERSION = "1.2.0"     # Version des Spiels (SemVer); 1.2.0: Teamschach, Tandem, Vierschach
 
 GAME = GameDef(
     "schach",
     "Schach",
-    seat_colors=SEAT_COLORS,          # Platz 0 = Weiß (vorn), Platz 1 = Schwarz
     min_players=2,
-    layout=LAYOUT,
-    rules=SchachRules(),
     version=GAME_VERSION,
+    variant_label="Spielart",
+    variants=[
+        # Platz 0 = Weiß (vorn), Platz 1 = Schwarz
+        Variant("klassisch", "Klassisch (zu zweit)", SEAT_COLORS, layout=LAYOUT, rules=SchachRules(),
+                hint="ein Brett, Weiß gegen Schwarz"),
+        # Weiß-Team sitzt vorn nebeneinander (0, 1), Schwarz-Team hinten (2, 3); Zugfolge W1 S1 W2 S2
+        Variant("team", "Teamschach (2 gegen 2)", [SEAT_COLORS[0]] * 2 + [SEAT_COLORS[1]] * 2, layout=TEAM_LAYOUT,
+                rules=SchachRules(team=True), seat_angles=[20, -20, 160, 200],
+                hint="ein Brett, je Farbe zwei, die abwechselnd ziehen"),
+        Variant("tandem", "Tandem (2 gegen 2, zwei Bretter)", TANDEM_SEAT_COLORS, layout=TANDEM_LAYOUT,
+                rules=TandemRules(), seat_angles=[30, -30, 150, 210],
+                hint="geschlagene Figuren gehen an den Partner, der sie einsetzen darf"),
+        Variant("vierer", "Vierschach (zu viert)", V_SEAT_COLORS, layout=VIER_LAYOUT, rules=VierRules(),
+                hint="Kreuzbrett mit vier Heeren"),
+    ],
 )
 CLIENT_DIST = Path(os.environ.get("SCHACH_CLIENT_DIST", Path(__file__).resolve().parents[1] / "static"))
 DB_PATH = os.environ.get("TABLETOP_DB", str(Path(__file__).resolve().parents[1] / "data" / "schach.sqlite3"))

@@ -84,16 +84,8 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optio
         await asyncio.gather(*(deliver(mid, ws) for mid, ws in targets))
 
     def auto_member(room: Room):
-        """Mitglied am Zug, falls der Computer für es spielt (Bot oder lange getrennt), sonst None."""
-        if not room.rules or room.status != "playing" or not room.game:
-            return None
-        for seat in room.rules.to_move(room):
-            m = room.member_at(seat)
-            if m is None:
-                continue
-            if m.is_bot or (not m.connected and m.disconnected_at and time.time() - m.disconnected_at >= AWAY_GRACE_SEC):
-                return m
-        return None
+        """Mitglied am Zug, falls der Computer für es spielt (Bot oder lange getrennt), sonst None (reihum, Room)."""
+        return room.auto_member(AWAY_GRACE_SEC)
 
     def kick_driver(room_id: str):
         task = drivers.get(room_id)
@@ -123,6 +115,7 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optio
                     if room.seq != seq or not auto_member(room):
                         delay = 0.2
                         continue
+                    room.note_auto(seat)
                     if action and action.get("type") == "roll":
                         events = room.bot_apply(seat, action, 0.45 + random.random() * 0.4)
                         delay = BOT_THINK_DELAY       # auch vor dem nächsten Versuch: erst muss der Würfel liegen

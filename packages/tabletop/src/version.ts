@@ -3,4 +3,4 @@
  * packages/tabletop-server/tabletop_server/version.py – ein Test prüft, dass beide übereinstimmen.
  * Schema und Änderungen: packages/CHANGELOG.md (MAJOR bricht Spiele, MINOR erweitert, PATCH repariert).
  */
-export const ENGINE_VERSION = '2.1.0';
+export const ENGINE_VERSION = '2.2.0';

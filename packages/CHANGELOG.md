@@ -25,6 +25,20 @@ Engine – es gibt keine „alten Stände“ einzelner Spiele, solange die CI gr
 
 ---
 
+## 2.2.0 – 2026-11-27
+
+Für Schach zu viert (Schach 1.2.0: Teamschach, Tandem, Vierschach).
+
+**Neu**
+- `TableScene.setTurnSeat()` nimmt auch mehrere Plätze (Tandem: auf beiden Brettern ist jemand am Zug).
+- `Room.auto_member()` / `note_auto()`: Wer vom Computer gespielt wird, sitzt jetzt am Raum (testbar). Dürfen mehrere
+  Plätze gleichzeitig handeln, kommen die Computer **reihum** dran – je Stelle in `to_move` (bei Tandem: je Brett).
+
+**Behoben**
+- Zwei Computer gleichzeitig am Zug: Bisher spielte immer nur der erste, das zweite Brett stand still.
+- `SET_SETTINGS` mit Spielvariante **und** deren Hausregeln in einer Nachricht: Die Variante gilt jetzt zuerst, ihre
+  Hausregeln danach (vorher wurden sie verworfen, weil die alte Variante sie nicht kannte).
+
 ## 2.1.0 – 2026-11-27
 
 Spielvarianten: Ein Spiel kann mehrere Bretter/Spielarten mitbringen, jede mit eigener Platzzahl und eigenen Regeln.

@@ -10,7 +10,7 @@ export { woodTextures, feltTexture, seededRandom } from './engine/materials';
 export { TableClient } from './net/TableClient';
 export type { PresenceData } from './net/TableClient';
 export { applyEvent } from './net/state';
-export type { Member, GameInfo, TableState, TableEvent, Layout, FieldSpec, PieceSpec, PieceState, Roll, ThrowSpec, SettingSpec, SettingValue } from './net/state';
+export type { Member, GameInfo, TableState, TableEvent, Layout, FieldSpec, PieceSpec, PieceState, PlayState, Roll, ThrowSpec, SettingSpec, SettingValue } from './net/state';
 export { Presence } from './presence/Presence';
 export { SeatLabels } from './ui/SeatLabels';
 export { avatarUrl, avatarImgHtml, avatarCanvas } from './ui/avatar';

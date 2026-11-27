@@ -239,3 +239,4 @@ html, body {
     opacity: 0.35;
     pointer-events: none;
 }
+.status .points { opacity: 0.75; font-size: 0.85em; }

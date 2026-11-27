@@ -109,6 +109,34 @@ ok(seat_b is not None and seat_b != 0, "B sitzt nicht auf Platz 0")
 ok(r.grab("b", "p0") and r.drop("b", "p0", "f5"), "Fremde Figur greifen + ziehen, wenn die Regeln es erlauben")
 ok(r.pieces["p0"]["field"] == "f5" and r.status == "finished", "Zug ausgeführt")
 
+print("== Computer reihum, wenn mehrere gleichzeitig dürfen ==")
+
+
+class Both(Shared):
+    """Drei Plätze; 0 und 2 wechseln sich ab (wie ein Brett), 1 darf immer (wie das andere Brett)."""
+    def to_move(self, room):
+        if room.status != "playing":
+            return []
+        room.game["k"] = room.game.get("k", 0)
+        return [0 if room.game["k"] % 2 == 0 else 2, 1]
+
+
+both = GameDef("b", "B", ["#111", "#222", "#333"], layout=layout(3), rules=Both())
+rb = Room("RB", both)
+rb.join("h", "H", False)
+rb.stand_up("h")
+for s in range(3):
+    rb.add_bot("h", s)
+rb.start("h")
+seen = []
+for _ in range(8):
+    m = rb.auto_member(20)
+    seen.append(m.seat)
+    rb.note_auto(m.seat)
+    if m.seat != 1:
+        rb.game["k"] += 1
+ok(seen.count(1) == 4, f"Zwei Computer gleichzeitig am Zug: jeder kommt gleich oft dran ({seen})")
+
 print("== Einfaches Spiel ohne Varianten ==")
 simple = GameDef("s", "S", ["#111", "#222"], layout=layout(2), rules=Shared())
 rs = Room("S", simple)

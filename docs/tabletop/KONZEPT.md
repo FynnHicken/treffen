@@ -286,6 +286,14 @@ GAME = GameDef("mensch", "Mensch ärgere dich nicht", version="1.1.0", auto_vari
 - Regeln greifen auf `room.layout`, `room.seats`, `room.seat_colors` zu (nicht `room.game_def.…`).
 - Client: Platzsets/Namensschilder folgen von selbst; das Spiel baut sein Brett neu, wenn sich `state.layout` ändert
   (Beispiel `games/mensch/client/src/main.ts`), und gibt dem Würfel ggf. neue Hindernisse (`dice.setObstacles`).
+- Mehrere Plätze gleichzeitig am Zug (`to_move` mit mehreren Einträgen, z. B. Tandem-Schach): Der Client färbt alle
+  Platzsets (`setTurnSeat([...])`), der Computer-Treiber wechselt fair zwischen den Spuren (`Room.auto_member`). Bei
+  geheimen/eigenen Zügen je Platz `shared_view = False`, damit jeder nur seine eigenen Zielfelder sieht.
+- Figuren dürfen den Besitzer wechseln (Tandem: geschlagene Figur geht an den Partner) oder einem Team gehören –
+  bei Regel-API 2 entscheidet nur `actions`/`can_touch`, nicht das `seat` im Layout.
+
+Schach (Engine 2.2): `klassisch` (2), `team` (4, `seat_angles=[20, -20, 160, 200]`), `tandem` (4, zwei Bretter), `vierer`
+(4, Kreuzbrett) – Details in `games/schach/README.md`.
 
 Hinweis: Kommerzielle Spiele (Munchkin, Catan …) nur als **eigene Umsetzung der Mechanik** mit eigenen Karten,
 Texten und Grafiken – keine Kopie von Kartentexten, Namen oder Bildern.

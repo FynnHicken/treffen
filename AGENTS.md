@@ -26,7 +26,7 @@ Räumen, Host, Abstimmung, synchronem Start) bettet mehrere Multiplayer-Spiele p
 Brettspiele möglichst viel Code (Rendering, Verbindung, UI) übernehmen: [`packages/boardgame-kit/README.md`](packages/boardgame-kit/README.md).
 **Neu (2026-11-26): Treffen-Spieltisch** – spielneutrales 3D-Brettspiel-Framework, erstes Spiel Mensch ärgere dich nicht.
 Konzept & Fahrplan: [`docs/tabletop/KONZEPT.md`](docs/tabletop/KONZEPT.md). Code: `packages/tabletop` (Client-Engine),
-`packages/tabletop-server` (Python), Spiele `games/mensch/` und `games/schach/`. **M1–M5 ✅, Engine 2.0.0** – im Hub unter `/mensch/` und `/schach/`, mit Regeln, Computergegnern, Hausregeln und gespeicherten Spielständen. Neues Tisch-Spiel anlegen: [`docs/tabletop/KONZEPT.md` §12.5](docs/tabletop/KONZEPT.md), Engine-Änderungen: [`packages/CHANGELOG.md`](packages/CHANGELOG.md). Entscheidungen des Nutzers: Spielgefühl hat
+`packages/tabletop-server` (Python), Spiele `games/mensch/` und `games/schach/`. **M1–M5 ✅, Engine 2.2.0** – im Hub unter `/mensch/` (2–8 Spieler) und `/schach/` (klassisch, Team, Tandem, Vierschach), mit Regeln, Computergegnern, Hausregeln und gespeicherten Spielständen. Neues Tisch-Spiel anlegen: [`docs/tabletop/KONZEPT.md` §12.5](docs/tabletop/KONZEPT.md), Engine-Änderungen: [`packages/CHANGELOG.md`](packages/CHANGELOG.md). Entscheidungen des Nutzers: Spielgefühl hat
 Vorrang, Regeln werden automatisch vom Server mitgeprüft; freier Modus (wie Tabletop Simulator) evtl. später als Einstellung.
 Der Monopoly-Client ist ein Vite-Projekt (`games/monopoly/client/`), das vor dem Deployen gebaut wird (passiert im Docker-Image). → [`games/monopoly/DEVELOPMENT.md`](games/monopoly/DEVELOPMENT.md)
 
@@ -153,6 +153,13 @@ Erledigt und auf `main`:
     (`games/schach/README.md`, Stockfish-Download mit Prüfsumme: `games/schach/tools/fetch_stockfish.py`, GPL-3.0).
     Zuggenerator per Perft geprüft (`games/schach/tests/test_rules.py`). Konzept & Fahrplan E2.1–E2.3:
     `docs/tabletop/KONZEPT.md` §12.
+
+18. Spielvarianten, Engine 2.1/2.2 (2026-11-27): Ein Spiel kann mehrere Bretter/Spielarten mitbringen (`Variant`, Hausregel
+    „Spielvariante“, `BOARD_CHANGED`, Lage der Plätze `seat_angles`, mehrere Plätze gleichzeitig am Zug, Computer reihum).
+    **Mensch 1.1.0** für 4/6/8 – das Brett wächst in der Lobby automatisch mit (4er-Kreuz Feld für Feld wie vorher).
+    **Schach 1.2.0**: Teamschach (2 gegen 2 an einem Brett, Stockfish), Tandem (zwei Bretter, Einsetzen aus dem Vorrat,
+    `server/tandem.py`), Vierschach (Kreuzbrett, Teams oder jeder gegen jeden, Punkte, `server/vierer.py`). Konzept §12.7,
+    `games/schach/README.md`, Tests `packages/tabletop-server/tests/test_variants.py`, `games/*/tests/…variants…`/`boards_smoke.py`.
 
 16. Hub-Avatare in den Spielen (2026-11-26): Der party-server liefert jeden Avatar als Bild,
     `/party-ws/avatar/<RAUM>/<Hub-Spieler-ID>.svg` (strenge CSP, ETag), und als `.json` ({color, face}) für

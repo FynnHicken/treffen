@@ -3,8 +3,10 @@
  * Alles Spielneutrale (Tisch, Kamera, Figuren greifen, Namen, Lobby, Avatare) kommt aus @treffen/tabletop.
  */
 import './app.css';
+import * as THREE from 'three';
 import {
-    ENGINE_VERSION, PieceLayer, Presence, SeatLabels, SettingsPanel, TableClient, TableScene, isTouchDevice, unlockAudioOnGesture
+    ENGINE_VERSION, PieceLayer, Presence, SeatLabels, SettingsPanel, TableClient, TableScene, isTouchDevice, unlockAudioOnGesture,
+    type Layout, type PlayState
 } from '@treffen/tabletop';
 import { BOARD_THICKNESS, createBoard, type ChessBoard } from './board';
 import { createChessPiece } from './pieces';
@@ -70,26 +72,43 @@ async function start(): Promise<void> {
     new SettingsPanel(client, document.querySelector('.top-center')!);
     unlockAudioOnGesture();
 
+    // Brett passend zur Spielart; neu, wenn der Host in der Lobby eine andere wählt (klassisch/Team/Tandem/Vierschach)
     let board: ChessBoard | null = null;
+    let boardLayout: Layout | null = null;
     client.onState(s => {
-        if (!board && s.layout?.board) {
+        if (s.layout?.board && s.layout !== boardLayout) {
+            boardLayout = s.layout;
+            if (board) {
+                table.scene.remove(board.group);
+                board.group.traverse(o => {
+                    const m = o as THREE.Mesh;
+                    m.geometry?.dispose();
+                    const mat = m.material as THREE.MeshStandardMaterial | undefined;
+                    mat?.map?.dispose();
+                    mat?.dispose();
+                });
+            }
             board = createBoard(s.layout, table.renderer.capabilities.getMaxAnisotropy(), !isTouchDevice());
             table.scene.add(board.group);
+            // Vierschach hat Ablagen in den Tischecken → etwas mehr Tisch ins Bild
+            table.setFocusRadius(s.layout.board.kind === 'vierer' ? 6.7 : 6.2);
         }
         if (!board) return;
         const p = s.status === 'lobby' ? null : s.play;
-        const last = p?.last as { from: string; to: string } | null | undefined;
-        board.setLastMove(last?.from ?? null, last?.to ?? null);
-        board.setCheck(p?.check ? (p.king as string) : null);
-        table.setTurnSeat(s.status === 'playing' ? (p?.turn ?? null) : null);
+        const { last, checks } = marks(p);
+        board.setMarks(last, checks);
+        table.setTurnSeat(s.status === 'playing' ? (p?.to_move ?? p?.turn ?? null) : null);
         table.invalidate();
     });
     const pieces = new PieceLayer(table, client, {
         surfaceY: BOARD_THICKNESS,
         liftHeight: 0.6,
-        createMesh: (_id, spec, layout) =>
-            createChessPiece(spec.kind, layout.palette?.[spec.color ?? ''] ?? '#999', spec.seat === 0 ? 1 : -1,
-                Math.sign(layout.fields[spec.field]?.x ?? 0))
+        createMesh: (_id, spec, layout) => {
+            const sp = spec as typeof spec & { facing?: number; inward?: number };
+            return createChessPiece(spec.kind, layout.palette?.[spec.color ?? ''] ?? '#999',
+                sp.facing ?? (spec.seat === 0 ? 180 : 0), sp.inward ?? 0,
+                Math.min(1, (layout.board?.spacing ?? 0.92) / 0.92));
+        }
     });
     setupHud(client);
 
@@ -107,6 +126,22 @@ async function start(): Promise<void> {
 
     // Für Tests und Fehlersuche
     (window as any).__tisch = { table, client, presence, pieces, labels, get board() { return board; } };
+}
+
+/** Letzte Züge und Könige im Schach aus dem Spielstand der jeweiligen Spielart */
+function marks(p: PlayState | null): { last: { from: string; to: string }[]; checks: string[] } {
+    if (!p) return { last: [], checks: [] };
+    const boards = p.boards as Record<string, { last: { from: string; to: string } | null; check: boolean; king: string | null }> | undefined;
+    if (boards) {                                                     // Tandem: je Brett
+        const bs = Object.values(boards);
+        return {
+            last: bs.map(b => b.last).filter((x): x is { from: string; to: string } => !!x),
+            checks: bs.filter(b => b.check && b.king).map(b => b.king as string)
+        };
+    }
+    const last = p.last as { from: string; to: string } | null | undefined;
+    const checks = Array.isArray(p.checks) ? (p.checks as string[]) : p.check && p.king ? [p.king as string] : [];
+    return { last: last ? [last] : [], checks };
 }
 
 start();

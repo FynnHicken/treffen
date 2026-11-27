@@ -501,6 +501,10 @@ class Room:
         """Host ändert Hausregeln – nur in der Lobby, nur bekannte Schlüssel mit gültigem Wert."""
         if member_id != self.host_id or self.status != "lobby" or not isinstance(values, dict):
             return []
+        if "variant" in values and len(values) > 1:
+            # Variante zuerst: deren Hausregeln gelten erst danach (z. B. Vierschach + „jeder gegen jeden“)
+            first = self.set_settings(member_id, {"variant": values["variant"]})
+            return first + self.set_settings(member_id, {k: v for k, v in values.items() if k != "variant"})
         schema = self.settings_schema()
         changed = False
         for key, v in values.items():
@@ -567,6 +571,31 @@ class Room:
 
     def release_all_everyone(self) -> List[dict]:
         return [e for mid in list(self.members) for e in self.release_all(mid)]
+
+    def auto_member(self, away_grace_sec: float, now: Optional[float] = None) -> Optional["Member"]:
+        """Wer als Nächstes vom Computer gespielt wird: Bots und lange Getrennte unter denen, die handeln dürfen.
+        Sind es mehrere (Tandem: beide Bretter), kommen sie reihum dran – sonst spielte immer nur der erste."""
+        if not self.rules or self.status != "playing" or not self.game:
+            return None
+        now = time.time() if now is None else now
+        cands = []          # (Stelle in to_move, Mitglied) – jede Stelle ist eine eigene „Spur“ (Tandem: ein Brett)
+        for lane, seat in enumerate(self.rules.to_move(self)):
+            m = self.member_at(seat)
+            if m and (m.is_bot or (not m.connected and m.disconnected_at and now - m.disconnected_at >= away_grace_sec)):
+                cands.append((lane, m))
+        if not cands:
+            return None
+        served = self.__dict__.setdefault("_auto_lanes", {})
+        lane, m = min(cands, key=lambda c: served.get(c[0], 0))   # Spur, die am seltensten dran war
+        self._auto_pick = (m.seat, lane)
+        return m
+
+    def note_auto(self, seat: int) -> None:
+        """Der Computer hat für diesen Platz gehandelt (für die Reihenfolge in auto_member)."""
+        pick = getattr(self, "_auto_pick", None)
+        if pick and pick[0] == seat:
+            served = self.__dict__.setdefault("_auto_lanes", {})
+            served[pick[1]] = served.get(pick[1], 0) + 1
 
     def bot_plan(self, seat: int) -> Optional[dict]:
         """Was der Computer an diesem Platz tun will (darf länger rechnen – app.py ruft es außerhalb des Locks)."""

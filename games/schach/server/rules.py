@@ -8,6 +8,10 @@ Alles läuft über das Anfassen der Figuren – keine Rückfragen:
 - Umwandlung: Bauer auf die letzte Reihe setzen → wird zur Dame (häufigste Wahl, ohne Nachfrage).
 - Ende: Schachmatt, Patt, dreifache Wiederholung, 50-Züge-Regel, zu wenig Material.
 
+Teamschach (SchachRules(team=True), 4 Plätze): Weiß = Plätze 0 und 1 (sitzen nebeneinander vorn), Schwarz = 2 und 3.
+Gezogen wird reihum Weiß 1 → Schwarz 1 → Weiß 2 → Schwarz 2 …; jeder bewegt die Figuren seiner Farbe. Wer matt setzt,
+gewinnt mit seinem Partner.
+
 Die eigentliche Schachlogik steht in chess.py (geprüft mit Perft-Zahlen); hier wird sie auf Figuren-IDs und
 Felder des Tisches abgebildet.
 """
@@ -50,6 +54,19 @@ class SchachRules(GameRules):
     api_version = 2
     min_players = 2
     shared_view = True          # kein Geheimwissen: alle sehen dasselbe (eine Berechnung für alle)
+
+    def __init__(self, team: bool = False):
+        self.team = team
+        if team:
+            self.min_players = 4
+            self.order = [0, 2, 1, 3]                       # Weiß 1, Schwarz 1, Weiß 2, Schwarz 2
+            self.color_of = {0: "w", 1: "w", 2: "b", 3: "b"}
+        else:
+            self.order = [0, 1]
+            self.color_of = {0: "w", 1: "b"}
+
+    def seats_of(self, color: str) -> List[int]:
+        return [s for s in self.order if self.color_of[s] == color]
     conformance_settings = {"bot_level": 1}   # Pflicht-Prüfung: schneller Computer
     settings_schema = {
         "bot_level": {"default": 2, "label": "Stärke des Computers", "min": 1, "max": 5,
@@ -58,7 +75,7 @@ class SchachRules(GameRules):
 
     # ---------- Stellung ↔ Tisch ----------
     def _kind(self, room, pid: str) -> str:
-        return room.pieces[pid].get("kind") or room.game_def.layout["pieces"][pid]["kind"]
+        return room.pieces[pid].get("kind") or room.layout["pieces"][pid]["kind"]
 
     def _board_map(self, room) -> Dict[int, str]:
         """Feld-Index → Figuren-ID (nur Figuren auf dem Brett)."""
@@ -76,7 +93,8 @@ class SchachRules(GameRules):
             letter = SHORT[self._kind(room, pid)]
             board[sq] = letter if pid.startswith("w-") else letter.lower()
         ep = sq_index(g["ep"]) if g.get("ep") else None
-        return Position(board, g["turn"] == 0, g.get("castling", ""), ep, g.get("halfmove", 0), g.get("fullmove", 1))
+        white = self.color_of.get(g["turn"], "w") == "w" if g.get("turn") is not None else g.get("white", True)
+        return Position(board, white, g.get("castling", ""), ep, g.get("halfmove", 0), g.get("fullmove", 1))
 
     def _legal(self, room) -> List[Move]:
         """Erlaubte Züge am Tisch (Umwandlung nur zur Dame – ohne Rückfrage)."""
@@ -85,7 +103,7 @@ class SchachRules(GameRules):
     # ---------- Ablauf ----------
     def setup(self, room) -> List[dict]:
         events = []
-        for pid, spec in room.game_def.layout["pieces"].items():
+        for pid, spec in room.layout["pieces"].items():
             cur = room.pieces[pid]
             if cur.get("kind"):
                 events.append({"type": "PIECE_CHANGED", "piece": pid, "kind": spec["kind"], "by": "rules"})
@@ -93,7 +111,8 @@ class SchachRules(GameRules):
                 events.append({"type": "PIECE_MOVED", "piece": pid, "from": cur["field"], "to": spec["field"],
                                "by": "rules", "path": [spec["field"]], "reason": "reset"})
             room.pieces[pid] = {"field": spec["field"], "held_by": None}
-        room.game = {"seats": [0, 1], "turn": 0, "phase": "move", "castling": "KQkq", "ep": None,
+        room.game = {"seats": list(self.order), "turn": self.order[0], "white": True, "phase": "move",
+                     "castling": "KQkq", "ep": None,
                      "halfmove": 0, "fullmove": 1, "check": False, "last": None, "result": None,
                      "finished": [], "settings": room.settings()}
         room.game["history"] = [self.position(room).key()]
@@ -148,7 +167,8 @@ class SchachRules(GameRules):
             room.pieces[piece]["kind"] = kind
             events.append({"type": "PIECE_CHANGED", "piece": piece, "kind": kind, "reason": "promotion"})
 
-        g.update(turn=1 - seat, castling=nxt.castling, ep=sq_name(nxt.ep) if nxt.ep is not None else None,
+        nxt_seat = self.order[(self.order.index(seat) + 1) % len(self.order)]
+        g.update(turn=nxt_seat, white=nxt.white, castling=nxt.castling, ep=sq_name(nxt.ep) if nxt.ep is not None else None,
                  halfmove=nxt.halfmove, fullmove=nxt.fullmove, last={"from": frm_field, "to": to})
         g["history"] = (g.get("history") or []) + [nxt.key()]
         self._refresh(room)
@@ -165,7 +185,7 @@ class SchachRules(GameRules):
         winners: List[int] = []
         if not pos.legal_moves():
             if g["check"]:
-                reason, winners = "checkmate", [1 - g["turn"]]
+                reason, winners = "checkmate", self.seats_of("b" if pos.white else "w")
             else:
                 reason = "stalemate"
         elif pos.insufficient_material():
@@ -177,7 +197,7 @@ class SchachRules(GameRules):
         if reason:
             g["phase"] = "over"
             g["result"] = {"winners": winners, "reason": reason, "text": REASONS[reason]}
-            g["finished"] = winners + [s for s in (0, 1) if s not in winners]
+            g["finished"] = winners + [s for s in self.order if s not in winners]
             g["turn"] = None
             room.status = "finished"
 

@@ -117,10 +117,12 @@ function horseHead(): THREE.BufferGeometry {
 }
 
 /**
- * Figur als Gruppe. `color` = Lackfarbe, `facing` = Blickrichtung (Springer schaut zum Gegner):
- * +1 = zu −z (Weiß sitzt vorn bei +z), −1 = zu +z.
+ * Figur als Gruppe. `color` = Lackfarbe, `facingDeg` = Blickrichtung wie die Plätze am Tisch (0 = zu +z, 180 = zu −z;
+ * Weiß sitzt vorn und schaut nach hinten = 180). Der Springer schaut zum Gegner.
+ * `inward` +1/−1: Figur steht aus Sicht ihres Spielers rechts/links – der Springerkopf dreht sich leicht zur Mitte.
+ * `scale`: kleinere Felder (Tandem, Vierschach) → kleinere Figuren.
  */
-export function createChessPiece(kind: string, color: string, facing: 1 | -1, inward = 0): THREE.Group {
+export function createChessPiece(kind: string, color: string, facingDeg: number, inward = 0, scale = 1): THREE.Group {
     // Äußere Gruppe gehört dem Tisch (Neigung beim Tragen setzt rotation), innen die Blickrichtung
     const outer = new THREE.Group();
     const group = new THREE.Group();
@@ -134,8 +136,9 @@ export function createChessPiece(kind: string, color: string, facing: 1 | -1, in
         m.receiveShadow = true;
         group.add(m);
     });
-    // Springerkopf: Profil schaut nach −x → zum Gegner drehen
-    // inward: −1/+1 = Springer links/rechts vom Brettrand – leicht zur Mitte gedreht, so sieht man das Profil
-    if (kind === "knight") group.rotation.y = (facing === 1 ? -Math.PI / 2 : Math.PI / 2) + inward * facing * 0.55;
+    // Springerkopf: Profil schaut nach −x → zum Gegner drehen (Blickrichtung a: (−sin a, cos a) → Drehung π/2 − a),
+    // dazu leicht zur Mitte, so sieht man das Profil
+    if (kind === "knight") group.rotation.y = Math.PI / 2 - THREE.MathUtils.degToRad(facingDeg) + inward * 0.55;
+    group.scale.setScalar(scale);
     return outer;
 }

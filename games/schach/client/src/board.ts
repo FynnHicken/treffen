@@ -5,24 +5,93 @@
  * (games/schach/server/layout.py).
  */
 import * as THREE from 'three';
-import { feltTexture, seededRandom, type Layout } from '@treffen/tabletop';
+import { feltTexture, seededRandom, type FieldSpec, type Layout } from '@treffen/tabletop';
 
 export const BOARD_THICKNESS = 0.16;
 
 export interface ChessBoard {
     group: THREE.Group;
-    /** letzten Zug dezent markieren (beide Felder), null = keine Markierung */
-    setLastMove(from: string | null, to: string | null): void;
-    /** König im Schach: rotes Glimmen unter dem Feld, null = aus */
-    setCheck(square: string | null): void;
+    /** letzte Züge dezent markieren (je Brett einer; Felder-IDs), leer = keine Markierung */
+    setMarks(last: { from: string; to: string }[], checks: string[]): void;
 }
 
+/** Brett passend zum Layout: klassisch (auch Teamschach), Tandem (zwei Bretter) oder Vierschach (Kreuz). */
 export function createBoard(layout: Layout, anisotropy: number, hiRes: boolean): ChessBoard {
-    const size = layout.board?.size ?? 8.46;
+    const kind = layout.board?.kind ?? 'chess';
     const S = layout.board?.spacing ?? 0.92;
+    const frame = (layout.board?.frame as number | undefined) ?? 0.55;
     const group = new THREE.Group();
+    const px = hiRes ? 2048 : 1536;
 
-    // Holzkörper mit gerundeter Kante
+    if (kind === 'tandem') {
+        const boards = (layout.board?.boards ?? {}) as Record<string, { cx: number; cz: number; size: number; white_front: boolean }>;
+        for (const [id, b] of Object.entries(boards)) {
+            const fields = Object.values(layout.fields).filter(f => f.kind === 'square' && (f as any).board === id)
+                .map(f => ({ ...f, x: f.x - b.cx, z: f.z - b.cz }));
+            const sub = squareBoard(fields, b.size, S, frame, !b.white_front, anisotropy, px / 2 * 1.5);
+            sub.position.set(b.cx, 0, b.cz);
+            group.add(sub);
+        }
+        feltPads(group, layout, f => f.kind === 'reserve' ? `${(f as any).board}-${f.color}` : null, 0x2f4a3a);
+    } else if (kind === 'vierer') {
+        group.add(crossBoard(layout, S, frame, anisotropy, px));
+        feltPads(group, layout, f => f.kind === 'tray' ? String((f as any).seat) : null, 0x2f4a3a);
+    } else {
+        const size = layout.board?.size ?? 8.46;
+        group.add(squareBoard(Object.values(layout.fields).filter(f => f.kind === 'square'), size, S, frame, false, anisotropy, px));
+        // Filz-Ablagen links und rechts (dort landen geschlagene Figuren)
+        feltPads(group, layout, f => f.kind === 'tray' ? String(Math.sign(f.x)) : null, 0x2f4a3a);
+    }
+    return withMarks(group, layout, S);
+}
+
+/** Markierungen (statisch, nur bei Änderung neu gezeichnet): letzte Züge (bis 2 Bretter) und Könige im Schach */
+function withMarks(group: THREE.Group, layout: Layout, S: number): ChessBoard {
+    const mark = (color: number, opacity: number) => {
+        const m = new THREE.Mesh(
+            new THREE.PlaneGeometry(S * 0.98, S * 0.98),
+            new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
+        );
+        m.rotation.x = -Math.PI / 2;
+        m.visible = false;
+        m.renderOrder = 2;
+        group.add(m);
+        return m;
+    };
+    const last = [0, 1, 2, 3].map(i => mark(0xffd27a, i % 2 ? 0.3 : 0.22));
+    const glowTex = new THREE.CanvasTexture(radialGlow());
+    const checks = [0, 1, 2, 3].map(() => {
+        const m = new THREE.Mesh(
+            new THREE.PlaneGeometry(S * 1.25, S * 1.25),
+            new THREE.MeshBasicMaterial({ map: glowTex, color: 0xff3b2f, transparent: true, depthWrite: false, opacity: 0.85 })
+        );
+        m.rotation.x = -Math.PI / 2;
+        m.visible = false;
+        m.renderOrder = 3;
+        group.add(m);
+        return m;
+    });
+    const place = (m: THREE.Mesh, sq: string | undefined, y: number) => {
+        const f = sq ? layout.fields[sq] : undefined;
+        m.visible = !!f;
+        if (f) m.position.set(f.x, y, f.z);
+    };
+    return {
+        group,
+        setMarks(lastMoves, checked) {
+            last.forEach((m, i) => {
+                const mv = lastMoves[i >> 1];
+                place(m, mv ? (i % 2 ? mv.to : mv.from) : undefined, BOARD_THICKNESS + 0.002);
+            });
+            checks.forEach((m, i) => place(m, checked[i], BOARD_THICKNESS + 0.003));
+        }
+    };
+}
+
+/** Quadratisches Holzbrett (Nussbaum-Rahmen, eingelegte Felder); Felder in Brett-Koordinaten (Mitte = 0,0). */
+function squareBoard(fields: FieldSpec[], size: number, S: number, frame: number, flip: boolean, anisotropy: number,
+    px: number): THREE.Group {
+    const group = new THREE.Group();
     const body = new THREE.Mesh(
         roundedBox(size, BOARD_THICKNESS, size, 0.06),
         new THREE.MeshPhysicalMaterial({ color: 0x3b2416, roughness: 0.5, clearcoat: 0.5, clearcoatRoughness: 0.35 })
@@ -31,7 +100,7 @@ export function createBoard(layout: Layout, anisotropy: number, hiRes: boolean):
     body.receiveShadow = true;
     group.add(body);
 
-    const tex = new THREE.CanvasTexture(drawBoard(layout, size, S, hiRes ? 2048 : 1536));
+    const tex = new THREE.CanvasTexture(drawBoard(fields, size, S, frame, flip, Math.round(px)));
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = anisotropy;
     const top = new THREE.Mesh(
@@ -42,67 +111,102 @@ export function createBoard(layout: Layout, anisotropy: number, hiRes: boolean):
     top.position.y = BOARD_THICKNESS + 0.0005;
     top.receiveShadow = true;
     group.add(top);
-
-    // Filz-Ablagen links und rechts (dort landen geschlagene Figuren)
-    const felt = feltTexture(256, 9);
-    felt.repeat.set(1, 3);
-    for (const side of [-1, 1]) {
-        const tray = Object.values(layout.fields).filter(f => f.kind === 'tray' && Math.sign(f.x) === side);
-        if (!tray.length) continue;
-        const xs = tray.map(f => f.x), zs = tray.map(f => f.z);
-        const w = Math.max(...xs) - Math.min(...xs) + 0.8, d = Math.max(...zs) - Math.min(...zs) + 0.8;
-        const mat = new THREE.MeshStandardMaterial({ color: 0x2f4a3a, map: felt, roughness: 0.96 });
-        const pad = new THREE.Mesh(roundedRectGeo(w, d, 0.2), mat);
-        pad.rotation.x = -Math.PI / 2;
-        pad.position.set((Math.max(...xs) + Math.min(...xs)) / 2, 0.006, (Math.max(...zs) + Math.min(...zs)) / 2);
-        pad.receiveShadow = true;
-        group.add(pad);
-    }
-
-    // Markierungen (statisch, nur bei Änderung neu gezeichnet)
-    const mark = (color: number, opacity: number) => {
-        const m = new THREE.Mesh(
-            new THREE.PlaneGeometry(S * 0.98, S * 0.98),
-            new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
-        );
-        m.rotation.x = -Math.PI / 2;
-        m.position.y = BOARD_THICKNESS + 0.002;
-        m.visible = false;
-        m.renderOrder = 2;
-        group.add(m);
-        return m;
-    };
-    const last = [mark(0xffd27a, 0.22), mark(0xffd27a, 0.3)];
-    const glowTex = new THREE.CanvasTexture(radialGlow());
-    const check = new THREE.Mesh(
-        new THREE.PlaneGeometry(S * 1.25, S * 1.25),
-        new THREE.MeshBasicMaterial({ map: glowTex, color: 0xff3b2f, transparent: true, depthWrite: false, opacity: 0.85 })
-    );
-    check.rotation.x = -Math.PI / 2;
-    check.position.y = BOARD_THICKNESS + 0.003;
-    check.visible = false;
-    check.renderOrder = 3;
-    group.add(check);
-
-    const at = (sq: string) => layout.fields[sq];
-    return {
-        group,
-        setLastMove(from, to) {
-            [from, to].forEach((sq, i) => {
-                const f = sq ? at(sq) : undefined;
-                last[i].visible = !!f;
-                if (f) last[i].position.set(f.x, BOARD_THICKNESS + 0.002, f.z);
-            });
-        },
-        setCheck(sq) {
-            const f = sq ? at(sq) : undefined;
-            check.visible = !!f;
-            if (f) check.position.set(f.x, BOARD_THICKNESS + 0.003, f.z);
-        }
-    };
+    return group;
 }
 
-function drawBoard(layout: Layout, size: number, S: number, px: number): HTMLCanvasElement {
+/** Filz-Unterlagen unter Ablage-/Vorratsfeldern, je Gruppe (key) ein Rechteck um die Felder */
+function feltPads(group: THREE.Group, layout: Layout, key: (f: FieldSpec) => string | null, color: number): void {
+    const felt = feltTexture(256, 9);
+    felt.repeat.set(2, 2);
+    const groups = new Map<string, FieldSpec[]>();
+    for (const f of Object.values(layout.fields)) {
+        const k = key(f);
+        if (k !== null) groups.set(k, [...(groups.get(k) ?? []), f]);
+    }
+    const S = layout.board?.spacing ?? 0.92;
+    const pad = Math.min(0.8, S * 0.9);
+    for (const fs of groups.values()) {
+        const xs = fs.map(f => f.x), zs = fs.map(f => f.z);
+        const w = Math.max(...xs) - Math.min(...xs) + pad, d = Math.max(...zs) - Math.min(...zs) + pad;
+        const mat = new THREE.MeshStandardMaterial({ color, map: felt, roughness: 0.96 });
+        const mesh = new THREE.Mesh(roundedRectGeo(w, d, 0.2), mat);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.set((Math.max(...xs) + Math.min(...xs)) / 2, 0.006, (Math.max(...zs) + Math.min(...zs)) / 2);
+        mesh.receiveShadow = true;
+        group.add(mesh);
+    }
+}
+
+/** Vierschach: kreuzförmiges Brett (14×14 ohne die 3×3-Ecken) mit Rahmen in den vier Farben der Heere */
+function crossBoard(layout: Layout, S: number, frame: number, anisotropy: number, px: number): THREE.Group {
+    const n = 14, cut = (layout.board?.cut as number | undefined) ?? 3;
+    const L = n * S + 2 * frame;                  // Kantenlänge
+    const w = (n - 2 * cut) * S / 2 + frame;      // halbe Armbreite
+    const shape = new THREE.Shape();
+    const h = L / 2;
+    const pts: [number, number][] = [[-w, -h], [w, -h], [w, -w], [h, -w], [h, w], [w, w], [w, h], [-w, h], [-w, w], [-h, w], [-h, -w], [-w, -w]];
+    shape.moveTo(...pts[0]);
+    for (const p of pts.slice(1)) shape.lineTo(...p);
+    shape.closePath();
+
+    const group = new THREE.Group();
+    const bodyGeo = new THREE.ExtrudeGeometry(shape, {
+        depth: BOARD_THICKNESS - 0.04, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 2
+    });
+    bodyGeo.rotateX(-Math.PI / 2);
+    bodyGeo.translate(0, 0.02, 0);
+    const body = new THREE.Mesh(bodyGeo,
+        new THREE.MeshPhysicalMaterial({ color: 0x3b2416, roughness: 0.5, clearcoat: 0.5, clearcoatRoughness: 0.35 }));
+    body.castShadow = true;
+    body.receiveShadow = true;
+    group.add(body);
+
+    const fields = Object.values(layout.fields).filter(f => f.kind === 'square');
+    const tex = new THREE.CanvasTexture(drawCross(fields, L, w, S, layout, px));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = anisotropy;
+    const topGeo = new THREE.ShapeGeometry(shape);
+    const pos = topGeo.attributes.position, uv = topGeo.attributes.uv;
+    for (let i = 0; i < pos.count; i++) uv.setXY(i, (pos.getX(i) + h) / L, (pos.getY(i) + h) / L);
+    const top = new THREE.Mesh(topGeo,
+        new THREE.MeshPhysicalMaterial({ map: tex, roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.22 }));
+    top.rotation.x = -Math.PI / 2;
+    top.position.y = BOARD_THICKNESS + 0.0005;
+    top.receiveShadow = true;
+    group.add(top);
+    return group;
+}
+
+function drawCross(fields: FieldSpec[], L: number, w: number, S: number, layout: Layout, px: number): HTMLCanvasElement {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = px;
+    const c = cv.getContext('2d')!;
+    const k = px / L;
+    const X = (x: number) => (x + L / 2) * k;
+    const rnd = seededRandom(31);
+    woodFill(c, 0, 0, px, px, [58, 36, 22], rnd, true, 1.6);
+    // Farbige Leisten vor jedem Heer (Platz 0 vorn, 1 links, 2 hinten, 3 rechts)
+    const pal = Object.values(layout.palette ?? {});
+    const edge = k * 0.12;
+    const arm = (w - 0.08) * 2 * k;
+    const strips: [number, number, number, number][] = [
+        [X(-w + 0.04), px - edge, arm, edge * 0.6], [0 + edge * 0.4, X(-w + 0.04), edge * 0.6, arm],
+        [X(-w + 0.04), edge * 0.4, arm, edge * 0.6], [px - edge, X(-w + 0.04), edge * 0.6, arm]
+    ];
+    strips.forEach(([x, y, sw, sh], i) => { c.fillStyle = pal[i] ?? '#c9a66b'; c.globalAlpha = 0.8; c.fillRect(x, y, sw, sh); });
+    c.globalAlpha = 1;
+    for (const f of fields) {
+        const x0 = X(f.x - S / 2), y0 = X(f.z - S / 2), sz = S * k;
+        const dark = f.color === 'dark';
+        woodFill(c, x0, y0, sz, sz, dark ? [110, 68, 40] : [226, 196, 146], rnd, (Math.round(f.x / S + f.z / S) & 1) === 0, dark ? 1 : 0.7);
+        c.strokeStyle = 'rgba(30,16,8,0.35)';
+        c.lineWidth = Math.max(1, k * 0.008);
+        c.strokeRect(x0 + 0.5, y0 + 0.5, sz - 1, sz - 1);
+    }
+    return cv;
+}
+
+function drawBoard(fields: FieldSpec[], size: number, S: number, frameW: number, flip: boolean, px: number): HTMLCanvasElement {
     const cv = document.createElement('canvas');
     cv.width = cv.height = px;
     const c = cv.getContext('2d')!;
@@ -120,8 +224,7 @@ function drawBoard(layout: Layout, size: number, S: number, px: number): HTMLCan
     c.fillStyle = '#2a170c';
     c.fillRect(X(-half) - k * 0.035, X(-half) - k * 0.035, 8 * S * k + k * 0.07, 8 * S * k + k * 0.07);
 
-    for (const [, f] of Object.entries(layout.fields)) {
-        if (f.kind !== 'square') continue;
+    for (const f of fields) {
         const x0 = X(f.x - S / 2), y0 = X(f.z - S / 2), w = S * k;
         const dark = f.color === 'dark';
         woodFill(c, x0, y0, w, w, dark ? [110, 68, 40] : [226, 196, 146], rnd, (Math.round(f.x / S + f.z / S) & 1) === 0, dark ? 1 : 0.7);
@@ -132,27 +235,29 @@ function drawBoard(layout: Layout, size: number, S: number, px: number): HTMLCan
     }
 
     // Koordinaten im Rahmen (gravierter, hellerer Ton) – für Weiß unten lesbar, für Schwarz oben gedreht
+    // (flip: Brett um 180° gedreht, Weiß sitzt hinten – Tandem-Brett B)
     const files = 'abcdefgh';
-    const frame = (size - 8 * S) / 2;
+    const frame = frameW;
     c.font = `600 ${Math.round(k * frame * 0.42)}px Georgia, "Times New Roman", serif`;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     const engrave = (text: string, x: number, y: number, rot: number) => {
         c.save();
         c.translate(x, y);
-        c.rotate(rot);
+        c.rotate(rot + (flip ? Math.PI : 0));
         c.fillStyle = 'rgba(0,0,0,0.45)';
         c.fillText(text, 1.5, 1.5);
         c.fillStyle = '#d8b57a';
         c.fillText(text, 0, 0);
         c.restore();
     };
+    const m = flip ? -1 : 1;
     for (let i = 0; i < 8; i++) {
-        const fx = X((i - 3.5) * S), rz = X((3.5 - i) * S);
-        engrave(files[i], fx, X(half + frame / 2), 0);                  // unten (Weiß)
-        engrave(files[i], fx, X(-half - frame / 2), Math.PI);           // oben (Schwarz)
-        engrave(String(i + 1), X(-half - frame / 2), rz, 0);
-        engrave(String(i + 1), X(half + frame / 2), rz, Math.PI);
+        const fx = X(m * (i - 3.5) * S), rz = X(m * (3.5 - i) * S);
+        engrave(files[i], fx, X(m * (half + frame / 2)), 0);                  // vorn (Weiß)
+        engrave(files[i], fx, X(-m * (half + frame / 2)), Math.PI);           // hinten (Schwarz)
+        engrave(String(i + 1), X(-m * (half + frame / 2)), rz, 0);
+        engrave(String(i + 1), X(m * (half + frame / 2)), rz, Math.PI);
     }
     return cv;
 }

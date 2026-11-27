@@ -313,12 +313,13 @@ export class TableScene {
         this.invalidate();
     }
 
-    /** Platz, der am Zug ist: Platzset leuchtet sanft auf (null = niemand) */
-    setTurnSeat(seat: number | null): void {
+    /** Platz (oder Plätze, z. B. Tandem), der am Zug ist: Platzset leuchtet sanft auf (null = niemand) */
+    setTurnSeat(seat: number | number[] | null): void {
+        const on = new Set(Array.isArray(seat) ? seat : seat === null ? [] : [seat]);
         this.placemats.forEach((m, i) => {
             const mat = m.material as THREE.MeshStandardMaterial;
-            mat.emissive.set(i === seat ? 0xffd9a0 : 0x000000);
-            mat.emissiveIntensity = i === seat ? 0.22 : 0;
+            mat.emissive.set(on.has(i) ? 0xffd9a0 : 0x000000);
+            mat.emissiveIntensity = on.has(i) ? 0.22 : 0;
         });
         this.invalidate();
     }

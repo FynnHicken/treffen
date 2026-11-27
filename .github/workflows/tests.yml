@@ -83,6 +83,9 @@ jobs:
           STOCKFISH_PATH: /tmp/stockfish/stockfish
           SCHACH_REQUIRE_STOCKFISH: "1"
         run: python -I "$GITHUB_WORKSPACE/games/schach/tests/test_rules.py"
+      - name: Schach-Spielarten (Teamschach, Tandem, Vierschach)
+        working-directory: /tmp
+        run: python -I "$GITHUB_WORKSPACE/games/schach/tests/test_variants.py"
       - name: Mensch-Regeln (gezielte Fälle + 100 Computer-Partien)
         working-directory: /tmp
         run: python -I "$GITHUB_WORKSPACE/games/mensch/tests/test_rules.py"
@@ -113,6 +116,10 @@ jobs:
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8096/api/health >/dev/null && break; sleep 1; done
           docker run --rm --network=host -v "$PWD/games/schach":/work:ro -v /tmp/tisch-shots:/shots -w /work treffen-ui-test \
             python -u tests/ui/schach_smoke.py http://127.0.0.1:8096 /shots
+      - name: Schach-Spielarten im Browser (Team, Tandem mit Einsetzen, Vierschach; Desktop + Handy)
+        run: |
+          docker run --rm --network=host -v "$PWD/games/schach":/work:ro -v /tmp/tisch-shots:/shots -w /work treffen-ui-test \
+            python -u tests/ui/variants_smoke.py http://127.0.0.1:8096 /shots
       - name: Screenshots hochladen
         if: always()
         uses: actions/upload-artifact@v5
