@@ -32,9 +32,11 @@ STALE_MEMBER_SEC = 90.0          # so lange bleibt ein getrennter Platz reservie
 EMPTY_ROOM_TTL_SEC = 30 * 60
 PRESENCE_MAX_PER_SEC = 30
 AWAY_GRACE_SEC = float(os.environ.get("TABLETOP_AWAY_GRACE_SEC", "20"))  # danach spielt der Computer
-BOT_ROLL_DELAY = 1.1          # Computer „greift zum Becher“
-BOT_THINK_DELAY = 2.9         # nach dem Wurf bis zum Zug: Becher schütteln (~0,6 s), Würfel rollen, kurz schauen
-BOT_STEP_DELAY = 0.24         # je Feld, das eine Figur hüpft
+# Tempo der Computer; TABLETOP_BOT_SPEED=4 → viermal so schnell (Browser-Tests mit ganzen Computer-Partien)
+BOT_SPEED = max(0.1, float(os.environ.get("TABLETOP_BOT_SPEED", "1")))
+BOT_ROLL_DELAY = 1.1 / BOT_SPEED          # Computer „greift zum Becher“
+BOT_THINK_DELAY = 2.9 / BOT_SPEED         # nach dem Wurf bis zum Zug: Becher schütteln (~0,6 s), Würfel rollen, kurz schauen
+BOT_STEP_DELAY = 0.24 / BOT_SPEED         # je Feld, das eine Figur hüpft
 TABLE_EXTENT = 10.0              # Zeiger-Koordinaten müssen auf/um den Tisch liegen
 
 
@@ -67,7 +69,8 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optio
         if not targets:
             return
         room = rooms.get(room_id)
-        personal = room is not None and any("views" in (m.get("event") or {}) for m in msgs)
+        personal = room is not None and any("views" in (m.get("event") or {}) or "secret" in (m.get("event") or {})
+                                            for m in msgs)
         shared = None if personal else [json.dumps(m) for m in msgs]
 
         async def deliver(mid, ws):
@@ -280,6 +283,8 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optio
                         await broadcast(room_id, room.add_bot(member_id, data.get("seat")))
                     elif action == "REMOVE_BOT":
                         await broadcast(room_id, room.remove_bot(member_id, data.get("seat")))
+                    elif action == "ACT":
+                        await broadcast(room_id, room.act(member_id, data.get("act")))
                     elif action == "GRAB":
                         await broadcast(room_id, room.grab(member_id, data.get("piece")))
                     elif action == "RELEASE":

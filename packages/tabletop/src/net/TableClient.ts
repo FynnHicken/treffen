@@ -126,8 +126,21 @@ export class TableClient {
     legalTargets(piece: string): string[] | null {
         const s = this.state;
         if (!s?.status) return null;
-        if (!this.myTurn || s.play?.phase !== 'move') return [];
-        return (s.play.moves ?? []).filter(m => m.piece === piece).map(m => m.to);
+        if (!this.myTurn) return [];               // erlaubte Züge liefern die Regeln (in jeder Phase, Engine 2.4)
+        return (s.play?.moves ?? []).filter(m => m.piece === piece).map(m => m.to);
+    }
+
+    /** Aktion ohne Figur (Knopf am Tisch, Engine 2.4) – die Regeln prüfen */
+    act(action: { type: string; [k: string]: unknown }): void {
+        const { label: _label, ...rest } = action;
+        this.socket.send({ action: 'ACT', act: rest });
+    }
+
+    /** Knöpfe, die ich gerade drücken darf */
+    get myActs(): ({ type: string; label: string } & Record<string, unknown>)[] {
+        const s = this.state, seat = this.me?.seat;
+        if (!s || s.status !== 'playing' || seat == null) return [];
+        return s.play?.acts?.[String(seat)] ?? [];
     }
 
     roll(power: number): void {

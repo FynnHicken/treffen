@@ -61,7 +61,14 @@ export function setupHud(client: TableClient, texts: HudTexts,
     const ctx = hudContext(client);
     const el = (id: string) => document.getElementById(id)!;
     const statusEl = el('status'), startBtn = el('start-btn') as HTMLButtonElement, over = el('gameover');
-    const rollBtn = el('roll-btn') as HTMLButtonElement, toastEl = el('toast');
+    const rollBtn = el('roll-btn') as HTMLButtonElement, toastEl = el('toast'), actsEl = el('acts');
+    // Knöpfe für Aktionen ohne Figur (Engine 2.4): „Weiter“, Farbe wünschen … – kommen als `acts` von den Regeln
+    let actsKey = '';
+    actsEl.addEventListener('click', ev => {
+        const i = (ev.target as HTMLElement).closest('button')?.dataset.i;
+        const a = i !== undefined ? client.myActs[Number(i)] : undefined;
+        if (a) { client.act(a); navigator.vibrate?.(8); }
+    });
     const word = texts.start ?? 'Spiel';
 
     let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -79,7 +86,10 @@ export function setupHud(client: TableClient, texts: HudTexts,
 
     const scoresLine = (s: TableState, p: PlayState) => {
         if (!Array.isArray(p.scores)) return '';
-        const pts = p.scores.map((n, seat) => `${ctx.seatName(s, seat)} ${n}`).join(' · ');
+        // nur besetzte Plätze; mit Namen (bzw. Platzname, wenn dort niemand mehr sitzt)
+        const seated = new Set(s.members.filter(m => m.seat !== null).map(m => m.seat));
+        const pts = p.scores.map((n, seat) => (seated.has(seat) || (p.finished ?? []).includes(seat) ? `${ctx.name(s, seat)} ${n}` : ''))
+            .filter(Boolean).join(' · ');
         return `${escapeHtml(p.scores_label ?? 'Punkte')}: ${escapeHtml(pts)}`;
     };
     const alertOf = (p: PlayState, seat: number) => {
@@ -150,6 +160,14 @@ export function setupHud(client: TableClient, texts: HudTexts,
         startBtn.textContent = seated >= need ? `▶ ${word} starten (${seated} Spieler)`
             : need >= s.game.seats ? `Alle ${s.game.seats} Plätze besetzen – oder Computer dazuholen`
                 : `Mindestens ${need} Spieler (+ Computer)`;
+
+        const acts = client.myActs;
+        const key = JSON.stringify(acts);
+        if (key !== actsKey) {
+            actsKey = key;
+            actsEl.innerHTML = acts.map((a, i) => `<button data-i="${i}">${escapeHtml(a.label)}</button>`).join('');
+            actsEl.hidden = !acts.length;
+        }
 
         const text = status?.(s, ctx) ?? defaultStatus(s);
         statusEl.innerHTML = text;

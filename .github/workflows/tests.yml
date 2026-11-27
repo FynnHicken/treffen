@@ -50,7 +50,7 @@ jobs:
   tabletop:
     name: Spieltisch (Server, Client, Browser)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -66,6 +66,7 @@ jobs:
             games/mensch/client/package-lock.json
             games/schach/client/package-lock.json
             games/dame/client/package-lock.json
+            games/maumau/client/package-lock.json
       - run: pip install -r packages/tabletop-server/requirements.txt
       - name: Server-Tests (Sitzplätze, Host, Präsenz, Reconnect)
         working-directory: /tmp
@@ -96,6 +97,9 @@ jobs:
       - name: Dame-Regeln (Vorlage-Spiel aus Engine-Bausteinen)
         working-directory: /tmp
         run: python -I "$GITHUB_WORKSPACE/games/dame/tests/test_rules.py"
+      - name: Mau-Mau-Regeln (Karten, Geheimhaltung, Knöpfe)
+        working-directory: /tmp
+        run: python -I "$GITHUB_WORKSPACE/games/maumau/tests/test_rules.py"
       - name: Mensch-3D-Client (TypeScript-Prüfung + Vite-Build)
         working-directory: games/mensch/client
         run: npm ci && npm run build
@@ -104,6 +108,9 @@ jobs:
         run: npm ci && npm run build
       - name: Dame-3D-Client (nur startTable – Standard-Brett und -Steine der Engine)
         working-directory: games/dame/client
+        run: npm ci && npm run build
+      - name: Mau-Mau-3D-Client (nur startTable – Karten der Engine)
+        working-directory: games/maumau/client
         run: npm ci && npm run build
       - name: Browser-Test (Lobby, Würfel, echte Partie mit Computer, Render-on-Demand)
         run: |
@@ -129,10 +136,16 @@ jobs:
             python -u tests/ui/variants_smoke.py http://127.0.0.1:8096 /shots
       - name: Dame im Browser (Spieltisch-App der Engine 2.3, Desktop + Handy, Computer-Partie)
         run: |
-          (cd /tmp && TABLETOP_DB= python -u "$GITHUB_WORKSPACE/games/dame/server/main.py" > /tmp/dame.log 2>&1 &)
+          (cd /tmp && TABLETOP_DB= TABLETOP_BOT_SPEED=5 python -u "$GITHUB_WORKSPACE/games/dame/server/main.py" > /tmp/dame.log 2>&1 &)
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8097/api/health >/dev/null && break; sleep 1; done
           docker run --rm --network=host -v "$PWD/games/dame":/work:ro -v /tmp/tisch-shots:/shots -w /work treffen-ui-test \
             python -u tests/ui/dame_smoke.py http://127.0.0.1:8097 /shots
+      - name: Mau-Mau im Browser (Karten, Hände verdeckt, antippen, Knöpfe, sechs Computer)
+        run: |
+          (cd /tmp && TABLETOP_DB= TABLETOP_BOT_SPEED=5 python -u "$GITHUB_WORKSPACE/games/maumau/server/main.py" > /tmp/maumau.log 2>&1 &)
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8098/api/health >/dev/null && break; sleep 1; done
+          docker run --rm --network=host -v "$PWD/games/maumau":/work:ro -v /tmp/tisch-shots:/shots -w /work treffen-ui-test \
+            python -u tests/ui/maumau_smoke.py http://127.0.0.1:8098 /shots
       - name: Screenshots hochladen
         if: always()
         uses: actions/upload-artifact@v5
@@ -142,7 +155,7 @@ jobs:
           if-no-files-found: ignore
       - name: Server-Log bei Fehler
         if: failure()
-        run: tail -60 /tmp/tisch.log /tmp/schach.log /tmp/dame.log
+        run: tail -60 /tmp/tisch.log /tmp/schach.log /tmp/dame.log /tmp/maumau.log
 
   build:
     name: Docker-Images & Nginx-Konfiguration

@@ -25,6 +25,34 @@ Engine – es gibt keine „alten Stände“ einzelner Spiele, solange die CI gr
 
 ---
 
+## 2.4.0 – 2026-11-27
+
+Karten, Stapel, Hände – und Knöpfe für Aktionen ohne Figur. Erstes Kartenspiel: **Mau-Mau** (1.0.0, Vorlage, nicht im Hub),
+wieder ohne eigenen Client-Code.
+
+**Neu – Server**
+- **Zonen**: Felder mit `zone` = `stack` | `hand` (mit `owner`) | `row` tragen mehrere Gegenstände in einer Reihenfolge
+  (`order`); `up` = offen/verdeckt. `room.move_piece(id, feld, up=…)` und `room.flip_piece(id, up)` für Regeln.
+- **Geheime Vorderseiten**: Karten (`kind: "card"`) haben eine Vorderseite (`face`), die nur der Server kennt. Spieler
+  bekommen sie als `show` nur, wenn sie sie sehen dürfen (offen, eigene Hand; Regeln können `can_see` setzen) – im
+  Zustand je Platz und in Ereignissen (`secret` je Platz, `personalize` setzt es ein). Mischen tauscht die Vorderseiten
+  zwischen den Karten (gemerkte Karten-IDs helfen nichts). Ereignisse `PIECE_FLIPPED`, `STACK_SHUFFLED`.
+- `tabletop_server.cards`: `french_deck`, `card_pieces`, `zone`, `deal_new`, `shuffle`, `pieces_on`, `top`, `card_name`.
+- **Aktionen ohne Figur**: jeder Aktionstyp (`pass`, `choose` …); mit `label` und `action_buttons = True` als Knopf
+  am Tisch (`acts` im Spielstand). Neue Nachricht `ACT` (nur einfache Werte, Regeln prüfen).
+- Pflicht-Prüfung: keine Vorderseite verlässt den Server, `show` nur für die, die sehen dürfen.
+- Spielstände speichern `order`, `up`, `face`.
+
+**Neu – Client**
+- `createCard` (Vorderseite aus `layout.cards`, Rückseite aus `layout.card_back`); Standard für `kind: "card"`.
+- `PieceLayer`: Stapel übereinander, Hand aufgefächert am Platz (die eigene größer, gekippt, sortiert; spielbare Karten
+  rücken vor), Auslage in einer Reihe; Karten drehen sich um, wenn sie sichtbar werden. `restPose()`.
+- Knöpfe der Regeln unter der Statuszeile (`client.act()`, `client.myActs`); Hinweise erscheinen darunter statt darüber.
+- Standard-Brett: `surface: "felt"` (Spielmatte), Stapel als Kartenumriss.
+- Punktezeile zeigt nur besetzte Plätze, mit Namen.
+
+**Behoben**: Erlaubte Züge galten nur in einer Phase namens `move` – jetzt in jeder Phase, wenn die Regeln Züge liefern.
+
 ## 2.3.0 – 2026-11-27
 
 Spieltisch-App und Bausteine: Ein neues Tisch-Spiel besteht aus Regeln + Brett-Daten, der Client aus einem Aufruf.

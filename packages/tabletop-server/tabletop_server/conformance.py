@@ -18,6 +18,8 @@ Geprüft wird ohne Netzwerk direkt am Raum:
   - die Ansicht jedes Platzes und der Zuschauer lässt sich berechnen und ist JSON
   - Spielstand übersteht Speichern + Laden mitten in der Partie (gleicher Stand danach)
   - Standard-Anzeige (Engine 2.3) ist wohlgeformt: say/alerts/scores/marks/NOTE zeigen auf echte Plätze und Felder
+  - Geheimes bleibt geheim (Engine 2.4): keine Vorderseite (`face`) verlässt den Server; `show` bekommt nur, wer die
+    Karte sehen darf (offen oder eigene Hand) – im Zustand jedes Platzes und in jedem Ereignis
 """
 import json
 import random
@@ -129,8 +131,14 @@ def _check_variant(game: GameDef, vid: str, games: int, max_steps: int, settings
                         _check(str(k).isdigit() and int(k) < room.seats, f"{where}: NOTE.you für unbekannten Platz {k}")
                         _check_text(t, room.seats, f"{where}: NOTE.you")
                 json.dumps(m)
-                for mid in room.members:
-                    json.dumps(room.personalize(m, mid))
+                for mid in list(room.members) + ["zuschauer"]:
+                    out = room.personalize(m, mid)
+                    ev = out.get("event") or {}
+                    _check("secret" not in ev and "views" not in ev and "face" not in ev, f"{where}: Geheimes im Ereignis für {mid}")
+                    if ev.get("show") is not None and ev.get("piece") in room.pieces:
+                        _check(room.visible_to(ev["piece"], room.seat_of(mid)),
+                               f"{where}: {mid} bekommt die Vorderseite von {ev['piece']}, darf sie aber nicht sehen")
+                    json.dumps(out)
             stats["events"] += len(msgs)
 
         consume(events, f"Partie {n} Start")
@@ -150,6 +158,11 @@ def _check_variant(game: GameDef, vid: str, games: int, max_steps: int, settings
                 st = room.play_state(seat)
                 json.dumps(st)
                 check_display(st, room.seats, fields, f"{vid} Partie {n}")
+                if steps % 5 == 1:
+                    for pid, p in room.state(seat)["pieces"].items():
+                        _check("face" not in p, f"Partie {n}: Vorderseite von {pid} im Zustand")
+                        _check(p.get("show") is None or room.visible_to(pid, seat),
+                               f"Partie {n}: Platz {seat} sieht {pid}, darf aber nicht")
             movers = room.rules.to_move(room)
             _check(movers, f"Partie {n}: niemand am Zug, aber Partie läuft")
             seat = movers[0] if len(movers) == 1 else rng.choice(movers)   # mehrere gleichzeitig (Tandem)
