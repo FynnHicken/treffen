@@ -166,6 +166,24 @@ services:
     networks:
       - party-net
 
+  # =========================================================================
+  # Schach (Treffen-Spieltisch, 3D)
+  # =========================================================================
+  schach:
+    build:
+      context: .
+      dockerfile: games/schach/Dockerfile
+    container_name: schach
+    restart: unless-stopped
+    environment:
+      - TREFFEN_TICKET_SECRET=${TREFFEN_TICKET_SECRET:-}
+    volumes:
+      - ./data/schach:/app/data
+    ports:
+      - "8096:8096"
+    networks:
+      - party-net
+
 networks:
   party-net:
     driver: bridge

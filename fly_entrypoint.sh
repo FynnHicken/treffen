@@ -38,6 +38,12 @@ if [ -f /app/mensch/games/mensch/server/main.py ]; then
     cd /app/mensch && PORT=8095 HOST=0.0.0.0 python3 games/mensch/server/main.py &
 fi
 
+# 4c. Schach (Python on port 8096)
+if [ -f /app/schach/games/schach/server/main.py ]; then
+    echo "Starting schach..."
+    cd /app/schach && PORT=8096 HOST=0.0.0.0 python3 games/schach/server/main.py &
+fi
+
 # 5. Codenames (Python on port 5000)
 if [ -d /app/codenames/codenames ]; then
     echo "Starting codenames..."

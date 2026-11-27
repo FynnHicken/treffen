@@ -4,6 +4,7 @@
  */
 import { GameSocket, loadIdentity, type Identity } from '@treffen/boardgame-kit';
 import { applyEvent, type Member, type TableEvent, type TableState } from './state';
+import { ENGINE_VERSION } from '../version';
 
 export interface PresenceData {
     x: number;
@@ -186,6 +187,7 @@ export class TableClient {
         switch (msg.type) {
             case 'SNAPSHOT':
                 this.seq = msg.seq;
+                this.checkVersion(msg.state);
                 this.setState(msg.state);
                 break;
             case 'EVENT':
@@ -206,6 +208,24 @@ export class TableClient {
                 console.warn('Server:', msg.code, msg.message);
                 for (const fn of this.errorListeners) fn(msg);
                 break;
+        }
+    }
+
+    /** Versionen für Anzeige und Fehlersuche: Spiel, Engine im Client, Engine am Server */
+    get versions(): { game?: string; client: string; server?: string; rulesApi?: number | null } {
+        const g = this.state?.game;
+        return { game: g?.version, client: ENGINE_VERSION, server: g?.engine, rulesApi: g?.rules_api };
+    }
+
+    private versionLogged = false;
+    private checkVersion(s: TableState): void {
+        if (this.versionLogged) return;
+        this.versionLogged = true;
+        const server = s.game?.engine;
+        console.info(`[Spieltisch] ${s.game?.title ?? ''} ${s.game?.version ?? ''} · Engine ${ENGINE_VERSION}` +
+            (server && server !== ENGINE_VERSION ? ` (Server ${server})` : ''));
+        if (server && server.split('.')[0] !== ENGINE_VERSION.split('.')[0]) {
+            console.warn('[Spieltisch] Client und Server haben verschiedene Engine-Hauptversionen – Seite neu laden.');
         }
     }
 

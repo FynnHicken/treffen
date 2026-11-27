@@ -39,6 +39,7 @@ build/
 /data/
 games/monopoly/data/
 games/mensch/data/
+games/schach/data/
 *.sqlite3
 *.sqlite3-*
 gtp-postgres-data/
@@ -52,3 +53,5 @@ games/monopoly/tests/ui/shots/
 static/dist/
 games/mensch/static/
 games/mensch/tests/ui/shots/
+games/schach/static/
+games/schach/tests/ui/shots/

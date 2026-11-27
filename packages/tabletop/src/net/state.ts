@@ -52,6 +52,8 @@ export interface Layout {
 export interface PieceState {
     field: string;
     held_by: string | null;
+    /** Art, falls sie sich im Spiel geändert hat (z. B. Bauer → Dame); sonst gilt PieceSpec.kind */
+    kind?: string | null;
 }
 
 export type SettingValue = boolean | number | string;
@@ -80,7 +82,8 @@ export interface PlayState {
 
 export interface TableState {
     room: string;
-    game: { id: string; title: string; seats: number; seat_colors: string[] };
+    /** version = Version des Spiels, engine = Version des Spieltisch-Servers, rules_api = Fassung der Regel-Schnittstelle */
+    game: { id: string; title: string; seats: number; seat_colors: string[]; version?: string; engine?: string; rules_api?: number | null };
     host_id: string | null;
     members: Member[];
     layout: Layout;
@@ -102,6 +105,7 @@ export type TableEvent =
     | { type: 'PIECE_GRABBED'; piece: string; by: string }
     | { type: 'PIECE_RELEASED'; piece: string }
     | { type: 'PIECE_MOVED'; piece: string; from: string; to: string; by: string; path?: string[]; capture?: string | null; reason?: string }
+    | { type: 'PIECE_CHANGED'; piece: string; kind: string; by?: string; reason?: string }
     | { type: 'GAME_UPDATED'; status: TableState['status']; play: PlayState | null }
     | { type: 'DICE_ROLLED'; by: string; values: number[]; throw: ThrowSpec }
     | { type: 'SETTINGS_UPDATED'; settings: Record<string, SettingValue> };
@@ -122,6 +126,8 @@ export function applyEvent(state: TableState, ev: TableEvent): TableState {
             return withPiece(state, ev.piece, { held_by: null });
         case 'PIECE_MOVED':
             return withPiece(state, ev.piece, { field: ev.to, held_by: null });
+        case 'PIECE_CHANGED':
+            return withPiece(state, ev.piece, { kind: ev.kind === state.layout.pieces[ev.piece]?.kind ? null : ev.kind });
         case 'GAME_UPDATED':
             return { ...state, status: ev.status, play: ev.play };
         case 'DICE_ROLLED':

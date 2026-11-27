@@ -5,6 +5,10 @@
  *    Zugrichtung. Über einem freien Feld erscheint ein Einrast-Ring. Loslassen → hüpft aufs Feld.
  *  - Der Server entscheidet: lehnt er ab (DROP_REJECTED), gleitet die Figur zurück.
  *  - Hält ein anderer eine Figur, schwebt sie bei allen und folgt seinem Zeiger (Präsenz mit `hold`).
+ *  - Antippen statt Ziehen: Bei genau einem erlaubten Ziel zieht die Figur sofort dorthin. Bei mehreren bleibt sie
+ *    angehoben liegen (ausgewählt, Ziele leuchten); Tippen auf ein Ziel setzt sie, Tippen daneben legt sie zurück.
+ *    So geht am Handy alles ohne Ziehen und ohne Rückfrage-Dialog.
+ *  - Ändert eine Figur ihre Art (PIECE_CHANGED, z. B. Bauer → Dame), wird sie an Ort und Stelle ausgetauscht.
  *
  * Spielneutral: Welche Figur wie aussieht, kommt per `createMesh` vom Spiel.
  */
@@ -23,11 +27,12 @@ export interface PieceLayerOptions {
     liftHeight?: number;
 }
 
-type Mode = 'rest' | 'drag' | 'held' | 'hop';
+type Mode = 'rest' | 'drag' | 'held' | 'hop' | 'selected';
 
 interface Vis {
     id: string;
     obj: THREE.Object3D;
+    kind: string;               // Art, mit der das Modell gebaut wurde
     mode: Mode;
     pos: THREE.Vector3;         // aktuelle Position (Fuß)
     goal: THREE.Vector3;        // Ziel beim Folgen (drag/held)
@@ -50,6 +55,9 @@ export class PieceLayer {
     private dragDist = 0;
     private snapField: string | null = null;
     private dragging: Vis | null = null;
+    /** angetippte Figur, die auf die Wahl des Ziels wartet */
+    private selected: Vis | null = null;
+    private dragWasSelected = false;
     private animating = false;
     private layout: Layout | null = null;
     private lastState: TableState | null = null;
@@ -95,9 +103,12 @@ export class PieceLayer {
     private syncState(s: TableState): void {
         if (s.layout !== this.layout) this.build(s.layout);
         this.lastState = s;
+        if (this.selected && !this.canTouch(this.selected.id)) this.cancelSelection();
         for (const [id, ps] of Object.entries(s.pieces)) {
-            const v = this.vis.get(id);
-            if (!v || v === this.dragging || v.mode === 'hop' || v.pendingField) continue;
+            let v = this.vis.get(id);
+            const kind = ps.kind || s.layout.pieces[id]?.kind;
+            if (v && kind && kind !== v.kind) v = this.rebuildPiece(v, kind);
+            if (!v || v === this.dragging || v === this.selected || v.mode === 'hop' || v.pendingField) continue;
             if (ps.held_by && ps.held_by !== this.client.you) {
                 if (v.mode !== 'held') this.onGrabbedByOther(id);
             } else if (v.mode !== 'rest') {
@@ -116,22 +127,43 @@ export class PieceLayer {
         for (const v of this.vis.values()) this.group.remove(v.obj);
         this.vis.clear();
         for (const [id, spec] of Object.entries(layout.pieces)) {
-            const obj = this.opts.createMesh(id, spec, layout);
-            // Großzügige, unsichtbare Trefferfläche (für Finger)
-            const hit = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.34, 0.34, 0.85, 12),
-                new THREE.MeshBasicMaterial({ visible: false })
-            );
-            hit.position.y = 0.42;
-            obj.add(hit);
-            obj.userData.pieceId = id;
-            obj.traverse(o => { o.userData.pieceId = id; });
+            const kind = this.client.state?.pieces[id]?.kind || spec.kind;
+            const obj = this.makeMesh(id, spec, kind, layout);
             const pos = this.fieldPos(spec.field);
-            const v: Vis = { id, obj, mode: 'rest', pos, goal: pos.clone(), tilt: new THREE.Vector2() };
+            const v: Vis = { id, obj, kind, mode: 'rest', pos, goal: pos.clone(), tilt: new THREE.Vector2() };
             this.place(v);
             this.group.add(obj);
             this.vis.set(id, v);
         }
+    }
+
+    private makeMesh(id: string, spec: PieceSpec, kind: string, layout: Layout): THREE.Object3D {
+        const obj = this.opts.createMesh(id, { ...spec, kind }, layout);
+        // Großzügige, unsichtbare Trefferfläche (für Finger)
+        const r = Math.min(0.34, this.spacing * 0.42);
+        const hit = new THREE.Mesh(
+            new THREE.CylinderGeometry(r, r, 0.85, 12),
+            new THREE.MeshBasicMaterial({ visible: false })
+        );
+        hit.position.y = 0.42;
+        obj.add(hit);
+        obj.userData.pieceId = id;
+        obj.traverse(o => { o.userData.pieceId = id; });
+        return obj;
+    }
+
+    /** Figur bekommt eine neue Art (Bauer → Dame): Modell tauschen, Position und Bewegung bleiben. */
+    private rebuildPiece(v: Vis, kind: string): Vis {
+        const spec = this.layout?.pieces[v.id];
+        if (!spec || !this.layout) return v;
+        this.group.remove(v.obj);
+        v.obj = this.makeMesh(v.id, spec, kind, this.layout);
+        v.kind = kind;
+        this.place(v);
+        this.group.add(v.obj);
+        knock(0.4, 1.3);
+        this.table.invalidate();
+        return v;
     }
 
     fieldPos(fieldId: string): THREE.Vector3 {
@@ -201,7 +233,7 @@ export class PieceLayer {
             const v = this.vis.get(id), r = this.hintRings.get(id)!;
             const p = v && v.mode === 'rest' ? v.pos : this.fieldPos(s!.pieces[id].field);
             r.position.set(p.x, this.opts.surfaceY + 0.004, p.z);
-            r.visible = v !== this.dragging;
+            r.visible = v !== this.dragging && v !== this.selected;
         }
         this.table.invalidate();
     }
@@ -210,10 +242,29 @@ export class PieceLayer {
         if (this.dragging || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
         const hits = this.table.pickObjects(ev.clientX, ev.clientY, [...this.vis.values()].map(v => v.obj));
         const id = hits.map(h => h.object.userData.pieceId as string | undefined).find(x => x && this.canTouch(x));
+        const sel = this.selected;
+        this.dragWasSelected = false;
+        if (sel) {
+            if (id === sel.id) {
+                this.dragWasSelected = true;               // ausgewählte Figur: weiterziehen oder antippen = zurücklegen
+            } else {
+                const field = this.nearestCandidate(sel.id, ev.clientX, ev.clientY);
+                // Ziel angetippt (auch wenn dort eine fremde Figur steht, die geschlagen wird)
+                if (field && !id) {
+                    ev.stopPropagation();
+                    ev.preventDefault();
+                    this.selected = null;
+                    this.commit(sel, field);
+                    return;
+                }
+                this.cancelSelection();
+            }
+        }
         if (!id) return;                                   // nichts Greifbares → Kamera darf drehen
         ev.stopPropagation();
         ev.preventDefault();
         const v = this.vis.get(id)!;
+        if (v === this.selected) this.selected = null;
         this.dragging = v;
         this.downAt.set(ev.clientX, ev.clientY);
         this.dragDist = 0;
@@ -256,6 +307,42 @@ export class PieceLayer {
         this.kick();
     }
 
+    /** Erlaubtes Ziel unter dem Finger (großzügig: bis 0,6 Feldbreiten daneben) */
+    private nearestCandidate(id: string, clientX: number, clientY: number): string | null {
+        const s = this.lastState;
+        const p = this.table.pickPlane(clientX, clientY, this.opts.surfaceY);
+        if (!s || !p) return null;
+        let best: string | null = null, bestD = this.spacing * 0.6;
+        for (const fid of this.candidates(id)) {
+            const f = s.layout.fields[fid];
+            if (!f) continue;
+            const d = Math.hypot(f.x - p.x, f.z - p.z);
+            if (d < bestD) { bestD = d; best = fid; }
+        }
+        return best;
+    }
+
+    /** Auswahl aufheben: Figur sinkt zurück aufs Feld */
+    private cancelSelection(): void {
+        const v = this.selected;
+        if (!v) return;
+        this.selected = null;
+        this.showTargets([]);
+        this.client.release(v.id);
+        this.flyTo(v, this.fieldPos(this.lastState?.pieces[v.id]?.field ?? ''), true);
+        this.updateHints();
+    }
+
+    /** Figur auf ein Feld setzen (Server entscheidet; abgelehnt → gleitet zurück) */
+    private commit(v: Vis, field: string): void {
+        this.showTargets([]);
+        v.pendingField = field;
+        this.client.drop(v.id, field);
+        this.flyTo(v, this.fieldPos(field), true);
+        vibrate(14);
+        this.table.invalidate();
+    }
+
     private updateSnap(v: Vis, p: THREE.Vector3): void {
         const s = this.lastState;
         let best: string | null = null, bestD = this.spacing * 0.6;
@@ -287,17 +374,27 @@ export class PieceLayer {
         if (!v) return;
         let field = cancelled ? null : this.snapField;
         this.snapField = null;
+        const tapped = !cancelled && this.dragDist < 8;
         // Antippen statt Ziehen: Gibt es genau ein erlaubtes Ziel, dorthin ziehen
-        if (!cancelled && this.dragDist < 8) {
-            const legal = this.client.legalTargets(v.id);
-            if (legal && legal.length === 1) field = legal[0];
+        if (tapped) {
+            const legal = this.client.legalTargets(v.id) ?? this.candidates(v.id);
+            if (legal.length === 1 && this.client.legalTargets(v.id) !== null) {
+                field = legal[0];
+            } else if (legal.length > 0 && !this.dragWasSelected) {
+                // Mehrere Ziele: Figur bleibt angehoben, Ziele leuchten – nächster Tipp wählt
+                this.selected = v;
+                v.mode = 'selected';
+                v.goal.copy(this.fieldPos(this.lastState?.pieces[v.id]?.field ?? '')).setY(this.opts.surfaceY + this.lift * 0.6);
+                this.showTargets(legal);
+                this.kick();
+                return;
+            } else {
+                field = null;                       // ausgewählte Figur erneut angetippt → zurücklegen
+            }
         }
         const current = this.lastState?.pieces[v.id]?.field;
         if (field && field !== current) {
-            v.pendingField = field;
-            this.client.drop(v.id, field);
-            this.flyTo(v, this.fieldPos(field), true);
-            vibrate(14);
+            this.commit(v, field);
         } else {
             this.client.release(v.id);
             this.flyTo(v, this.fieldPos(current ?? ''), true);
@@ -309,6 +406,7 @@ export class PieceLayer {
     private onMoved(id: string, to: string, by: string, path?: string[], reason?: string): void {
         const v = this.vis.get(id);
         if (!v) return;
+        if (v === this.selected) { this.selected = null; this.showTargets([]); }
         if (by === this.client.you && v.pendingField === to) {
             v.pendingField = undefined;          // bestätigt – Animation läuft schon
             return;
@@ -375,6 +473,8 @@ export class PieceLayer {
             let busy = false;
             for (const v of this.vis.values()) {
                 if (v.mode === 'rest') continue;
+                // Ausgewählt und angekommen: schwebt still – kein Dauer-Rendern
+                if (v.mode === 'selected' && v.pos.distanceTo(v.goal) < 0.002 && v.tilt.lengthSq() < 1e-6) continue;
                 busy = true;
                 if (v.mode === 'hop' && v.hop) {
                     const h = v.hop;
@@ -397,7 +497,7 @@ export class PieceLayer {
                         }
                     }
                 } else {
-                    // drag/held: weich dem Ziel folgen und in Bewegungsrichtung neigen
+                    // drag/held/selected: weich dem Ziel folgen und in Bewegungsrichtung neigen
                     const before = v.pos.clone();
                     v.pos.lerp(v.goal, 1 - Math.exp(-dt * (v.mode === 'drag' ? 22 : 12)));
                     const vel = v.pos.clone().sub(before).divideScalar(Math.max(dt, 1e-3));
@@ -434,5 +534,15 @@ export class PieceLayer {
 
     modeOf(id: string): Mode | undefined {
         return this.vis.get(id)?.mode;
+    }
+
+    /** angetippte Figur, die auf ein Ziel wartet (oder null) */
+    selectedId(): string | null {
+        return this.selected?.id ?? null;
+    }
+
+    /** Art, mit der das Modell gerade gebaut ist (Test: Umwandlung) */
+    kindOf(id: string): string | undefined {
+        return this.vis.get(id)?.kind;
     }
 }

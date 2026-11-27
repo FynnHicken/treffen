@@ -20,12 +20,13 @@ Räumen, Host, Abstimmung, synchronem Start) bettet mehrere Multiplayer-Spiele p
 | Guess The Price | `games/guess-the-price/` | React/Vite + Express/Prisma (SQLite) | 8088 / 3005 | `/price-guess/`, `/price-guess-api/`, `/price-guess-socket/` |
 | **Monopoly 3D** | `games/monopoly/` | Python FastAPI + Three.js | 8090 | `/monopoly/` |
 | **Mensch ärgere dich nicht** (Spieltisch 3D) | `games/mensch/` + `packages/tabletop*` | Python FastAPI + Three.js | 8095 | `/mensch/` |
+| **Schach** (Spieltisch 3D) | `games/schach/` + `packages/tabletop*` | Python FastAPI + Three.js | 8096 | `/schach/` |
 
 **Fokus des Nutzers: Monopoly perfektionieren – und daraus einen Brettspiel-Baukasten machen**, damit weitere
 Brettspiele möglichst viel Code (Rendering, Verbindung, UI) übernehmen: [`packages/boardgame-kit/README.md`](packages/boardgame-kit/README.md).
 **Neu (2026-11-26): Treffen-Spieltisch** – spielneutrales 3D-Brettspiel-Framework, erstes Spiel Mensch ärgere dich nicht.
 Konzept & Fahrplan: [`docs/tabletop/KONZEPT.md`](docs/tabletop/KONZEPT.md). Code: `packages/tabletop` (Client-Engine),
-`packages/tabletop-server` (Python), erstes Spiel `games/mensch/client` + `games/mensch/server`. **M1–M5 ✅** – im Hub unter `/mensch/`, mit Regeln, Computergegnern, Hausregeln und gespeicherten Spielständen. Neues Tisch-Spiel anlegen: [`packages/tabletop-server/README.md`](packages/tabletop-server/README.md). Entscheidungen des Nutzers: Spielgefühl hat
+`packages/tabletop-server` (Python), Spiele `games/mensch/` und `games/schach/`. **M1–M5 ✅, Engine 2.0.0** – im Hub unter `/mensch/` und `/schach/`, mit Regeln, Computergegnern, Hausregeln und gespeicherten Spielständen. Neues Tisch-Spiel anlegen: [`docs/tabletop/KONZEPT.md` §12.5](docs/tabletop/KONZEPT.md), Engine-Änderungen: [`packages/CHANGELOG.md`](packages/CHANGELOG.md). Entscheidungen des Nutzers: Spielgefühl hat
 Vorrang, Regeln werden automatisch vom Server mitgeprüft; freier Modus (wie Tabletop Simulator) evtl. später als Einstellung.
 Der Monopoly-Client ist ein Vite-Projekt (`games/monopoly/client/`), das vor dem Deployen gebaut wird (passiert im Docker-Image). → [`games/monopoly/DEVELOPMENT.md`](games/monopoly/DEVELOPMENT.md)
 
@@ -55,6 +56,11 @@ Der Monopoly-Client ist ein Vite-Projekt (`games/monopoly/client/`), das vor dem
   nicht mehr so leicht kaputt machen. Bugs dürfen behoben werden; bei Änderungen, die das **Konzept**
   der Seite berühren, vorher fragen.
 - Freiheiten für Mitspieler („jeder kann …“) sind **Host-Einstellungen, Standard aus**.
+- **Spieltisch-Engine (2026-11-27):** hat eine **Versionsnummer** (SemVer, `packages/CHANGELOG.md`; Client
+  `packages/tabletop/src/version.ts` = Server `tabletop_server/version.py`) – bei jeder Engine-Änderung erhöhen und
+  dokumentieren. Engine-Updates dürfen Spiele nicht kaputt machen (alte Regel-API über Übersetzungsschicht weiter
+  unterstützen), neue Spiele sollen leicht hinzuzufügen sein. **Rückfragen/Dialoge für Spieler minimal halten** –
+  möglichst alles über Handgriffe am Tisch (Brettspiel-Gefühl). Leitlinie: `docs/tabletop/KONZEPT.md` §12.3.
 
 - **Monopoly-Assets** (`games/monopoly/static/assets/`, inkl. `rom/`) bleiben unverändert.
   Kartentexte werden deshalb im Server überschrieben (`CARD_TEXTS_DE` in `game_state.py`), nicht im JSON.
@@ -93,12 +99,15 @@ ein Browser-Rauchtest des Hubs. **Rot = nicht deployen.** Status: `gh run list -
 - **Hub-Sync-Server**: `party-server/test/server.test.mjs` (`node --test`). Lokal ohne Node auf dem Host:
   `podman run --rm -v "$PWD/party-server":/app:ro,z docker.io/library/node:22-alpine sh -c 'cp -r /app /s && cd /s && npm ci --silent && npm test'`
 - **Hub im Browser**: `party-hub/tests/browser_smoke.py` (Playwright; Hub muss laufen, Aufruf im Dateikopf).
+- **Tisch-Spiele (Mensch, Schach, …)**: Pflicht-Prüfung aller Spiele + Versions-Check
+  `packages/tabletop-server/tests/test_conformance.py`; je Spiel `games/<spiel>/tests/test_rules.py`, Browser-Test unter
+  `games/<spiel>/tests/ui/`, Start über den Hub `party-hub/tests/<spiel>_via_hub.py` (Aufrufe in den Dateiköpfen).
 - **Abhängigkeiten sind exakt gepinnt** (`requirements.txt`, `package-lock.json`). Updates bewusst machen:
   Version ändern → Tests → committen.
 - Auf diesem Rechner ist **kein Node/npm auf dem Host** – JS-Syntax per
   `podman run --rm -v .:/j:ro,Z docker.io/library/node:22-alpine node --check /j/<datei>.js`.
 
-## Aktueller Stand (zuletzt aktualisiert: 2026-11-26)
+## Aktueller Stand (zuletzt aktualisiert: 2026-11-27)
 
 Erledigt und auf `main`:
 1. Infrastruktur-Review: Compose-GTP auf SQLite, Nginx-Socket-Route, optionales HTTPS, Ports/Doku.
@@ -133,6 +142,15 @@ Erledigt und auf `main`:
     Socket gebunden, Preis erst mit dem Ergebnis. Oberfläche deutsch, Euro, dunkel. Produktfotos lokal von Wikimedia
     Commons (`apps/client/public/products/`, Lizenzen in `QUELLEN.md`). Abhängigkeiten per `package-lock.json` gepinnt.
     Browser-Test: `party-hub/tests/gtp_via_hub.py`.
+
+17. Spieltisch-Engine 2.0.0 + Schach (2026-11-27): Engine hat eine Versionsnummer (`packages/CHANGELOG.md`), neue
+    Regel-API 2 mit Aktionen (`GameRules`: `setup/actions/apply/view/to_move/bot_action`), Ansicht je Platz für geheime
+    Infos, `PIECE_CHANGED` (Figur wechselt die Art), Antippen → Ziel antippen, Computer rechnet außerhalb des Raum-Locks,
+    Pflicht-Prüfung für jedes Tisch-Spiel in der CI. Mensch (API 1) läuft unverändert über `LegacyRules`.
+    **Schach** (`/schach/`, Port 8096): Holzbrett, gedrechselte Figuren, Geschlagene neben dem Brett, Rochade per
+    Königszug, Umwandlung automatisch zur Dame, Computer in 3 Stufen (Hausregel), Matt/Patt/Remis-Regeln.
+    Zuggenerator per Perft geprüft (`games/schach/tests/test_rules.py`). Konzept & Fahrplan E2.1–E2.3:
+    `docs/tabletop/KONZEPT.md` §12.
 
 16. Hub-Avatare in den Spielen (2026-11-26): Der party-server liefert jeden Avatar als Bild,
     `/party-ws/avatar/<RAUM>/<Hub-Spieler-ID>.svg` (strenge CSP, ETag), und als `.json` ({color, face}) für

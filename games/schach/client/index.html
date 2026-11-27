@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#17100b">
+    <title>Schach</title>
+</head>
+<body>
+    <div id="table"></div>
+
+    <header class="hud">
+        <button class="hud-room" id="room-btn" title="Link zum Raum kopieren">
+            <span class="hud-dot" id="conn-dot"></span>
+            Raum <strong id="room-code">——</strong>
+            <span class="hud-copy">🔗</span>
+        </button>
+        <div class="hud-title">Schach</div>
+    </header>
+
+    <div class="top-center">
+        <div class="status" id="status" hidden></div>
+        <button class="start-btn" id="start-btn" hidden>▶ Partie starten</button>
+    </div>
+    <div class="gameover" id="gameover" hidden></div>
+
+    <p class="hint" id="hint">Figur greifen und aufs Feld setzen – oder antippen, dann Ziel antippen · Ziehen: drehen · Doppeltipp: zurück</p>
+    <p class="versions" id="versions"></p>
+
+    <div class="welcome" id="welcome" hidden>
+        <form class="welcome-card" id="welcome-form">
+            <h1>Schach</h1>
+            <p>Wie heißt du?</p>
+            <input id="name-input" maxlength="24" autocomplete="nickname" placeholder="Dein Name" required>
+            <button type="submit">An den Tisch setzen</button>
+        </form>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+
+    <script type="module" src="./src/main.ts"></script>
+</body>
+</html>

@@ -11,6 +11,9 @@ import re
 import time
 from typing import Dict, List, Optional
 
+from .rules import as_game_rules
+from .version import ENGINE_VERSION
+
 NAME_MAX = 24
 _UNSAFE = re.compile(r"[<>\"'`&\x00-\x1f]")
 
@@ -23,22 +26,34 @@ def clean_text(value, max_len: int, fallback: str = "") -> str:
 
 
 class GameDef:
-    """Was der Tisch über ein Spiel wissen muss (Regeln kommen in M4 dazu).
+    """Was der Tisch über ein Spiel wissen muss.
 
     layout: {"fields": {id: {x, z, kind, color?}}, "pieces": {id: {kind, seat, field}},
              "dice": {"count": 1, "sides": 6}}
       - Felder sind Ablageplätze mit Tisch-Koordinaten (Mitte = 0,0; Platz 0 sitzt bei +z).
       - Figuren gehören einem Sitzplatz (`seat`) und stehen anfangs auf `field`.
+    rules: GameRules (API 2) oder Rules (API 1, wird übersetzt) oder None (freier Tisch).
+    version: Version des Spiels selbst (SemVer) – steht mit der Engine-Version in /api/health und im Client.
     """
 
     def __init__(self, game_id: str, title: str, seat_colors: List[str], min_players: int = 2,
-                 layout: Optional[dict] = None, rules=None):
+                 layout: Optional[dict] = None, rules=None, version: str = "1.0.0"):
         self.id = game_id
         self.title = title
+        self.version = version
         self.seat_colors = list(seat_colors)   # Länge = Anzahl Sitzplätze
         self.min_players = min_players
         self.layout = layout or {"fields": {}, "pieces": {}}
-        self.rules = rules                     # tabletop_server.rules.Rules oder None (freier Tisch)
+        self.rules = as_game_rules(rules)      # immer API 2 (oder None)
+
+    @property
+    def rules_api(self) -> Optional[int]:
+        return self.rules.api_version if self.rules else None
+
+    def info(self) -> dict:
+        """Versionen für Client, Hub und Fehlersuche."""
+        return {"id": self.id, "title": self.title, "version": self.version,
+                "engine": ENGINE_VERSION, "rules_api": self.rules_api}
 
     @property
     def seats(self) -> int:
@@ -113,26 +128,46 @@ class Room:
         return next((m for m in self.members.values() if m.seat == seat), None)
 
     def _play_event(self) -> dict:
-        return self.next_event({"type": "GAME_UPDATED", "status": self.status, "play": self.play_state()})
+        """GAME_UPDATED – bei Spielen mit Geheimwissen mit einer Ansicht je Platz (`views`, nur für den Versand;
+        app.py schickt jedem Mitglied nur seine eigene als `play`)."""
+        ev = {"type": "GAME_UPDATED", "status": self.status, "play": self.play_state()}
+        if self.rules and not self.rules.shared_view and self.game is not None:
+            ev["views"] = {str(seat): self.play_state(seat) for seat in range(self.game_def.seats)}
+        return self.next_event(ev)
 
-    def play_state(self) -> Optional[dict]:
+    def play_state(self, seat: Optional[int] = None) -> Optional[dict]:
+        """Spielstand aus Sicht eines Platzes (None = Zuschauer)."""
         if not self.rules or self.game is None:
             return None
-        return self.rules.public(self)
+        return self.rules.view(self, None if self.rules.shared_view else seat)
+
+    def seat_of(self, member_id: str) -> Optional[int]:
+        m = self.members.get(member_id)
+        return m.seat if m else None
+
+    def personalize(self, msg: dict, member_id: str) -> dict:
+        """Nachricht für ein Mitglied: aus `views` die eigene Ansicht als `play` einsetzen."""
+        ev = msg.get("event") if msg.get("type") == "EVENT" else None
+        if not ev or "views" not in ev:
+            return msg
+        seat = self.seat_of(member_id)
+        ev = {k: v for k, v in ev.items() if k != "views"}
+        if seat is not None:
+            ev["play"] = msg["event"]["views"].get(str(seat), ev.get("play"))
+        return {**msg, "event": ev}
 
     # ---------- Zustand ----------
-    def state(self) -> dict:
+    def state(self, seat: Optional[int] = None) -> dict:
         return {
             "room": self.id,
-            "game": {"id": self.game_def.id, "title": self.game_def.title, "seats": self.game_def.seats,
-                     "seat_colors": self.game_def.seat_colors},
+            "game": {**self.game_def.info(), "seats": self.game_def.seats, "seat_colors": self.game_def.seat_colors},
             "host_id": self.host_id,
             "members": [m.to_dict(self.game_def) for m in sorted(self.members.values(), key=lambda m: m.joined_at)],
             "layout": self.game_def.layout,
             "pieces": {pid: dict(p) for pid, p in self.pieces.items()},
             "last_roll": self.last_roll,
             "status": self.status if self.rules else None,
-            "play": self.play_state(),
+            "play": self.play_state(seat),
             "settings": self.settings(),
             "settings_schema": self.settings_schema(),
         }
@@ -142,8 +177,7 @@ class Room:
         return {"type": "EVENT", "seq": self.seq, "event": event}
 
     def snapshot_for(self, member_id: str) -> dict:
-        # Ab M4: geheime Infos pro Mitglied filtern (Rules.view_for)
-        return {"type": "SNAPSHOT", "seq": self.seq, "you": member_id, "state": self.state()}
+        return {"type": "SNAPSHOT", "seq": self.seq, "you": member_id, "state": self.state(self.seat_of(member_id))}
 
     # ---------- Mitglieder ----------
     def free_seat(self) -> Optional[int]:
@@ -224,7 +258,7 @@ class Room:
             return []
         if self.rules and self.status == "finished":
             return []
-        if self.rules and self.status == "playing" and not self.rules.can_roll(self, m.seat):
+        if self.rules and self.status == "playing" and not self.can_roll(m.seat):
             return []
         try:
             power = min(1.0, max(0.0, float(power)))
@@ -238,9 +272,15 @@ class Room:
         self.last_roll = {"by": member_id, "values": values, "throw": throw, "at": now}
         events = [self.next_event({"type": "DICE_ROLLED", "by": member_id, "values": values, "throw": throw})]
         if self.rules and self.status == "playing":
-            events += [self.next_event(e) for e in self.rules.on_roll(self, m.seat, values)]
+            evs = self.rules.apply(self, m.seat, {"type": "roll", "values": values}) or []
+            events += [self.next_event(e) for e in evs]
             events.append(self._play_event())
         return events
+
+    def can_roll(self, seat) -> bool:
+        if not self.rules or self.status != "playing" or seat is None:
+            return False
+        return any(a.get("type") == "roll" for a in self.rules.actions(self, seat))
 
     # ---------- Spielablauf (mit Regeln) ----------
     def add_bot(self, member_id: str, seat) -> List[dict]:
@@ -323,7 +363,8 @@ class Room:
             "members": [{"id": m.id, "name": m.name, "seat": m.seat, "is_bot": m.is_bot, "joined_at": m.joined_at,
                          "avatar": m.avatar}
                         for m in self.members.values()],
-            "pieces": {pid: {"field": p["field"]} for pid, p in self.pieces.items()},
+            "pieces": {pid: ({"field": p["field"], "kind": p["kind"]} if p.get("kind") else {"field": p["field"]})
+                       for pid, p in self.pieces.items()},
             "last_roll": self.last_roll, "status": self.status, "state": self.game,
             "settings": dict(self.game_settings), "created_at": self.created_at,
         }
@@ -350,6 +391,8 @@ class Room:
         for pid, p in (data.get("pieces") or {}).items():
             if pid in room.pieces:
                 room.pieces[pid] = {"field": p["field"], "held_by": None}
+                if isinstance(p.get("kind"), str):
+                    room.pieces[pid]["kind"] = p["kind"]
         room.last_roll = data.get("last_roll")
         room.status = data.get("status", "lobby")
         room.game = data.get("state")
@@ -361,20 +404,36 @@ class Room:
     def release_all_everyone(self) -> List[dict]:
         return [e for mid in list(self.members) for e in self.release_all(mid)]
 
-    def bot_move(self, seat: int) -> List[dict]:
-        """Computer (oder Vertretung eines Abwesenden) zieht."""
+    def bot_plan(self, seat: int) -> Optional[dict]:
+        """Was der Computer an diesem Platz tun will (darf länger rechnen – app.py ruft es außerhalb des Locks)."""
         if not self.rules or self.status != "playing":
+            return None
+        return self.rules.bot_action(self, seat)
+
+    def bot_apply(self, seat: int, action: Optional[dict], power: float = 0.6) -> List[dict]:
+        """Aktion des Computers (oder Vertretung eines Abwesenden) ausführen."""
+        if not self.rules or self.status != "playing" or not action:
             return []
-        choice = self.rules.bot_move(self, seat)
-        if not choice:
-            return []
-        evs = self.rules.move(self, seat, choice["piece"], choice["to"])
+        member = self.member_at(seat)
+        if action.get("type") == "roll":
+            return self.roll(member.id, power, auto=True) if member else []
+        return self.apply_action(member.id if member else "rules", seat, action)
+
+    def bot_move(self, seat: int) -> List[dict]:
+        """Planen + ausführen in einem Schritt (Tests, schnelle Regeln)."""
+        return self.bot_apply(seat, self.bot_plan(seat))
+
+    def apply_action(self, by: str, seat: int, action: dict) -> List[dict]:
+        """Aktion (außer Würfeln) durch die Regeln; None/ungültig → keine Ereignisse."""
+        try:
+            evs = self.rules.apply(self, seat, action)
+        except (KeyError, TypeError, ValueError):
+            evs = None
         if evs is None:
             return []
-        mid = self.member_at(seat).id if self.member_at(seat) else "rules"
         out = []
         for e in evs:
-            e.setdefault("by", mid)
+            e.setdefault("by", by)
             out.append(self.next_event(e))
         return out + [self._play_event()]
 
@@ -386,8 +445,7 @@ class Room:
         if not (m and m.connected and m.seat is not None and spec and spec.get("seat") == m.seat):
             return False
         if self.rules:
-            g = self.game or {}
-            return self.status == "playing" and g.get("turn") == m.seat and g.get("phase") == "move"
+            return self.status == "playing" and self.rules.can_touch(self, m.seat, piece_id)
         return True
 
     def grab(self, member_id: str, piece_id) -> List[dict]:
@@ -421,15 +479,12 @@ class Room:
             return []
         if self.rules:
             m = self.members.get(member_id)
-            evs = self.rules.move(self, m.seat, piece_id, field_id) if isinstance(field_id, str) else None
-            if evs is None:
+            out = self.apply_action(member_id, m.seat, {"type": "move", "piece": piece_id, "to": field_id}) \
+                if isinstance(field_id, str) and self.status == "playing" else []
+            if not out:
                 return self.release(member_id, piece_id)
             self.pieces[piece_id]["held_by"] = None
-            out = []
-            for e in evs:
-                e.setdefault("by", member_id)
-                out.append(self.next_event(e))
-            return out + [self._play_event()]
+            return out
         fields = self.game_def.layout.get("fields", {})
         occupied = any(o["field"] == field_id for oid, o in self.pieces.items() if oid != piece_id)
         if not isinstance(field_id, str) or field_id not in fields or occupied or field_id == p["field"]:

@@ -3,6 +3,7 @@
  */
 import './tabletop.css';
 
+export { ENGINE_VERSION } from './version';
 export { TableScene, isTouchDevice } from './engine/TableScene';
 export type { TableSceneOptions, Animator } from './engine/TableScene';
 export { woodTextures, feltTexture, seededRandom } from './engine/materials';

@@ -1,6 +1,8 @@
 # @treffen/tabletop – der 3D-Spieltisch (Client)
 
 Spielneutrale Engine für alle Tisch-Spiele. Konzept und Fahrplan: [`docs/tabletop/KONZEPT.md`](../../docs/tabletop/KONZEPT.md).
+**Version:** `src/version.ts` (`ENGINE_VERSION`, gleich wie der Server) – Änderungen und Schema in [`../CHANGELOG.md`](../CHANGELOG.md).
+Spiele: `games/mensch/client`, `games/schach/client`.
 Wird als Quellcode vom Vite-Build eines Spiels eingebunden (Alias `@treffen/tabletop`, siehe
 `games/mensch/client/vite.config.ts`; `three` kommt aus dem Spiel-Projekt, `resolve.dedupe`).
 
@@ -12,7 +14,8 @@ Wird als Quellcode vom Vite-Build eines Spiels eingebunden (Alias `@treffen/tabl
 | `net/state.ts` | Zustand + `applyEvent` (Gegenstück: `packages/tabletop-server/tabletop_server/rooms.py`) |
 | `presence/Presence.ts` | Eigener Zeiger → Server; fremde Zeiger als Ring + Name in Spielerfarbe, weich nachgezogen |
 | `ui/SeatLabels.ts` | Namensschilder an den Plätzen (Host-Krone, getrennt, „Hinsetzen“; hochkant unter dem Brett) |
-| `objects/PieceLayer.ts` | Figuren: greifen (Capture vor der Kamera-Steuerung), ziehen mit Neigung, Einrast-Ring, Hüpfen aufs Feld, Zurückgleiten bei Ablehnung, fremde gehaltene Figuren folgen deren Zeiger |
+| `objects/PieceLayer.ts` | Figuren: greifen (Capture vor der Kamera-Steuerung), ziehen mit Neigung, Einrast-Ring, Hüpfen aufs Feld, Zurückgleiten bei Ablehnung, fremde gehaltene Figuren folgen deren Zeiger; **Antippen** → bei einem Ziel sofort ziehen, bei mehreren angehoben warten und Ziel antippen; Art-Wechsel (`PIECE_CHANGED`) tauscht das Modell |
+| `version.ts` | `ENGINE_VERSION`; `TableClient.versions` liefert Spiel-, Client- und Server-Version |
 | `objects/pawn.ts` | Klassische Spielfigur als Drehkörper, lackiertes Holz (`createPawn(color)`) |
 | `dice/DiceLayer.ts` | Würfeln: Becher greifen + schütteln (Strecke bzw. Handy-Bewegungssensor = Stärke), Server bestimmt Zahl; Wurf wird mit cannon-es vorab simuliert, Würfel-Aussehen so gedreht, dass die Server-Zahl oben liegt, dann abgespielt (mit Aufprall-Klängen). Alle Clients sehen denselben Wurf |
 | `dice/dieMesh.ts`, `dice/cup.ts` | Würfel (abgerundet, Elfenbein, vertiefte Augen, rote Eins) und Lederbecher mit Filz |

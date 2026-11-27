@@ -1,6 +1,6 @@
 # Treffen-Spieltisch – Konzept
 
-> Stand: 2026-11-26 · Status: **abgestimmt · M1–M5 ✅ · Mensch läuft im Hub unter `/mensch/`** · Erstes Spiel: Mensch ärgere dich nicht
+> Stand: 2026-11-27 · Status: **M1–M5 ✅ · Engine 2.0.0 (§12) · Mensch (`/mensch/`) und Schach (`/schach/`) im Hub** · Änderungen: [`packages/CHANGELOG.md`](../../packages/CHANGELOG.md)
 
 ## 1. Ziel
 
@@ -89,9 +89,9 @@ Monopoly bleibt unverändert lauffähig und ist **Steinbruch** (Würfel, Hüpfen
 
 ## 6. Schnittstelle für ein Spiel (Server, Python)
 
-Umgesetzt in `packages/tabletop-server/tabletop_server/rules.py` (Doku im Dateikopf), Mensch-Regeln in
-`games/mensch/server/rules.py`. Abweichend vom Entwurf hier: Regeln arbeiten direkt auf `room.pieces`/
-`room.game` und liefern Ereignisse ohne Nummer; `public()` statt `view_for()` (Mensch hat keine geheimen Infos).
+Umgesetzt in `packages/tabletop-server/tabletop_server/rules.py` (Doku im Dateikopf). **Seit Engine 2.0 gilt
+Regel-API 2 (§12)**; der Entwurf unten war die Vorlage. Mensch nutzt noch API 1 (`Rules`), die über `LegacyRules`
+unverändert weiterläuft. Regeln arbeiten direkt auf `room.pieces`/`room.game` und liefern Ereignisse ohne Nummer.
 
 ```python
 class Rules:
@@ -133,7 +133,11 @@ Typen, Figuren (Modell, Farben), Würfel-Anzahl, Sitzplätze. Der Tisch baut dar
 | **M3 Würfel** ✅ | Becher, Physik-Würfel, Ergebnis vom Server, Klang + Vibration |
 | **M4 Regeln** ✅ | Regel-Schnittstelle, Mensch-Regeln portiert, Zielvorschau, „gleitet zurück“, Bots |
 | **M5 Fertig** ✅ | Im Hub (`/mensch/`, Host per Ticket), Hausregeln in der Lobby (⚙️), Spielstände in SQLite, Zuschauer, ein Becher für alle; 2D-Prototyp entfernt |
-| später | Karten/Hand/Stapel, Geld/Marker, freier Modus (Einstellung), weitere Spiele, Monopoly v2 |
+| **E2.0 Engine 2** ✅ | Versionsnummer, Regel-API 2 (Aktionen), Ansicht je Platz, `PIECE_CHANGED`, Antippen → Ziel antippen, Pflicht-Prüfung für alle Spiele; **Schach** als zweites Spiel (§12) |
+| E2.1 Ein Server für alle | Alle Tisch-Spiele in einem Container, `game.json` je Spiel, Hub liest die Spieleliste vom Server (§12.5) |
+| E2.2 Karten | Karte, Stapel, Hand (aufgefächert am eigenen Platz, nur für den Besitzer sichtbar); erstes Kartenspiel (Mau-Mau) |
+| E2.3 Eingreifen & Marker | Mehrere dürfen gleichzeitig handeln (`to_move` mit mehreren Plätzen), Zähler/Marker/Geld; ein Spiel im Stil von Munchkin mit eigenen Karten |
+| später | Freier Modus (Einstellung), Raster-/Hex-Bretter aus Daten, `createTableApp` (gemeinsames Client-Gerüst), Monopoly v2 |
 
 ## 10. Lokal ausprobieren (ohne Python/Node auf dem Host)
 
@@ -150,8 +154,13 @@ podman run --rm -v "$PWD":/repo:ro,z -w /tmp localhost/mono-test-deps python -I 
 podman run --rm -v "$PWD":/repo:ro,z -w /tmp localhost/mono-test-deps python -I /repo/games/mensch/tests/test_server.py
 ```
 
-Im Hub (wie in Produktion): `TREFFEN_TICKET_SECRET=… podman compose up -d --build party-server partyhub mensch`, dann
-`http://127.0.0.1:8000` → Karte „Mensch ärgere dich nicht“. Test: `party-hub/tests/mensch_via_hub.py`.
+Im Hub (wie in Produktion): `TREFFEN_TICKET_SECRET=… podman compose up -d --build party-server partyhub mensch schach`, dann
+`http://127.0.0.1:8000` → Karte „Mensch ärgere dich nicht“ bzw. „Schach“. Tests: `party-hub/tests/mensch_via_hub.py`,
+`party-hub/tests/schach_via_hub.py`.
+
+Schach genauso: Client unter `games/schach/client` bauen, Server `games/schach/server/main.py` (Port 8096),
+Tests `games/schach/tests/test_rules.py` und `games/schach/tests/ui/schach_smoke.py`.
+Pflicht-Prüfung aller Tisch-Spiele: `python -I packages/tabletop-server/tests/test_conformance.py`.
 
 ## 11. Entscheidungen (Nutzer, 2026-11-26)
 
@@ -163,3 +172,98 @@ Im Hub (wie in Produktion): `TREFFEN_TICKET_SECRET=… podman compose up -d --bu
 | Material | **Selbst modellieren** (einfache, saubere Formen per Code), keine fremden Assets → keine Lizenzfragen |
 | Spielerzahl Mensch | **Klassisch 4**; 6er-Brett später als zweites Brett möglich |
 | Server | **Gemeinsames Python-Paket** für alle Tisch-Spiele (`packages/tabletop-server`) |
+| Engine-Version (2026-11-27) | **Versionsnummer für die Engine**, damit man immer weiß, welches Spiel welche Version hat (§12.1) |
+| Bedienung (2026-11-27) | **Rückfragen an Spieler minimal halten.** Möglichst alles über Handgriffe am Tisch, damit das Brettspiel-Gefühl bleibt (§12.3) |
+| Ziel (2026-11-27) | Engine-Updates dürfen Spiele nicht kaputt machen, Spiele sollen leicht/automatisch mitgehen, neue Spiele leicht hinzuzufügen sein |
+
+## 12. Engine 2 – viele Brettspiele auf einem Tisch
+
+Ziel: Möglichst viele Brettspiele (Schach, Mau-Mau, Spiele im Stil von Munchkin, Catan …) auf derselben Engine,
+ohne dass ein Engine-Update laufende Spiele kaputt macht. Stand: **2.0.0** – Grundlage + Schach.
+
+### 12.1 Versionen
+
+- Eine Nummer für Client und Server: `packages/tabletop/src/version.ts` = `tabletop_server/version.py` (Test prüft das).
+- SemVer: **MAJOR** bricht Spiele, **MINOR** erweitert, **PATCH** repariert. Jede Änderung steht in
+  [`packages/CHANGELOG.md`](../../packages/CHANGELOG.md).
+- Jedes Spiel hat zusätzlich eine eigene Version (`GameDef(version=…)`) und spricht eine Regel-API (`api_version`).
+- Sichtbar: `/<spiel>/api/health`, unten rechts im Spiel („Schach 1.0.0 · Spieltisch 2.0.0“), Browser-Konsole.
+- Spiele binden die Engine beim Bauen als Quellcode ein → jedes Image hat automatisch die aktuelle Engine
+  („automatisch upgedatet“). Abgesichert durch die CI (§12.4).
+
+### 12.2 Regel-API 2: Aktionen
+
+Alles, was ein Spieler tun kann, ist eine **Aktion** – ein Dict mit `type`. Der Tisch übersetzt Handgriffe in Aktionen:
+
+| Handgriff am Tisch | Aktion | seit |
+|---|---|---|
+| Becher schütteln/werfen | `{"type": "roll"}` (Zahlen bestimmt der Server) | 2.0 |
+| Figur greifen und absetzen / antippen + Ziel antippen | `{"type": "move", "piece", "to"}` | 2.0 |
+| Karte ziehen, ausspielen, abwerfen | `{"type": "card", …}` | geplant 2.2 |
+| Marker/Geld nehmen, geben | `{"type": "token", …}` | geplant 2.3 |
+
+```python
+class MeineRegeln(GameRules):              # tabletop_server.rules
+    settings_schema = {...}                # Hausregeln (Lobby ⚙️)
+    shared_view = True                     # False → Ansicht je Platz (Geheimes bleibt geheim)
+    def setup(self, room) -> list          # Aufstellung, room.game füllen
+    def actions(self, room, seat) -> list  # was dieser Platz jetzt tun darf (auch Zielvorschau im Client)
+    def apply(self, room, seat, action)    # ausführen → Ereignisse, None = nicht erlaubt (Figur gleitet zurück)
+    def view(self, room, seat) -> dict     # Spielstand für einen Platz (None = Zuschauer)
+    def to_move(self, room) -> list        # wer handeln darf (mehrere = gleichzeitig, z. B. Eingreifen)
+    def bot_action(self, room, seat)       # Computer (darf rechnen – läuft außerhalb des Raum-Locks)
+```
+
+Ende einer Partie: `room.status = "finished"`, im Spielstand `phase: "over"`, `finished: [Plätze nach Rang]`,
+`result: {"winners": [...], "reason": "...", "text": "..."}`. Figur wechselt die Art: `room.pieces[id]["kind"]` +
+Ereignis `PIECE_CHANGED`.
+
+**Alte Spiele:** API 1 (`Rules`, Mensch) läuft über `LegacyRules` weiter – identisches Protokoll, kein Umbau nötig.
+Wird eine neue MAJOR-Version fällig, bekommt die alte API wieder so eine Übersetzung, statt alle Spiele umzuschreiben.
+
+### 12.3 Leitlinie: Am Tisch statt in Dialogen
+
+Rückfragen an den Spieler nur, wenn es wirklich nicht anders geht. Vorher prüfen:
+1. **Gibt es einen Handgriff dafür?** Rochade = König zwei Felder setzen (Turm folgt von selbst). Schlagen = auf die
+   fremde Figur setzen (sie wandert neben das Brett). Würfeln = Becher schütteln.
+2. **Gibt es eine sinnvolle Vorgabe?** Bauernumwandlung → Dame (fast immer richtig), ohne Nachfrage.
+3. **Ist es nur eine Information?** Dann am Tisch zeigen statt Text: leuchtende Ziele, Glimmen unter dem König im
+   Schach, markierter letzter Zug, Platzset des Spielers am Zug leuchtet, Vibration am Handy.
+4. Nur wenn nichts davon passt: knappe Auswahl **am Tisch** (z. B. Figuren zur Wahl neben dem Feld), kein Modal.
+
+Der Status oben ist eine Zeile („Du bist am Zug“), kein Erklärtext. Einstellungen (Hausregeln) gibt es nur in der Lobby.
+
+### 12.4 Damit Updates nichts kaputt machen
+
+- **Pflicht-Prüfung** (`tabletop_server/conformance.py`): Für jedes Spiel unter `games/*/server/main.py` spielen
+  Computer ganze Partien; geprüft werden lückenlose Ereignisse, gültige Felder/Züge, Ansichten je Platz als JSON,
+  Speichern/Laden mitten in der Partie. Läuft in der CI (`test_conformance.py`) – ein neues Spiel ist automatisch dabei.
+- Jedes Spiel hat dazu eigene Regel-Tests und einen Browser-Test (Handy + Desktop), plus einen Test über den Hub.
+- Ältere Clients ignorieren unbekannte Ereignisse; Spielstände speichern nur, was zum Wiederherstellen nötig ist.
+
+### 12.5 Neues Spiel hinzufügen (heute)
+
+1. `games/<spiel>/server/`: `layout.py` (Felder, Figuren), `rules.py` (`GameRules`), `main.py` (`GameDef(…, version=…)`).
+2. `games/<spiel>/client/`: wie `games/schach/client` (Brett zeichnen, Figuren-Modelle, kurze HUD-Zeile).
+3. Tests: `tests/test_rules.py` (ruft am Ende `check_game`), `tests/ui/<spiel>_smoke.py`.
+4. Einbinden: `Dockerfile`, Dienst in `docker-compose.yml`, `party-hub/nginx-locations.conf` + `fly_nginx.conf`,
+   `Dockerfile.fly` + `fly_entrypoint.sh`, Hub (`partyState.games`, `votes`, `getGameUrl`, `SLOT_GAMES`, Titelbild
+   `party-hub/assets/cover_<spiel>.jpg`), `KNOWN_GAME_IDS` in `party-server/server.js`, CI-Schritte.
+
+Schritt 4 schrumpft mit **E2.1** (ein Container für alle Tisch-Spiele, `game.json`, Hub liest die Liste vom Server)
+auf „Ordner anlegen“.
+
+### 12.6 Was die Engine für welche Spiele noch braucht
+
+| Fähigkeit | Stand | Spiele |
+|---|---|---|
+| Würfel, Figuren auf Feldern, Schlagen, Bots, Hausregeln | ✅ 1.x | Mensch, Ludo, Leiterspiel |
+| Aktionen, Art wechseln, Antippen → Ziel, Computer mit Bedenkzeit | ✅ 2.0 | Schach, Dame, Mühle, Halma, Reversi |
+| Ansicht je Platz (Geheimes) | ✅ 2.0 (Server) | Grundlage für alle Kartenspiele |
+| Karten, Stapel, Hand (Client + Aktionen) | E2.2 | Mau-Mau, Rommé, Kniffel-Block |
+| Gleichzeitig handeln, Eingreifen, Marker/Zähler/Geld | E2.3 | Spiele im Stil von Munchkin, Catan, Monopoly v2 |
+| Bretter aus Daten (Raster, Hex), Plättchen mit Drehung | später | Go, Catan, Carcassonne-artige Legespiele |
+| Freier Modus ohne Regeln | später | beliebige Spiele „wie am echten Tisch“ |
+
+Hinweis: Kommerzielle Spiele (Munchkin, Catan …) nur als **eigene Umsetzung der Mechanik** mit eigenen Karten,
+Texten und Grafiken – keine Kopie von Kartentexten, Namen oder Bildern.

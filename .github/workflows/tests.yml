@@ -62,11 +62,19 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: games/mensch/client/package-lock.json
+          cache-dependency-path: |
+            games/mensch/client/package-lock.json
+            games/schach/client/package-lock.json
       - run: pip install -r packages/tabletop-server/requirements.txt
       - name: Server-Tests (Sitzplätze, Host, Präsenz, Reconnect)
         working-directory: /tmp
         run: python -I "$GITHUB_WORKSPACE/packages/tabletop-server/tests/test_tabletop_ws.py"
+      - name: Pflicht-Prüfung aller Tisch-Spiele (Engine-Version, Computer-Partien, Speichern/Laden)
+        working-directory: /tmp
+        run: python -I "$GITHUB_WORKSPACE/packages/tabletop-server/tests/test_conformance.py" 10
+      - name: Schach-Regeln (Perft, Sonderzüge, Partie-Ende, Computer)
+        working-directory: /tmp
+        run: python -I "$GITHUB_WORKSPACE/games/schach/tests/test_rules.py"
       - name: Mensch-Regeln (gezielte Fälle + 100 Computer-Partien)
         working-directory: /tmp
         run: python -I "$GITHUB_WORKSPACE/games/mensch/tests/test_rules.py"
@@ -76,6 +84,9 @@ jobs:
       - name: Mensch-3D-Client (TypeScript-Prüfung + Vite-Build)
         working-directory: games/mensch/client
         run: npm ci && npm run build
+      - name: Schach-3D-Client (TypeScript-Prüfung + Vite-Build)
+        working-directory: games/schach/client
+        run: npm ci && npm run build
       - name: Browser-Test (Lobby, Würfel, echte Partie mit Computer, Render-on-Demand)
         run: |
           (cd /tmp && python -u "$GITHUB_WORKSPACE/games/mensch/server/main.py" > /tmp/tisch.log 2>&1 &)
@@ -84,6 +95,12 @@ jobs:
           mkdir -p /tmp/tisch-shots
           docker run --rm --network=host -v "$PWD/games/mensch":/work:ro -v /tmp/tisch-shots:/shots -w /work treffen-ui-test \
             python -u tests/ui/tisch_smoke.py http://127.0.0.1:8095 /shots
+      - name: Schach im Browser (Desktop + Handy, Antippen, Schlagen, Computer)
+        run: |
+          (cd /tmp && TABLETOP_DB= python -u "$GITHUB_WORKSPACE/games/schach/server/main.py" > /tmp/schach.log 2>&1 &)
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8096/api/health >/dev/null && break; sleep 1; done
+          docker run --rm --network=host -v "$PWD/games/schach":/work:ro -v /tmp/tisch-shots:/shots -w /work treffen-ui-test \
+            python -u tests/ui/schach_smoke.py http://127.0.0.1:8096 /shots
       - name: Screenshots hochladen
         if: always()
         uses: actions/upload-artifact@v5
@@ -93,7 +110,7 @@ jobs:
           if-no-files-found: ignore
       - name: Server-Log bei Fehler
         if: failure()
-        run: tail -60 /tmp/tisch.log
+        run: tail -60 /tmp/tisch.log /tmp/schach.log
 
   build:
     name: Docker-Images & Nginx-Konfiguration
@@ -135,6 +152,11 @@ jobs:
           TREFFEN_TICKET_SECRET=ci-test-secret docker compose -f docker-compose.yml up -d --force-recreate gtp-server gtp-client
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:8000/price-guess-api/category >/dev/null && curl -sf http://127.0.0.1:8000/price-guess/ >/dev/null && break; sleep 1; done
           docker run --rm --network=host -v "$PWD/party-hub/tests":/t:ro -v /tmp/shots:/shots treffen-ui-test python -u /t/gtp_via_hub.py http://127.0.0.1:8000 /shots
+      - name: Schach über den Hub (Host per Ticket, Gast am Handy, Avatare, erster Zug)
+        run: |
+          TREFFEN_TICKET_SECRET=ci-test-secret docker compose -f docker-compose.yml up -d --force-recreate schach
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/schach/api/health >/dev/null && break; sleep 1; done
+          docker run --rm --network=host -v "$PWD/party-hub/tests":/t:ro -v /tmp/shots:/shots treffen-ui-test python -u /t/schach_via_hub.py http://127.0.0.1:8000 /shots
       - name: skribbl über den Hub (Handy, Avatare, Spielstart)
         run: |
           TREFFEN_TICKET_SECRET=ci-test-secret docker compose -f docker-compose.yml up -d --force-recreate skribbl
@@ -149,6 +171,6 @@ jobs:
           if-no-files-found: ignore
       - name: Logs bei Fehler
         if: failure()
-        run: docker compose -f docker-compose.yml logs --tail=80 party-server partyhub monopoly mensch gtp-server gtp-client skribbl
+        run: docker compose -f docker-compose.yml logs --tail=80 party-server partyhub monopoly mensch schach gtp-server gtp-client skribbl
       - name: Shell-Skripte (Syntax)
         run: for f in start.sh stop.sh fly_entrypoint.sh party-hub/40-enable-ssl.sh party-hub/15-treffen-resolver.sh; do bash -n "$f"; done

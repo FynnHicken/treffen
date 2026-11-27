@@ -66,9 +66,13 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optio
         targets = [(mid, ws) for mid, ws in sockets.get(room_id, {}).items() if mid != exclude]
         if not targets:
             return
-        payloads = [json.dumps(m) for m in msgs]
+        room = rooms.get(room_id)
+        personal = room is not None and any("views" in (m.get("event") or {}) for m in msgs)
+        shared = None if personal else [json.dumps(m) for m in msgs]
 
-        async def deliver(ws):
+        async def deliver(mid, ws):
+            # Spiele mit Geheimwissen: jedes Mitglied bekommt nur seine eigene Ansicht
+            payloads = shared or [json.dumps(room.personalize(m, mid)) for m in msgs]
             try:
                 for p in payloads:
                     await asyncio.wait_for(ws.send_text(p), SEND_TIMEOUT_SEC)
@@ -77,17 +81,18 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optio
                     await ws.close(code=1011)   # zu langsam/kaputt → Client verbindet neu und holt SNAPSHOT
                 except Exception:
                     pass
-        await asyncio.gather(*(deliver(ws) for _, ws in targets))
+        await asyncio.gather(*(deliver(mid, ws) for mid, ws in targets))
 
     def auto_member(room: Room):
         """Mitglied am Zug, falls der Computer für es spielt (Bot oder lange getrennt), sonst None."""
         if not room.rules or room.status != "playing" or not room.game:
             return None
-        m = room.member_at(room.game.get("turn"))
-        if m is None:
-            return None
-        if m.is_bot or (not m.connected and m.disconnected_at and time.time() - m.disconnected_at >= AWAY_GRACE_SEC):
-            return m
+        for seat in room.rules.to_move(room):
+            m = room.member_at(seat)
+            if m is None:
+                continue
+            if m.is_bot or (not m.connected and m.disconnected_at and time.time() - m.disconnected_at >= AWAY_GRACE_SEC):
+                return m
         return None
 
     def kick_driver(room_id: str):
@@ -111,13 +116,20 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optio
                     m = auto_member(room)
                     if not m:
                         return
-                    if room.rules.wants_roll(room, m.seat):
-                        events = room.roll(m.id, 0.45 + random.random() * 0.4, auto=True)
+                    seat, seq = m.seat, room.seq
+                # Überlegen außerhalb des Locks (Schach-Computer rechnet etwas), danach prüfen, ob sich nichts geändert hat
+                action = await asyncio.to_thread(room.bot_plan, seat)
+                async with lock(room_id):
+                    if room.seq != seq or not auto_member(room):
+                        delay = 0.2
+                        continue
+                    if action and action.get("type") == "roll":
+                        events = room.bot_apply(seat, action, 0.45 + random.random() * 0.4)
                         delay = BOT_THINK_DELAY       # auch vor dem nächsten Versuch: erst muss der Würfel liegen
                         if not events:
                             delay = 0.5                     # Sperre nach letztem Wurf → kurz warten
                     else:
-                        events = room.bot_move(m.seat)
+                        events = room.bot_apply(seat, action)
                         path = next((e["event"].get("path") or [] for e in events
                                      if e["event"]["type"] == "PIECE_MOVED"), [])
                         delay = BOT_ROLL_DELAY + BOT_STEP_DELAY * len(path)
@@ -169,7 +181,7 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optio
 
     @app.get("/api/health")
     async def health():
-        return {"ok": True, "game": game.id, "rooms": len(rooms)}
+        return {"ok": True, "game": game.id, "rooms": len(rooms), **{k: v for k, v in game.info().items() if k != "id"}}
 
     @app.get("/api/rooms")
     async def list_rooms():

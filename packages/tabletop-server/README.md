@@ -1,9 +1,16 @@
 # tabletop-server – gemeinsamer Server für die Tisch-Spiele (Python/FastAPI)
 
-`create_app(GameDef(...), client_dist=...)` liefert eine fertige App: WebSocket `/ws/<raum>/<id>`,
+**Version:** `tabletop_server/version.py` (`ENGINE_VERSION`, gleich wie der Client) – Schema und Änderungen in
+[`../CHANGELOG.md`](../CHANGELOG.md). Regeln für neue Spiele: **API 2** (`GameRules`, Aktionen) – Doku im Kopf von
+`tabletop_server/rules.py` und in `docs/tabletop/KONZEPT.md` §12. API 1 (`Rules`, Mensch) läuft über `LegacyRules` weiter.
+
+`create_app(GameDef(..., version="1.0.0"), client_dist=...)` liefert eine fertige App: WebSocket `/ws/<raum>/<id>`,
 `AUTH` + Hub-Tickets (`auth.py`), Räume/Sitzplätze/Host (`rooms.py`), nummerierte Ereignisse, Präsenz-Relay
 (gedrosselt, geprüft), paralleles Senden mit Timeout, Aufräumen, Auslieferung des gebauten Clients.
 Beispiel: `games/mensch/server/main.py`. Protokoll: Kopf von `rooms.py` und `docs/tabletop/KONZEPT.md` §5.
+
+Pflicht-Prüfung aller Tisch-Spiele (Computer-Partien, Speichern/Laden, Ansichten, Versions-Check):
+`python -I packages/tabletop-server/tests/test_conformance.py` – findet jedes Spiel unter `games/*/server/main.py`.
 
 Tests: `python -I packages/tabletop-server/tests/test_tabletop_ws.py` (startet selbst einen Server; ohne
 Python auf dem Host: `podman run --rm -v "$PWD":/repo:ro,z localhost/mono-test-deps sh -c 'cd /tmp && python -I /repo/packages/tabletop-server/tests/test_tabletop_ws.py'`).
@@ -20,13 +27,14 @@ Spielstände (M5): `create_app(..., db_path=…)` bzw. `TABLETOP_DB` → SQLite 
 Laufende/beendete Partien werden alle 2 s und beim Herunterfahren gespeichert und beim Start geladen; Menschen gelten
 dann als getrennt (Computer vertritt sie nach 20 s), ihr Browser-Geheimnis bleibt gebunden.
 
-## Neues Tisch-Spiel anlegen (Kurzfassung)
+## Neues Tisch-Spiel anlegen (Kurzfassung, ausführlich: `docs/tabletop/KONZEPT.md` §12.5)
 
-1. `games/<spiel>/server/`: `layout.py` (Felder, Figuren, Würfel), `rules.py` (Unterklasse von `Rules`),
-   `main.py` wie bei Mensch (`GameDef` + `create_app`).
-2. `games/<spiel>/client/`: Vite-Projekt wie `games/mensch/client` (Brett zeichnen, `PieceLayer`, `DiceLayer`,
-   `SeatLabels`, `SettingsPanel`, eigener HUD-Text).
+1. `games/<spiel>/server/`: `layout.py` (Felder, Figuren, Würfel), `rules.py` (Unterklasse von `GameRules`, API 2),
+   `main.py` wie bei Schach (`GameDef(..., version=…)` + `create_app`). Vorlage ohne Würfel: `games/schach/server`.
+2. `games/<spiel>/client/`: Vite-Projekt wie `games/schach/client` (Brett zeichnen, `PieceLayer`, ggf. `DiceLayer`,
+   `SeatLabels`, `SettingsPanel`, eine kurze Statuszeile – keine Dialoge, siehe Leitlinie §12.3).
 3. Einbinden: `Dockerfile` (Kontext = Repo), Dienst in `docker-compose.yml`, Location in
    `party-hub/nginx-locations.conf` + `fly_nginx.conf`, Fly-Build/-Start, im Hub `partyState.games`, `getGameUrl`
    (Ticket als `#ticket=`), Karte in `index.html`, `KNOWN_GAME_IDS` in `party-server/server.js`.
-4. Tests: Regeln direkt auf `Room`, Server per WebSocket, Browser-Test; in `.github/workflows/tests.yml` eintragen.
+4. Tests: Regeln direkt auf `Room` (am Ende `check_game(GAME)`), Browser-Test, Start über den Hub; in
+   `.github/workflows/tests.yml` eintragen. Die Pflicht-Prüfung (`test_conformance.py`) nimmt das Spiel automatisch mit.

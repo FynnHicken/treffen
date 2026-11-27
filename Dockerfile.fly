@@ -28,6 +28,15 @@ RUN cd games/mensch/client && npm ci --no-audit --no-fund
 COPY games/mensch/client games/mensch/client
 RUN cd games/mensch/client && npm run build
 
+FROM node:22-alpine AS schach-client-builder
+WORKDIR /repo
+COPY packages/boardgame-kit packages/boardgame-kit
+COPY packages/tabletop packages/tabletop
+COPY games/schach/client/package.json games/schach/client/package-lock.json games/schach/client/
+RUN cd games/schach/client && npm ci --no-audit --no-fund
+COPY games/schach/client games/schach/client
+RUN cd games/schach/client && npm run build
+
 FROM node:22-bookworm-slim AS gtp-client-builder
 WORKDIR /app
 COPY games/guess-the-price/apps/client/package*.json ./
@@ -85,6 +94,12 @@ RUN pip install --no-cache-dir --break-system-packages -r packages/tabletop-serv
 COPY packages/tabletop-server ./packages/tabletop-server
 COPY games/mensch/server ./games/mensch/server
 COPY --from=mensch-client-builder /repo/games/mensch/static ./games/mensch/static
+
+# 4c. Schach (gleicher Spieltisch-Server, eigene Regeln)
+WORKDIR /app/schach
+COPY packages/tabletop-server ./packages/tabletop-server
+COPY games/schach/server ./games/schach/server
+COPY --from=schach-client-builder /repo/games/schach/static ./games/schach/static
 
 # 5. Codenames
 WORKDIR /app/codenames

@@ -274,6 +274,18 @@ const partyState = {
             minutes: 30,
             spectators: true, // mehr Gäste als Plätze → schauen zu
             embedUrl: "/mensch/"
+        },
+        schach: {
+            id: "schach",
+            title: "Schach",
+            icon: "♟️",
+            minPlayers: 1,
+            maxPlayers: 2,
+            desc: "Am 3D-Spieltisch aus Holz: Figuren greifen und setzen, Geschlagene landen neben dem Brett. Allein gegen den Computer (3 Stufen) oder zu zweit – alle anderen schauen zu.",
+            cover: "assets/cover_schach.jpg",
+            minutes: 20,
+            spectators: true,
+            embedUrl: "/schach/"
         }
     },
     isVotingActive: false,
@@ -283,7 +295,8 @@ const partyState = {
         codenames: 0,
         price_guess: 0,
         monopoly: 0,
-        mensch: 0
+        mensch: 0,
+        schach: 0
     },
     userVotedGame: null,
     selectedGameId: null, // was die Bühne zeigt (nur lokal)
@@ -1862,6 +1875,9 @@ function getGameUrl(game, lobbyId) {
         // Host-Recht kommt nur über das signierte Ticket (im Fragment, nicht in Server-Logs)
         const ticket = partyState.gameTicket ? `#ticket=${encodeURIComponent(partyState.gameTicket)}` : "";
         return `/mensch/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}${ticket}`;
+    } else if (game.id === "schach") {
+        // Tisch-Spiel wie Mensch: Host-Recht und Avatar über das Ticket im Fragment
+        return `/schach/?room=${encodeURIComponent(ROOM_CODE)}&name=${encodeURIComponent(userName)}${gameTicketFragment()}`;
     } else if (game.id === "price_guess") {
         // Alle landen in derselben Runde des Raums; Name und Host-Recht kommen über das Ticket
         const ticket = partyState.gameTicket ? `#ticket=${encodeURIComponent(partyState.gameTicket)}` : "";
@@ -1881,7 +1897,7 @@ function startGameView(game, lobbyId) {
     const hudStatus = document.getElementById("hudStatus");
     if (hudStatus) hudStatus.innerText = `${partyState.players.length} im Raum`;
 
-    if (game.id === "skribbol" || game.id === "uno" || game.id === "codenames" || game.id === "monopoly" || game.id === "mensch" || game.id === "price_guess") {
+    if (game.id === "skribbol" || game.id === "uno" || game.id === "codenames" || game.id === "monopoly" || game.id === "mensch" || game.id === "schach" || game.id === "price_guess") {
         iframe.src = getGameUrl(game, lobbyId);
     } else {
         iframe.srcdoc = `
@@ -2017,7 +2033,8 @@ const SLOT_GAMES = [
     { id: "codenames",   title: "Codenames",       icon: "🕵️‍♂️" },
     { id: "price_guess", title: "Guess The Price", icon: "🏷️" },
     { id: "monopoly",    title: "Monopoly 3D",     icon: "🎩" },
-    { id: "mensch",      title: "Mensch ärgere dich nicht", icon: "🎲" }
+    { id: "mensch",      title: "Mensch ärgere dich nicht", icon: "🎲" },
+    { id: "schach",      title: "Schach",          icon: "♟️" }
 ];
 
 let isSlotSpinning = false;
