@@ -449,6 +449,23 @@ window.extendRoomTtl = function() {
     showToast("🔄 Raum-Timer auf 60 Sekunden zurückgesetzt!");
 };
 
+let _lastActivitySentAt = 0;
+function reportSoloUserActivity() {
+    if (document.visibilityState !== "visible") return;
+    if (!ROOM_CODE || !partyState.players || partyState.players.length > 1 || partyState.activeGame) return;
+    const now = Date.now();
+    if (now - _lastActivitySentAt < 5000) return;
+    _lastActivitySentAt = now;
+    if (currentRoomExpiresAt) {
+        currentRoomExpiresAt = now + currentRoomTtlMs;
+        updateExpiryAnimations();
+    }
+    sendSocketMessage({ type: "USER_ACTIVITY", room: ROOM_CODE });
+}
+["pointerdown", "keydown", "mousemove", "touchstart"].forEach(evt => {
+    window.addEventListener(evt, reportSoloUserActivity, { passive: true });
+});
+
 window.refreshOpenRooms = async function() {
     const containers = [
         document.getElementById("welcomeOpenRoomsList"),
@@ -1293,6 +1310,17 @@ function handleServerMessage(data) {
     if (!data || !data.type) return;
 
     switch (data.type) {
+        case "ROOM_TTL_SYNC":
+            if (typeof data.remainingMs === "number" && data.remainingMs > 0) {
+                currentRoomExpiresAt = Date.now() + data.remainingMs;
+                currentRoomTtlMs = data.ttlTotalMs || data.ttlMs || 60000;
+                ensureExpiryAnimTimer();
+            } else {
+                currentRoomExpiresAt = null;
+            }
+            updateExpiryAnimations();
+            break;
+
         case "ROSTER_SYNC":
             if (typeof data.remainingMs === "number" && data.remainingMs > 0) {
                 currentRoomExpiresAt = Date.now() + data.remainingMs;

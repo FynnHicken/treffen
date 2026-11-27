@@ -55,7 +55,7 @@
         <!-- Einzelraum wird nach 60 s gelöscht, solange niemand dazukommt -->
         <div class="expiry-banner" id="soloRoomExpiryBanner" style="display: none;">
             <div class="expiry-row">
-                <span>⏳ Allein im Raum: Er wird in <strong id="soloRoomExpirySec">60s</strong> gelöscht. Sobald jemand beitritt, bleibt er offen.</span>
+                <span>⏳ Allein & inaktiv (AFK): Raum wird in <strong id="soloRoomExpirySec">60s</strong> geschlossen, falls nichts passiert.</span>
                 <button type="button" class="btn-outline small" onclick="extendRoomTtl()">+60 s</button>
             </div>
             <div class="expiry-track"><div id="soloRoomExpiryBar"></div></div>
@@ -459,7 +459,7 @@
     <div class="toast" id="toast">Link kopiert!</div>
 
     <script src="avatar.js?v=1"></script>
-    <script src="app.js?v=schach3"></script>
+    <script src="app.js?v=schach4"></script>
     <script src="tiles.js?v=2"></script>
 </body>
 </html>

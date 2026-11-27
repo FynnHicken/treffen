@@ -620,6 +620,11 @@ wss.on('connection', (ws, req) => {
             if (!data || !data.type) return;
             const senderId = room.socketToPlayerId.get(ws);
 
+            // Jede echte Benutzer-Interaktion (außer automatischem HEARTBEAT) setzt den AFK-Timer zurück
+            if (data.type !== 'HEARTBEAT' && data.type !== 'USER_ACTIVITY' && senderId && room.players.size <= 1 && !room.activeGame) {
+                room.updateExpiryTimer(true);
+            }
+
             switch (data.type) {
                 case 'JOIN':
                     if (!room.addPlayer(data.user, ws, data.secret) && ws.readyState === WebSocket.OPEN) {
@@ -749,6 +754,21 @@ wss.on('connection', (ws, req) => {
                 case 'EXTEND_ROOM_TTL': {
                     room.updateExpiryTimer(true);
                     room.broadcastRoster();
+                    break;
+                }
+
+                case 'USER_ACTIVITY': {
+                    if (senderId && room.players.size <= 1 && !room.activeGame) {
+                        room.updateExpiryTimer(true);
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'ROOM_TTL_SYNC',
+                                expiresAt: room.expiresAt,
+                                remainingMs: room.expiresAt ? Math.max(0, room.expiresAt - Date.now()) : null,
+                                ttlTotalMs: SOLO_ROOM_TTL_MS
+                            }));
+                        }
+                    }
                     break;
                 }
 
