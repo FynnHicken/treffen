@@ -22,6 +22,7 @@ DRAW_AFTER = 40
 class DameRules(GameRules):
     shared_view = True
     min_players = 2
+    uses_clock = True                    # Hausregel „Bedenkzeit“ (Schachuhr der Engine)
     settings_schema = {
         "forced": {"default": True, "label": "Schlagzwang", "hint": "Wer schlagen kann, muss schlagen"},
         "back": {"default": False, "label": "Steine schlagen auch rückwärts"},

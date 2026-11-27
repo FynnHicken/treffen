@@ -26,7 +26,7 @@ Räumen, Host, Abstimmung, synchronem Start) bettet mehrere Multiplayer-Spiele p
 Brettspiele möglichst viel Code (Rendering, Verbindung, UI) übernehmen: [`packages/boardgame-kit/README.md`](packages/boardgame-kit/README.md).
 **Neu (2026-11-26): Treffen-Spieltisch** – spielneutrales 3D-Brettspiel-Framework, erstes Spiel Mensch ärgere dich nicht.
 Konzept & Fahrplan: [`docs/tabletop/KONZEPT.md`](docs/tabletop/KONZEPT.md). Code: `packages/tabletop` (Client-Engine),
-`packages/tabletop-server` (Python), Spiele `games/mensch/` und `games/schach/`. **M1–M5 ✅, Engine 2.4.0** – im Hub unter `/mensch/` (2–8 Spieler) und `/schach/` (klassisch, Team, Tandem, Vierschach), mit Regeln, Computergegnern, Hausregeln und gespeicherten Spielständen. Neues Tisch-Spiel anlegen: [`docs/tabletop/KONZEPT.md` §12.5](docs/tabletop/KONZEPT.md), Engine-Änderungen: [`packages/CHANGELOG.md`](packages/CHANGELOG.md). Entscheidungen des Nutzers: Spielgefühl hat
+`packages/tabletop-server` (Python), Spiele `games/mensch/` und `games/schach/`. **M1–M5 ✅, Engine 2.7.0** – im Hub unter `/mensch/` (2–8 Spieler) und `/schach/` (klassisch, Team, Tandem, Vierschach), mit Regeln, Computergegnern, Hausregeln und gespeicherten Spielständen. Neues Tisch-Spiel anlegen: [`docs/tabletop/KONZEPT.md` §12.5](docs/tabletop/KONZEPT.md), Engine-Änderungen: [`packages/CHANGELOG.md`](packages/CHANGELOG.md). Entscheidungen des Nutzers: Spielgefühl hat
 Vorrang, Regeln werden automatisch vom Server mitgeprüft; freier Modus (wie Tabletop Simulator) evtl. später als Einstellung.
 Der Monopoly-Client ist ein Vite-Projekt (`games/monopoly/client/`), das vor dem Deployen gebaut wird (passiert im Docker-Image). → [`games/monopoly/DEVELOPMENT.md`](games/monopoly/DEVELOPMENT.md)
 
@@ -170,6 +170,12 @@ Erledigt und auf `main`:
 20. Karten, Engine 2.4 (2026-11-27): Zonen (Stapel, Hand, Auslage), Karten mit geheimer Vorderseite (nur der Server kennt
     `face`; `show` nur an Berechtigte, Pflicht-Prüfung wacht), Knöpfe für Aktionen ohne Figur (`ACT`). **Mau-Mau 1.0.0**
     (`games/maumau/`) als Vorlage ohne Client-Code, **nicht im Hub**. Konzept §12.8.
+21. Freies Spiel, Engine 2.5 (2026-11-27): Hausregel der Engine für alle Tisch-Spiele (Standard aus): ohne
+    Regelprüfung, alle am Tisch dürfen alles (umdrehen, mischen, würfeln), Computer pausieren. Konzept §12.9.
+22. Schachuhr + Zurücknehmen, Engine 2.6 (2026-11-27): Hausregeln „Bedenkzeit“ (3D-Uhr am Brett, Schach klassisch +
+    Dame) und „Züge zurücknehmen (mit Zustimmung)“ (Spiele ohne Geheimwissen). Konzept §12.10.
+23. Tischgespräch, Engine 2.7 (2026-11-27): Reaktionen (Emoji am Platz, flüchtig) und Verlauf (📜) in jeder
+    Spieltisch-App. Offen (Rückfrage beim Nutzer): Dame/Mau-Mau in den Hub, ein Container für alle Tisch-Spiele (E2.8).
 
 16. Hub-Avatare in den Spielen (2026-11-26): Der party-server liefert jeden Avatar als Bild,
     `/party-ws/avatar/<RAUM>/<Hub-Spieler-ID>.svg` (strenge CSP, ETag), und als `.json` ({color, face}) für

@@ -31,6 +31,8 @@ SEND_TIMEOUT_SEC = 3.0
 STALE_MEMBER_SEC = 90.0          # so lange bleibt ein getrennter Platz reserviert
 EMPTY_ROOM_TTL_SEC = 30 * 60
 PRESENCE_MAX_PER_SEC = 30
+REACTIONS = ("👍", "👏", "😂", "😮", "😅", "🤔", "🔥", "❤️", "😬", "🎉")    # Engine 2.7: Reaktionen am Platz
+REACT_MIN_GAP_SEC = 1.2
 AWAY_GRACE_SEC = float(os.environ.get("TABLETOP_AWAY_GRACE_SEC", "20"))  # danach spielt der Computer
 # Tempo der Computer; TABLETOP_BOT_SPEED=4 → viermal so schnell (Browser-Tests mit ganzen Computer-Partien)
 BOT_SPEED = max(0.1, float(os.environ.get("TABLETOP_BOT_SPEED", "1")))
@@ -158,6 +160,18 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optio
                     locks.pop(room_id, None)
                     store.forget(room_id)
 
+    async def clock_loop():
+        """Schachuhr: abgelaufene Zeit beenden die Partie (Engine 2.6)."""
+        while True:
+            await asyncio.sleep(0.25)
+            for room_id, room in list(rooms.items()):
+                if not room.clock or room.status != "playing":
+                    continue
+                async with lock(room_id):
+                    events = room.check_clock()
+                if events:
+                    await broadcast(room_id, events)
+
     async def persist_loop():
         while True:
             await asyncio.sleep(FLUSH_INTERVAL_SEC)
@@ -168,6 +182,7 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optio
         rooms.update(store.load_all(lambda data: Room.from_saved(data, game)))
         asyncio.create_task(housekeeping())
         asyncio.create_task(persist_loop())
+        asyncio.create_task(clock_loop())
 
     @app.on_event("shutdown")
     async def _stop():
@@ -224,6 +239,7 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optio
                 pass
 
         presence_budget, presence_t = PRESENCE_MAX_PER_SEC, time.monotonic()
+        react_t = 0.0
         joined = False
         try:
             while True:
@@ -234,6 +250,15 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optio
                 if not isinstance(data, dict):
                     continue
                 action = data.get("action")
+
+                if action == "REACT":
+                    # Reaktion (Emoji am Platz, Engine 2.7): flüchtig wie Zeiger, nicht gespeichert, gedrosselt
+                    now = time.monotonic()
+                    emoji = data.get("emoji")
+                    if joined and emoji in REACTIONS and now - react_t >= REACT_MIN_GAP_SEC:
+                        react_t = now
+                        await broadcast(room_id, [{"type": "REACTION", "from": member_id, "emoji": emoji}])
+                    continue
 
                 if action == "PRESENCE":
                     if not joined:
@@ -283,6 +308,10 @@ def create_app(game: GameDef, client_dist: Optional[Path] = None, db_path: Optio
                         await broadcast(room_id, room.add_bot(member_id, data.get("seat")))
                     elif action == "REMOVE_BOT":
                         await broadcast(room_id, room.remove_bot(member_id, data.get("seat")))
+                    elif action == "UNDO":
+                        await broadcast(room_id, room.undo_request(member_id))
+                    elif action == "UNDO_ANSWER":
+                        await broadcast(room_id, room.undo_answer(member_id, data.get("yes")))
                     elif action == "ACT":
                         await broadcast(room_id, room.act(member_id, data.get("act")))
                     elif action == "GRAB":

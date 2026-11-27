@@ -9,7 +9,8 @@ HAND_DIST = 4.55
 
 
 def build_layout(seats: int) -> dict:
-    fields = {"deck": zone(-0.55, 0, "stack", up=False), "pile": zone(0.55, 0, "stack", up=True)}
+    fields = {"deck": zone(-0.55, 0, "stack", up=False, label="Stapel mischen"),
+              "pile": zone(0.55, 0, "stack", up=True, label="Ablage mischen")}
     for s in range(seats):
         x, z = seat_point(s, seats, HAND_DIST)
         fields[f"hand-{s}"] = zone(x, z, "hand", owner=s, angle=s * 360 / seats)

@@ -1,6 +1,6 @@
 # Treffen-Spieltisch – Konzept
 
-> Stand: 2026-11-27 · Status: **M1–M5 ✅ · Engine 2.4.0 (§12) · Mensch (`/mensch/`) und Schach (`/schach/`) im Hub, Dame und Mau-Mau als Vorlagen** · Änderungen: [`packages/CHANGELOG.md`](../../packages/CHANGELOG.md)
+> Stand: 2026-11-27 · Status: **M1–M5 ✅ · Engine 2.7.0 (§12) · Mensch (`/mensch/`) und Schach (`/schach/`) im Hub, Dame und Mau-Mau als Vorlagen** · Änderungen: [`packages/CHANGELOG.md`](../../packages/CHANGELOG.md)
 
 ## 1. Ziel
 
@@ -138,9 +138,11 @@ Typen, Figuren (Modell, Farben), Würfel-Anzahl, Sitzplätze. Der Tisch baut dar
 | **E2.2 Gleichzeitig** ✅ | Mehrere Computer gleichzeitig am Zug kommen reihum dran (Tandem), Variante + Hausregeln in einer Nachricht |
 | **E2.3 Spieltisch-App** ✅ | `startTable()`: Oberfläche, Statuszeile, Siegerehrung, Markierungen aus Daten der Regeln; Standard-Brett und -Figuren; Brett-Hilfen (Raster, Hex, Laufbahn, Ablagen); **Dame** als Vorlage ohne Client-Code (§12.5) |
 | **E2.4 Karten & Zonen** ✅ | Karte, Stapel (mischen, ziehen), Hand (aufgefächert am eigenen Platz, nur für den Besitzer sichtbar), Auslage; geheime Vorderseiten; Knöpfe für Aktionen ohne Figur; **Mau-Mau** als Vorlage (§12.8) |
-| E2.5 Freier Tisch | Hausregel „Regeln prüfen: aus“ – alle dürfen alles bewegen wie am echten Tisch; Spiele nur aus Material |
-| E2.6 Am Tisch | Schachuhr/Zugzeit, Zug zurücknehmen (mit Zustimmung), Verlauf, Zähler/Marker/Geld |
-| E2.7 Ein Server für alle | Alle Tisch-Spiele in einem Container, `game.json` je Spiel, Hub liest die Spieleliste vom Server (§12.5) |
+| **E2.5 Freies Spiel** ✅ | Hausregel „Freies Spiel (ohne Regeln)“ für jedes Spiel – alle dürfen alles bewegen, würfeln, Karten umdrehen, mischen (§12.9) |
+| **E2.6 Am Tisch** ✅ | Schachuhr als Gegenstand am Brett (Hausregel „Bedenkzeit“), Zug zurücknehmen mit Zustimmung (§12.10) |
+| **E2.7 Tischgespräch** ✅ | Reaktionen (Emojis steigen über dem Platz auf), Verlauf der letzten Züge und Hinweise |
+| E2.9 Material | Zähler/Marker/Geld (Chips stapeln, übergeben), Plättchen mit Drehung |
+| E2.8 Ein Server für alle | Alle Tisch-Spiele in einem Container, `game.json` je Spiel, Hub liest die Spieleliste vom Server (§12.5) |
 | später | Eingreifen außerhalb des eigenen Zugs, Spiel im Stil von Munchkin mit eigenen Karten, Monopoly v2 |
 
 ## 10. Lokal ausprobieren (ohne Python/Node auf dem Host)
@@ -264,7 +266,7 @@ Der Status oben ist eine Zeile („Du bist am Zug“), kein Erklärtext. Einstel
    `Dockerfile.fly` + `fly_entrypoint.sh`, Hub (`partyState.games`, `votes`, `getGameUrl`, `SLOT_GAMES`, Titelbild
    `party-hub/assets/cover_<spiel>.jpg`), `KNOWN_GAME_IDS` in `party-server/server.js`, CI-Schritte.
 
-Schritt 6 schrumpft mit **E2.7** (ein Container für alle Tisch-Spiele, `game.json`, Hub liest die Liste vom Server)
+Schritt 6 schrumpft mit **E2.8** (ein Container für alle Tisch-Spiele, `game.json`, Hub liest die Liste vom Server)
 auf „Ordner anlegen“. Dame und Mau-Mau sind bisher nur Vorlagen (laufen lokal und in der CI, noch nicht im Hub).
 
 ### 12.6 Was die Engine für welche Spiele noch braucht
@@ -279,7 +281,7 @@ auf „Ordner anlegen“. Dame und Mau-Mau sind bisher nur Vorlagen (laufen loka
 | Eingreifen außerhalb des Zugs, Marker/Zähler/Geld | E2.4 | Spiele im Stil von Munchkin, Catan, Monopoly v2 |
 | Oberfläche/Statuszeile/Siegerehrung aus Daten, Standard-Brett und -Figuren, Raster/Hex/Laufbahn aus Daten | ✅ 2.3 | Dame, Mühle, Go, Reversi, Halma |
 | Plättchen mit Drehung | später | Carcassonne-artige Legespiele |
-| Freier Modus ohne Regeln | später | beliebige Spiele „wie am echten Tisch“ |
+| Freies Spiel ohne Regeln (Hausregel) | ✅ 2.5 | jedes Spiel „wie am echten Tisch“, eigene Varianten |
 
 ### 12.7 Spielvarianten (Engine 2.1)
 
@@ -325,6 +327,20 @@ LAYOUT = layout(fields, card_pieces(32, "deck"), shape="round", size=3.4, surfac
   (oberste Karte hat das Ziel „eigene Hand“). Die eigene Hand ist sortiert, gekippt und größer; spielbare Karten rücken vor.
 - **Knöpfe** nur für echte Entscheidungen ohne Handgriff (Farbe wünschen, „Weiter“): Aktion mit `label`, Regeln mit
   `action_buttons = True`.
+
+### 12.9 Freies Spiel (Engine 2.5)
+
+Hausregel der Engine (Standard aus, `GameDef(free_play=False)` schaltet sie ab): Der Tisch baut auf wie immer, prüft
+danach aber keine Regeln mehr. Wer sitzt, darf jede Figur/Karte nehmen und ablegen (freie Felder, beliebige Zonen),
+jederzeit würfeln; Karte doppelt antippen = umdrehen; Stapel mischen per Knopf; der Host beendet die Runde. Computer
+spielen nicht mit. Gedacht für eigene Hausvarianten und Spiele, deren Regeln (noch) nicht programmiert sind.
+
+### 12.10 Schachuhr und Zurücknehmen (Engine 2.6)
+
+- **Bedenkzeit**: Regeln mit `uses_clock = True` (Schach klassisch, Dame) bekommen die Hausregel; die Uhr steht als
+  Gegenstand neben dem Brett und wird „gedrückt“, sobald ein Zug fertig ist – kein Knopf, kein Dialog.
+- **Zurücknehmen**: nur bei Spielen ohne Geheimwissen (`shared_view`). Fragen ist ein Knopf; die anderen antworten mit
+  Ja/Nein unter der Statuszeile (§12.3 Punkt 4). Gegen Computer sofort. Würfel bleiben, wie sie gefallen sind.
 
 Hinweis: Kommerzielle Spiele (Munchkin, Catan …) nur als **eigene Umsetzung der Mechanik** mit eigenen Karten,
 Texten und Grafiken – keine Kopie von Kartentexten, Namen oder Bildern.

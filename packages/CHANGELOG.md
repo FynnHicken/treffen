@@ -25,6 +25,49 @@ Engine – es gibt keine „alten Stände“ einzelner Spiele, solange die CI gr
 
 ---
 
+## 2.7.0 – 2026-11-27
+
+Tischgespräch – was am echten Tisch nebenbei passiert. In jedem Spiel mit `startTable`, ohne Spielcode.
+
+- **Reaktionen**: 😊 unten links → Emoji-Leiste (👍 👏 😂 😮 😅 🤔 🔥 ❤️ 😬 🎉); das Emoji steigt bei allen über dem
+  eigenen Platz auf. Nachricht `REACT` → `REACTION` (flüchtig wie Zeiger, nicht gespeichert, feste Auswahl, höchstens
+  alle 1,2 s). Client: `client.react()`, `client.onReaction()`.
+- **Verlauf**: 📜 zeigt die letzten 60 Einträge – Hinweise (NOTE, mit eigenem Text für den Betroffenen), Würfe, Züge
+  auf Brettfeldern („e2 → e4“), Start/Ende. Regeln können jedem Ereignis einen Verlaufstext geben (`"log": "…"`).
+- Zurücknehmen und Mau-Mau-Farbwunsch melden sich mit „Du …“ beim Betroffenen.
+
+## 2.6.0 – 2026-11-27
+
+Am Tisch: **Schachuhr** und **Zug zurücknehmen** – beides Hausregeln, Standard aus. Schach 1.4.0 (klassisch) und
+Dame 1.1.0 bieten die Uhr an.
+
+- **Bedenkzeit** (`clock`: ohne, 1, 3, 5, 10, 15, 30 Minuten je Spieler) für Regeln mit `uses_clock = True`. Die Zeit läuft
+  für alle in `to_move` (auch mehrere), ein Zug „drückt die Uhr“. Abgelaufen → verloren (oder `on_timeout(room, seat)`
+  der Regeln entscheidet); Server prüft viermal je Sekunde. `play.clock = {left, running}`; übersteht Speichern/Laden
+  (Zeit, in der der Server weg war, zählt nicht).
+- Client: **3D-Schachuhr** neben dem Brett (zwei Plätze; Ziffernblatt je Spieler zu ihm gedreht, Drücker), eigene Zeit in
+  der Statuszeile (unter 20 s rot). Zeichnet nur, wenn sich eine Ziffer ändert. Lage: `layout.board.clock = {x, z}`.
+- **Zurücknehmen** (`undo`, nur Spiele ohne Geheimwissen, `GameDef(undo=False)` schaltet ab): Knopf „↩️ Zurücknehmen“;
+  alle anderen Menschen am Tisch werden gefragt (Ja/Nein), Computer stimmen immer zu. Zurück geht es bis vor den letzten
+  eigenen Zug (spätere Züge anderer gehen mit). Würfe werden nie zurückgenommen. Ereignisse `UNDO_ASKED`,
+  `UNDO_CLEARED`, `STATE_RESTORED`; Nachrichten `UNDO`, `UNDO_ANSWER`.
+- Auswahl-Hausregeln mit Zahlen prüfen jetzt `choices`.
+- Computer-Tempo für Tests: `TABLETOP_BOT_SPEED`. Neuer Test `tests/test_table.py`.
+
+## 2.5.0 – 2026-11-27
+
+**Freies Spiel** – wie am echten Tisch, ohne Regelprüfung. Für jedes Tisch-Spiel automatisch dabei.
+
+- Hausregel „Freies Spiel (ohne Regeln)“ (Schlüssel `free`, Standard **aus**), kommt von der Engine. Abschaltbar je Spiel:
+  `GameDef(free_play=False)`. Aufgebaut wird wie gewohnt (`setup` der Regeln), danach gilt:
+  alle am Tisch dürfen jede Figur/Karte greifen und auf jedes freie Feld bzw. jede Zone legen, jederzeit würfeln,
+  Karten doppelt antippen = umdrehen, Knopf „🔀 … mischen“ je Stapel; Computer spielen nicht mit; der Host beendet die
+  Runde mit „🏁 Zurück in die Lobby“. Geheimes bleibt geheim (fremde Hand verdeckt, bis man sich eine Karte nimmt).
+- Spielstand im freien Spiel: `{"free": true, "say": …, "acts": …}` statt der Ansicht der Regeln.
+- Zonen-Feldern kann man `label` geben (Text des Misch-Knopfs).
+- Antippen-Ziel: Liegt auf einer Ziel-Zone schon eine Karte, legt Antippen darauf ab, statt sie zu greifen.
+- Neuer Test `tests/test_free.py`.
+
 ## 2.4.0 – 2026-11-27
 
 Karten, Stapel, Hände – und Knöpfe für Aktionen ohne Figur. Erstes Kartenspiel: **Mau-Mau** (1.0.0, Vorlage, nicht im Hub),

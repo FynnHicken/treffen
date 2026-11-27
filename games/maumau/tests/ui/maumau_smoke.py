@@ -84,18 +84,57 @@ async def main():
             draw = next(m for m in moves if m["to"] == "hand-0")
             await tap_piece(anna, draw["piece"])
             ok(await until(anna, f"{HAND(0)}.length === {n_before + 1}"), "Stapel antippen = ziehen")
-            ok(await until(anna, f"document.querySelector('#acts button') !== null"), "Knopf „Weiter“ erscheint")
-            if await anna.evaluate(f"{T}.client.myActs.length > 0 && {T}.client.state.play.moves.length === 0"):
+            ok(await until(anna, "document.querySelector('#acts button') !== null"), "Knopf „Weiter“ erscheint")
+            again = await anna.evaluate(f"({T}.client.state.play.moves || []).find(m => m.to === 'pile') || null")
+            if again:                                   # gezogene Karte passt → legen
+                await tap_piece(anna, again["piece"])
+                await until(anna, f"{T}.client.state.pieces['{again['piece']}'].field === 'pile'")
+            else:
                 await anna.click("#acts button")
-        ok(await until(anna, f"{T}.client.state.play.turn === 1", 10) or
-           await anna.evaluate(f"{T}.client.state.play.phase === 'wish'"), "Zug ist durch")
-        if await anna.evaluate(f"{T}.client.state.play.phase === 'wish'"):
+        if await until(anna, f"{T}.client.state.play.phase === 'wish'", 2):
             ok(await anna.evaluate("document.querySelectorAll('#acts button').length === 4"), "Bube: vier Farb-Knöpfe")
             await anna.click("#acts button")
+        # durch: Ben ist dran – oder Anna nochmal, weil sie eine 8 gelegt hat (zu zweit setzt Ben dann aus)
+        ok(await until(anna, f"{T}.client.state.play.turn === 1 || (!{T}.client.state.play.drawn && "
+                             f"Object.values({T}.client.state.pieces).filter(v => v.field === 'pile')"
+                             f".sort((a, b) => b.order - a.order)[0].show.endsWith('8'))", 10), "Zug ist durch")
         await until(ben, f"{T}.client.myTurn", 10)
         await ben.screenshot(path=f"{OUT}/maumau_handy_zug.png")
         st = await ben.inner_text("#status")
         ok("Du" in st or "dran" in st or "zieh" in st, f"Ben: „{st[:60]}“")
+
+        # Freies Spiel (Engine 2.5): Hausregel an → alle dürfen alles, Doppeltipp dreht um, Stapel mischen
+        R2 = ROOM + "F"
+        fa, efa = await open_player(browser, "Fritz", R2, viewport={"width": 1100, "height": 760})
+        fb, efb = await open_player(browser, "Greta", R2, **PHONE)
+        await until(fa, f"{T}.client.state.members.length === 2")
+        await fa.evaluate(f"{T}.client.setSettings({{free: true}})")
+        await until(fa, f"{T}.client.state.settings.free === true")
+        await fa.click("#start-btn")
+        ok(await until(fb, f"{T}.client.state.play && {T}.client.state.play.free === true"), "Freies Spiel läuft")
+        st = await fb.inner_text("#status")
+        ok("Freies Spiel" in st, f"Statuszeile: „{st[:50]}“")
+        # Greta (Handy) nimmt eine Karte aus Fritz' Hand und legt sie auf die Ablage (antippen, Ziel antippen)
+        await until(fb, f"{T}.pieces.isResting()", 10)
+        steal = await fb.evaluate(f"{HAND(0)}[0][0]")
+        await tap_piece(fb, steal, touch=True)
+        ok(await until(fb, f"{T}.pieces.selectedId() === '{steal}'", 5), "fremde Karte angehoben (freies Spiel)")
+        dst = await fb.evaluate(f"{T}.pieces.fieldScreenPos('pile')")
+        await fb.touchscreen.tap(dst["x"], dst["y"])
+        ok(await until(fb, f"{T}.client.state.pieces['{steal}'].field === 'pile'"), "… und auf die Ablage gelegt")
+        # oberste Stapelkarte doppelt antippen → offen
+        top = await fb.evaluate(f"Object.entries({T}.client.state.pieces).filter(([k, v]) => v.field === 'deck').sort((a, b) => b[1].order - a[1].order)[0][0]")
+        await tap_piece(fb, top, touch=True)
+        await until(fb, f"{T}.pieces.selectedId() === '{top}'", 5)
+        p = await fb.evaluate(f"{T}.pieces.screenPos('{top}')")
+        await fb.touchscreen.tap(p["x"], p["y"])
+        ok(await until(fa, f"!!{T}.client.state.pieces['{top}'].show", 10), "Doppeltipp: Karte umgedreht, alle sehen sie")
+        ok(await until(fa, "[...document.querySelectorAll('#acts button')].some(b => b.textContent.includes('mischen'))"),
+           "Knopf „Stapel mischen“")
+        await fa.screenshot(path=f"{OUT}/maumau_frei.png")
+        await fa.click("#acts button[data-lobby]")
+        ok(await until(fb, f"{T}.client.state.status === 'lobby'"), "Host: zurück in die Lobby")
+        ea += efa + efb
 
         # Computer gegen Computer (6er-Tisch: 5 Computer + Zuschauer)
         c, ec = await open_player(browser, "Cara", ROOM + "C", viewport={"width": 1100, "height": 760})

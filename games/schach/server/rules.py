@@ -66,6 +66,7 @@ class SchachRules(GameRules):
 
     def __init__(self, team: bool = False):
         self.team = team
+        self.uses_clock = not team          # Schachuhr (Hausregel „Bedenkzeit“) für die klassische Partie
         if team:
             self.min_players = 4
             self.order = [0, 2, 1, 3]                       # Weiß 1, Schwarz 1, Weiß 2, Schwarz 2
