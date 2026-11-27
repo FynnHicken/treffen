@@ -2,6 +2,7 @@ package state
 
 import (
 	"testing"
+	"time"
 
 	"github.com/scribble-rs/scribble.rs/internal/config"
 	"github.com/scribble-rs/scribble.rs/internal/game"
@@ -47,4 +48,25 @@ func TestAddAndRemove(t *testing.T) {
 
 	cleanupRoutineLogic(&config.LobbyCleanup{})
 	require.Empty(t, lobbies)
+}
+
+// Eine per API angelegte Lobby, mit der sich noch niemand verbunden hat, darf
+// der Aufräum-Lauf nicht sofort löschen (Hub-Countdown dauert ein paar Sekunden).
+//
+//nolint:paralleltest //this test is very stateful
+func TestFreshLobbySurvivesCleanup(t *testing.T) {
+	_, lobby, err := game.CreateLobby("", "host", "german", &game.EditableLobbySettings{
+		DrawingTime:        80,
+		Rounds:             3,
+		MaxPlayers:         12,
+		CustomWordsPerTurn: 1,
+		ClientsPerIPLimit:  24,
+		WordsPerTurn:       3,
+	}, nil, game.ChillScoring)
+	require.NoError(t, err)
+	AddLobby(lobby)
+	t.Cleanup(func() { RemoveLobby(lobby.LobbyID) })
+
+	cleanupRoutineLogic(&config.LobbyCleanup{PlayerInactivityThreshold: 75 * time.Second})
+	require.NotNil(t, GetLobby(lobby.LobbyID), "frische Lobby wurde vor dem ersten Verbinden gelöscht")
 }

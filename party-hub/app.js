@@ -1563,7 +1563,10 @@ window.openGameModal = function(gameId) {
         showToast("⚠️ Nur der Party-Leader kann ein Spiel auswählen!");
         return;
     }
-    if (gameId === "skribbol" && !partyState.currentLobbyId) {
+    if (gameId === "skribbol") {
+        // Jede Runde bekommt eine neue Lobby: eine alte (leere) Lobby derselben ID
+        // übernimmt die neuen Einstellungen nicht und kann gerade vom skribbl-
+        // Aufräumlauf gelöscht werden – Gäste landen dann auf einer Fehlerseite.
         partyState.currentLobbyId = generateUUID();
     }
     showModalUI(gameId);
@@ -1751,10 +1754,26 @@ window.launchCurrentGame = async function() {
         partyState.currentLobbyId = lobbyId;
         const hostName = partyState.currentUser ? partyState.currentUser.name : "Party-Host";
 
+        let created = false;
         try {
-            await createSkribblLobby(lobbyId, hostName, partyState.skribblSettings);
+            created = await createSkribblLobby(lobbyId, hostName, partyState.skribblSettings);
+            if (!created) {
+                // z. B. ID schon vergeben: einmal mit frischer ID versuchen
+                lobbyId = generateUUID();
+                partyState.currentLobbyId = lobbyId;
+                created = await createSkribblLobby(lobbyId, hostName, partyState.skribblSettings);
+            }
         } catch (e) {
             console.error("Error creating Skribbl lobby:", e);
+        }
+        if (!created) {
+            // Nicht alle auf eine skribbl-Fehlerseite schicken
+            showToast("⚠️ skribbl-Lobby konnte nicht angelegt werden – bitte nochmal starten.");
+            if (launchBtn) {
+                launchBtn.disabled = false;
+                launchBtn.innerText = `🚀  starten`;
+            }
+            return;
         }
     }
 

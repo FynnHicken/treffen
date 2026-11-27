@@ -1103,6 +1103,13 @@ func CreateLobby(
 	player := lobby.JoinPlayer(playerName)
 	lobby.OwnerID = player.ID
 
+	// Eine frisch angelegte Lobby (z. B. vom Hub per API) hat noch niemanden
+	// verbunden. Ohne Zeitstempel löscht der Aufräum-Lauf sie sofort, falls er
+	// vor dem ersten Verbinden läuft – wer dann aus dem Countdown kommt, sieht
+	// "Lobby existiert nicht".
+	createdAt := time.Now()
+	lobby.LastPlayerDisconnectTime = &createdAt
+
 	return player, lobby, nil
 }
 
