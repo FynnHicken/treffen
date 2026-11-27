@@ -186,6 +186,9 @@ button { font-family: inherit; }
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .invite-text .btn-outline { align-self: flex-start; margin-top: 4px; }
+.invite-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.invite-actions .btn-outline { margin-top: 0; }
+.invite-qr-btn { display: none; }
 .invite-qr {
     all: unset; cursor: pointer; flex: none;
     width: 100px; height: 100px; border-radius: 12px; padding: 8px; box-sizing: border-box;
@@ -219,7 +222,10 @@ button { font-family: inherit; }
 .today-item {
     border-radius: 12px; background: var(--hub-tile-2); border: 1px solid transparent;
     display: flex; align-items: center; gap: 10px; padding: 10px; min-width: 0;
+    cursor: pointer; font: inherit; color: inherit; text-align: left;
+    transition: border-color 0.15s;
 }
+.today-item:hover { border-color: rgba(77, 232, 255, 0.45); }
 .today-item.live { border-color: rgba(141, 255, 184, 0.45); }
 .today-thumb { width: 54px; height: 54px; flex: none; border-radius: 8px; object-fit: cover; display: grid; }
 .today-thumb.cover-pattern { padding: 6px; gap: 2px; }
@@ -253,6 +259,7 @@ button { font-family: inherit; }
 }
 .game-btn:hover { border-color: rgba(77, 232, 255, 0.45); }
 .game-btn.on { border-color: var(--hub-cyan); box-shadow: 0 0 26px rgba(77, 232, 255, 0.35); }
+.game-btn.warn-fit:not(.on):not(:hover) { opacity: 0.72; }
 .game-btn:focus-visible { outline: 2px solid var(--hub-cyan); outline-offset: -4px; }
 .game-media { position: relative; flex: 1; min-height: 0; background: var(--hub-tile-2); overflow: hidden; display: grid; }
 .game-cover { width: 100%; height: 100%; object-fit: cover; display: grid; }
@@ -320,6 +327,7 @@ button { font-family: inherit; }
     .tile--invite { padding: 12px; gap: 10px; }
     .invite-code { font-size: 23px; letter-spacing: 2px; }
     .invite-qr { display: none; }
+    .invite-qr-btn { display: inline-flex; }
     .slots { grid-template-columns: 1fr; max-height: 132px; }
     .tile--today, .tile--vote { padding: 12px 14px; }
     .tile-head { flex-wrap: wrap; }
@@ -350,6 +358,9 @@ button { font-family: inherit; }
     border-radius: 10px; font-family: var(--hub-display); font-size: 14px; letter-spacing: 1px; min-height: 38px;
 }
 [data-theme="cyber-arcade"] .hud-btn:hover { transform: none; background: rgba(77, 232, 255, 0.1); box-shadow: none; }
+[data-theme="cyber-arcade"] .hud-btn.confirming {
+    color: #fff; background: rgba(255, 79, 216, 0.25); border-color: var(--hub-magenta);
+}
 [data-theme="cyber-arcade"] .hud-game-title { font-family: var(--hub-display); font-size: 18px; }
 [data-theme="cyber-arcade"] .hud-status-dot { background: var(--hub-green); border: 0; box-shadow: 0 0 8px var(--hub-green); }
 [data-theme="cyber-arcade"] .hud-status, [data-theme="cyber-arcade"] .hud-room { font-family: var(--hub-display); letter-spacing: 1px; font-size: 13px; }

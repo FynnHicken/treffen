@@ -1918,7 +1918,29 @@ function startGameView(game, lobbyId) {
     renderHubTiles();
 }
 
+let _exitConfirmTimer = null;
+
+function resetExitGameButton() {
+    const btn = document.getElementById("backToHubBtn");
+    if (_exitConfirmTimer) {
+        clearTimeout(_exitConfirmTimer);
+        _exitConfirmTimer = null;
+    }
+    if (btn) {
+        btn.classList.remove("confirming");
+        btn.textContent = "← Zur Lobby";
+    }
+}
+
 function exitActiveGame() {
+    const btn = document.getElementById("backToHubBtn");
+    if (btn && !btn.classList.contains("confirming")) {
+        btn.classList.add("confirming");
+        btn.textContent = partyState.isHost ? "Für alle beenden?" : "Wirklich zur Lobby?";
+        _exitConfirmTimer = setTimeout(resetExitGameButton, 3500);
+        return;
+    }
+    resetExitGameButton();
     if (partyState.isHost) {
         broadcast({ type: "EXIT_GAME" });
     }
@@ -1926,6 +1948,7 @@ function exitActiveGame() {
 }
 
 function doExitGameView() {
+    resetExitGameButton();
     const overlay = document.getElementById("activeGameOverlay");
     const iframe = document.getElementById("gameIframe");
     overlay.classList.remove("active");

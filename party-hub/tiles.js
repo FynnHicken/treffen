@@ -141,7 +141,10 @@ function renderInviteTile() {
         <div class="invite-text">
             <span class="tile-label">EINLADEN</span>
             <button type="button" class="invite-code" data-act="copy" title="Klicken zum Kopieren">${escapeHtml(ROOM_CODE)}</button>
-            <button type="button" class="btn-outline cyan small" data-act="copy">Link kopieren</button>
+            <div class="invite-actions">
+                <button type="button" class="btn-outline cyan small" data-act="copy">Link kopieren</button>
+                <button type="button" class="btn-outline small invite-qr-btn" data-act="share" title="QR-Code groß anzeigen">QR</button>
+            </div>
         </div>
         <button type="button" class="invite-qr" data-act="share" title="QR-Code groß anzeigen">
             <img src="${qr}" alt="QR-Code zum Beitreten">
@@ -172,13 +175,13 @@ function renderTodayTile(ctx) {
         if (!g) return "";
         const live = i === 0 && ctx.active && ctx.active.gameId === h.gameId;
         return `
-            <div class="today-item ${live ? "live" : ""}">
+            <button type="button" class="today-item ${live ? "live" : ""}" data-act="select" data-game="${escapeHtml(h.gameId)}" title="${escapeHtml(g.title)} auswählen">
                 ${coverHtml(g, "today-thumb")}
                 <span class="today-text">
                     <span class="today-time">${live ? "LÄUFT" : fmtTime(h.startedAt)}</span>
                     <span class="today-title">${escapeHtml(g.title)}</span>
                 </span>
-            </div>`;
+            </button>`;
     }).join("");
     const startVote = ctx.canVoteToggle
         ? `<button type="button" class="btn-dashed" data-act="vote-toggle" id="toggleVoteBtn">Uneinig? Abstimmung starten</button>` : "";
@@ -208,8 +211,9 @@ function renderGameTile(g, ctx) {
     const on = ctx.sel && ctx.sel.id === g.id;
     const mine = partyState.userVotedGame === g.id;
     const votes = ctx.voting && g.votes > 0 ? `<span class="game-votes ${mine ? "mine" : ""}"><span class="vote-count">${g.votes}</span> ✋</span>` : "";
+    const fitCls = g.fit.tone === "warn" ? "warn-fit" : "";
     return `
-        <button type="button" class="game-btn ${on ? "on" : ""}" data-act="select" data-game="${g.id}" aria-pressed="${on}">
+        <button type="button" class="game-btn ${on ? "on" : ""} ${fitCls}" data-act="select" data-game="${g.id}" aria-pressed="${on}">
             <span class="game-media">${coverHtml(g, "game-cover")}${votes}</span>
             <span class="game-info">
                 <span class="game-text"><span class="game-title">${escapeHtml(g.title)}</span><span class="game-meta">${gameMeta(g)}</span></span>
