@@ -26,7 +26,7 @@ Räumen, Host, Abstimmung, synchronem Start) bettet mehrere Multiplayer-Spiele p
 Brettspiele möglichst viel Code (Rendering, Verbindung, UI) übernehmen: [`packages/boardgame-kit/README.md`](packages/boardgame-kit/README.md).
 **Neu (2026-11-26): Treffen-Spieltisch** – spielneutrales 3D-Brettspiel-Framework, erstes Spiel Mensch ärgere dich nicht.
 Konzept & Fahrplan: [`docs/tabletop/KONZEPT.md`](docs/tabletop/KONZEPT.md). Code: `packages/tabletop` (Client-Engine),
-`packages/tabletop-server` (Python), Spiele `games/mensch/` und `games/schach/`. **M1–M5 ✅, Engine 2.2.0** – im Hub unter `/mensch/` (2–8 Spieler) und `/schach/` (klassisch, Team, Tandem, Vierschach), mit Regeln, Computergegnern, Hausregeln und gespeicherten Spielständen. Neues Tisch-Spiel anlegen: [`docs/tabletop/KONZEPT.md` §12.5](docs/tabletop/KONZEPT.md), Engine-Änderungen: [`packages/CHANGELOG.md`](packages/CHANGELOG.md). Entscheidungen des Nutzers: Spielgefühl hat
+`packages/tabletop-server` (Python), Spiele `games/mensch/` und `games/schach/`. **M1–M5 ✅, Engine 2.3.0** – im Hub unter `/mensch/` (2–8 Spieler) und `/schach/` (klassisch, Team, Tandem, Vierschach), mit Regeln, Computergegnern, Hausregeln und gespeicherten Spielständen. Neues Tisch-Spiel anlegen: [`docs/tabletop/KONZEPT.md` §12.5](docs/tabletop/KONZEPT.md), Engine-Änderungen: [`packages/CHANGELOG.md`](packages/CHANGELOG.md). Entscheidungen des Nutzers: Spielgefühl hat
 Vorrang, Regeln werden automatisch vom Server mitgeprüft; freier Modus (wie Tabletop Simulator) evtl. später als Einstellung.
 Der Monopoly-Client ist ein Vite-Projekt (`games/monopoly/client/`), das vor dem Deployen gebaut wird (passiert im Docker-Image). → [`games/monopoly/DEVELOPMENT.md`](games/monopoly/DEVELOPMENT.md)
 
@@ -160,6 +160,13 @@ Erledigt und auf `main`:
     **Schach 1.2.0**: Teamschach (2 gegen 2 an einem Brett, Stockfish), Tandem (zwei Bretter, Einsetzen aus dem Vorrat,
     `server/tandem.py`), Vierschach (Kreuzbrett, Teams oder jeder gegen jeden, Punkte, `server/vierer.py`). Konzept §12.7,
     `games/schach/README.md`, Tests `packages/tabletop-server/tests/test_variants.py`, `games/*/tests/…variants…`/`boards_smoke.py`.
+
+19. Spieltisch-App, Engine 2.3 (2026-11-27): Auftrag des Nutzers: „alles, was man für Tabletop-Spiele braucht, soll die
+    Engine anbieten“ – Spiele sollen sich mit wenig spielspezifischem Code einbinden lassen. Client: `startTable()` baut
+    die ganze Oberfläche; Statuszeile/Siegerehrung/Markierungen kommen als Daten aus den Regeln (`say`, `alerts`,
+    `scores`, `marks`, `NOTE`); Standard-Brett und -Figuren; Server: `tabletop_server.boards`. Mensch 1.2.0 und
+    Schach 1.3.0 umgestellt. **Dame 1.0.0** (`games/dame/`) = Vorlage ohne Client-Code, läuft in CI, **nicht im Hub**
+    (Einbinden erst nach Rückfrage). Fahrplan danach: Karten & Zonen (2.4), freier Tisch (2.5), Uhr/Rücknahme/Marker (2.6).
 
 16. Hub-Avatare in den Spielen (2026-11-26): Der party-server liefert jeden Avatar als Bild,
     `/party-ws/avatar/<RAUM>/<Hub-Spieler-ID>.svg` (strenge CSP, ETag), und als `.json` ({color, face}) für

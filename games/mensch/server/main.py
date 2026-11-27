@@ -15,14 +15,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from layout import LAYOUTS, PALETTE, colors_for  # noqa: E402
 from rules import MenschRules  # noqa: E402
 
-GAME_VERSION = "1.1.0"      # 1.1.0: Bretter für 6 und 8 Spieler
+GAME_VERSION = "1.2.0"      # 1.1.0: Bretter für 6 und 8 Spieler; 1.2.0: Spieltisch-App der Engine 2.3
+
+NAMES = {"yellow": "Gelb", "green": "Grün", "red": "Rot", "black": "Schwarz", "blue": "Blau", "orange": "Orange",
+         "purple": "Lila", "white": "Weiß"}
 
 
 def _board(n: int, title: str, players: tuple, hint: str) -> Variant:
     colors = colors_for(n)
     # Sitzplätze im Uhrzeigersinn = Zugreihenfolge: Gelb, Grün, Rot, Schwarz (, Blau, Orange, Lila, Weiß)
     return Variant(str(n), title, [PALETTE[c] for c in colors], layout=LAYOUTS[n], rules=MenschRules(colors),
-                   players=players, hint=hint)
+                   players=players, hint=hint, seat_names=[NAMES[c] for c in colors])
 
 
 GAME = GameDef(

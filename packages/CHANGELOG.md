@@ -25,6 +25,34 @@ Engine – es gibt keine „alten Stände“ einzelner Spiele, solange die CI gr
 
 ---
 
+## 2.3.0 – 2026-11-27
+
+Spieltisch-App und Bausteine: Ein neues Tisch-Spiel besteht aus Regeln + Brett-Daten, der Client aus einem Aufruf.
+Mensch (1.2.0) und Schach (1.3.0) sind umgestellt (je ~400 Zeilen weniger), **Dame** (1.0.0) ist das erste Spiel
+ganz ohne eigenen Client-Code und dient als Vorlage.
+
+**Neu – Client**
+- **`startTable({id, title, board?, piece?, texts?, hint?, status?, setup?})`**: baut Oberfläche (Raum-Link, Name,
+  Statuszeile, Start, Siegerehrung, Würfel-Knopf, Hinweise, Versionen), Tisch, Namensschilder, Hausregeln, Zeiger,
+  Figuren, Würfel (wenn das Layout welche hat), Markierungen und das Leuchten am Platz, der am Zug ist. Brett und
+  Würfel-Hindernisse werden beim Variantenwechsel neu gebaut. HTML/CSS liegt in der Engine (`app/app.css`).
+- **Standard-Anzeige** (`setupHud`) aus dem Spielstand: `say` (Statuszeile), `alerts` („Schach!“, Handy vibriert),
+  `scores`, `finished`/`result` (Siegerehrung), Ereignis `NOTE` (kurzer Hinweis an alle, eigener Text für den
+  Betroffenen). Platzhalter `{who}`, `{p2}`, `{s2}`; Texte werden escaped.
+- **`MarkLayer`**: `marks: [{field, kind: last|alert|hint}]` der Regeln → Felder leuchten (eckig bei `cells: "square"`).
+- **Standard-Brett** (`createGenericBoard`): Holzplatte mit gemalten Feldern (rund/eckig, Farben), Linien, rund oder eckig.
+- **Standard-Figuren** (`createPiece`): `pawn`, `disc`, `king` (Doppelstein), `stone`, `flip`, `cube`, `cone`, `ring`.
+- `PieceLayer({surfaceY})` nimmt auch eine Funktion (Brett mit anderer Höhe nach Variantenwechsel).
+
+**Neu – Server**
+- `tabletop_server.boards`: `grid` (Schachbrett-Muster, Löcher), `hexgrid`, `ring_track`, `tray` (Ablagen),
+  `seat_point`, `lines_between`, `layout` (Größe aus den Feldern).
+- `Variant(seat_names=…, min_players=…, lobby=…)` (auch an `GameDef` für Spiele ohne Varianten) →
+  `state.game.seat_names/min_players/lobby`. Start prüft `min_players` der Variante.
+- Pflicht-Prüfung prüft die Standard-Anzeige (Platzhalter, Plätze, Felder der Markierungen, NOTE).
+
+**Kompatibel**: Spiele, die `startTable` nicht nutzen, laufen wie bisher (alle Bausteine bleiben einzeln exportiert).
+
 ## 2.2.0 – 2026-11-27
 
 Für Schach zu viert (Schach 1.2.0: Teamschach, Tandem, Vierschach).

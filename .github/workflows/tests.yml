@@ -65,6 +65,7 @@ jobs:
           cache-dependency-path: |
             games/mensch/client/package-lock.json
             games/schach/client/package-lock.json
+            games/dame/client/package-lock.json
       - run: pip install -r packages/tabletop-server/requirements.txt
       - name: Server-Tests (Sitzplätze, Host, Präsenz, Reconnect)
         working-directory: /tmp
@@ -92,11 +93,17 @@ jobs:
       - name: Mensch-Server (Hausregeln, Spielstände überstehen Neustart)
         working-directory: /tmp
         run: python -I "$GITHUB_WORKSPACE/games/mensch/tests/test_server.py"
+      - name: Dame-Regeln (Vorlage-Spiel aus Engine-Bausteinen)
+        working-directory: /tmp
+        run: python -I "$GITHUB_WORKSPACE/games/dame/tests/test_rules.py"
       - name: Mensch-3D-Client (TypeScript-Prüfung + Vite-Build)
         working-directory: games/mensch/client
         run: npm ci && npm run build
       - name: Schach-3D-Client (TypeScript-Prüfung + Vite-Build)
         working-directory: games/schach/client
+        run: npm ci && npm run build
+      - name: Dame-3D-Client (nur startTable – Standard-Brett und -Steine der Engine)
+        working-directory: games/dame/client
         run: npm ci && npm run build
       - name: Browser-Test (Lobby, Würfel, echte Partie mit Computer, Render-on-Demand)
         run: |
@@ -120,6 +127,12 @@ jobs:
         run: |
           docker run --rm --network=host -v "$PWD/games/schach":/work:ro -v /tmp/tisch-shots:/shots -w /work treffen-ui-test \
             python -u tests/ui/variants_smoke.py http://127.0.0.1:8096 /shots
+      - name: Dame im Browser (Spieltisch-App der Engine 2.3, Desktop + Handy, Computer-Partie)
+        run: |
+          (cd /tmp && TABLETOP_DB= python -u "$GITHUB_WORKSPACE/games/dame/server/main.py" > /tmp/dame.log 2>&1 &)
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8097/api/health >/dev/null && break; sleep 1; done
+          docker run --rm --network=host -v "$PWD/games/dame":/work:ro -v /tmp/tisch-shots:/shots -w /work treffen-ui-test \
+            python -u tests/ui/dame_smoke.py http://127.0.0.1:8097 /shots
       - name: Screenshots hochladen
         if: always()
         uses: actions/upload-artifact@v5
@@ -129,7 +142,7 @@ jobs:
           if-no-files-found: ignore
       - name: Server-Log bei Fehler
         if: failure()
-        run: tail -60 /tmp/tisch.log /tmp/schach.log
+        run: tail -60 /tmp/tisch.log /tmp/schach.log /tmp/dame.log
 
   build:
     name: Docker-Images & Nginx-Konfiguration

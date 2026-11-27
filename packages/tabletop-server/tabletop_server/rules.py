@@ -34,6 +34,18 @@ Damit der Tisch Zug und Ende anzeigen kann, gehören in den Spielstand (`view`):
   "turn": Platz am Zug (oder None), "phase": "over" am Ende, "result": {"winners": [Plätze], "reason": "..."}.
   "to_move" (Liste der Plätze, die handeln dürfen) setzt der Raum selbst aus `to_move`, wenn die Ansicht es nicht hat.
 
+Standard-Anzeige (Engine 2.3) – alles optional; der Tisch zeigt es selbst, das Spiel braucht dafür keinen Client-Code:
+  "say":    {"me": "Du hast eine 6 – zieh!", "all": "{who} zieht …"}  Statuszeile (me = wer am Zug ist, all = die anderen)
+  "alerts": {"<Platz>": "Schach!"}           kurzer Warnhinweis an diesem Platz (rot, Handy vibriert beim Betroffenen)
+  "scores": [3, 0, 5, 1]                     Punkte je Platz (Statuszeile + Siegerehrung), "scores_label": "Punkte"
+  "marks":  [{"field": "e4", "kind": "last"|"alert"|"hint"}]   Felder markieren (letzter Zug, König im Schach …)
+  "finished": [Plätze nach Rang]  ohne "result" → Siegerehrung mit Medaillen; mit "result" → Sieger + "text"
+Platzhalter in Texten: {who} = wer am Zug ist, {p2} = Mitglied an Platz 2 (Avatar + Name bzw. „Du“), {s2} = Name des
+Platzes 2 („Weiß“, aus Variant.seat_names). Texte werden escaped, nur die Platzhalter werden zu HTML.
+
+Meldung an alle (Ereignis, das die Regeln zurückgeben): {"type": "NOTE", "text": "💥 {p2} wurde rausgeworfen!",
+"you": {"2": "💥 Du wurdest rausgeworfen!"}} – erscheint kurz als Hinweis; "you" ist der Text für den genannten Platz.
+
 API 1 – `Rules` (Mensch ärgere dich nicht, Engine 1.x)
 -------------------------------------------------------
     setup, can_roll, on_roll, moves, move, bot_move, public, wants_roll

@@ -64,7 +64,7 @@ def build_layout(seat_of=None) -> dict:
             pid = f"{c}-P-{FILES[f]}{pawns}"
             pieces[pid] = {"kind": "pawn", "seat": seat_of[color], "color": color, "field": f"{FILES[f]}{pawns}",
                            "facing": facing, "inward": _inward(f, color == "white")}
-    return {"board": {"kind": "chess", "size": BOARD_SIZE, "spacing": SPACING, "frame": FRAME},
+    return {"board": {"kind": "chess", "cells": "square", "size": BOARD_SIZE, "spacing": SPACING, "frame": FRAME},
             "palette": PALETTE, "fields": fields, "pieces": pieces}
 
 
@@ -139,7 +139,7 @@ def build_tandem_layout() -> dict:
                 pid = f"{b}-{c}-{SHORT[kind]}-{sq}"
                 pieces[pid] = {"kind": kind, "seat": TANDEM_SEATS[(b, c)], "color": "white" if white else "black",
                                "field": f"{b}-{sq}", "facing": facing, "inward": _inward(f % 8, white)}
-    return {"board": {"kind": "tandem", "size": 2 * T_SIZE + 0.34, "spacing": T_SPACING, "frame": T_FRAME,
+    return {"board": {"kind": "tandem", "cells": "square", "size": 2 * T_SIZE + 0.34, "spacing": T_SPACING, "frame": T_FRAME,
                       "boards": {b: {"cx": T_CX[b], "cz": 0, "size": T_SIZE, "white_front": tandem_white_front(b)}
                                  for b in "AB"}},
             "palette": PALETTE, "fields": fields, "pieces": pieces}
@@ -231,7 +231,7 @@ def build_vier_layout() -> dict:
             inward = 1 if lateral[0] * rx + lateral[1] * ry > 0 else -1
             pid = f"{color[0]}-{SHORT[kind]}-{sq}"
             pieces[pid] = {"kind": kind, "seat": seat, "color": color, "field": sq, "facing": facing, "inward": inward}
-    return {"board": {"kind": "vierer", "size": V_N * V_SPACING + 2 * V_FRAME, "spacing": V_SPACING, "frame": V_FRAME,
+    return {"board": {"kind": "vierer", "cells": "square", "size": V_N * V_SPACING + 2 * V_FRAME, "spacing": V_SPACING, "frame": V_FRAME,
                       "cut": 3},
             "palette": V_PALETTE, "fields": fields, "pieces": pieces}
 

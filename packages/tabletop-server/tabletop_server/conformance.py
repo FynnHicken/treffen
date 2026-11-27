@@ -17,9 +17,11 @@ Geprüft wird ohne Netzwerk direkt am Raum:
   - Figuren stehen immer auf Feldern, die es im Layout gibt; erlaubte Züge zeigen auf echte Felder
   - die Ansicht jedes Platzes und der Zuschauer lässt sich berechnen und ist JSON
   - Spielstand übersteht Speichern + Laden mitten in der Partie (gleicher Stand danach)
+  - Standard-Anzeige (Engine 2.3) ist wohlgeformt: say/alerts/scores/marks/NOTE zeigen auf echte Plätze und Felder
 """
 import json
 import random
+import re
 from typing import Optional
 
 from .rooms import GameDef, Room
@@ -39,6 +41,39 @@ def _comparable(room: Room) -> dict:
     s = room.state()
     return {"pieces": {k: {"field": v["field"], "kind": v.get("kind")} for k, v in s["pieces"].items()},
             "status": s["status"], "play": s["play"], "seq": room.seq, "settings": s["settings"]}
+
+
+_TOKEN = re.compile(r"\{(who|[ps](\d+))\}")
+
+
+def _check_text(text, seats: int, where: str) -> None:
+    _check(isinstance(text, str), f"{where}: Text erwartet, nicht {text!r}")
+    for m in _TOKEN.finditer(text):
+        _check(m.group(2) is None or int(m.group(2)) < seats, f"{where}: Platzhalter {m.group(0)} – so viele Plätze gibt es nicht")
+
+
+def check_display(st, seats: int, fields: dict, where: str) -> None:
+    """Standard-Anzeige im Spielstand prüfen (say, alerts, scores, marks, finished, result)."""
+    if not isinstance(st, dict):
+        return
+    say = st.get("say")
+    if say is not None:
+        _check(isinstance(say, dict), f"{where}: say muss {{me, all}} sein")
+        for k, t in say.items():
+            _check(k in ("me", "all"), f"{where}: say.{k} unbekannt")
+            _check_text(t, seats, f"{where}: say.{k}")
+    for k, t in (st.get("alerts") or {}).items():
+        _check(str(k).isdigit() and int(k) < seats, f"{where}: alerts für unbekannten Platz {k}")
+        _check_text(t, seats, f"{where}: alerts.{k}")
+    if st.get("scores") is not None:
+        _check(isinstance(st["scores"], list) and len(st["scores"]) == seats, f"{where}: scores braucht einen Wert je Platz")
+    for mk in st.get("marks") or []:
+        _check(isinstance(mk, dict) and mk.get("field") in fields, f"{where}: Markierung auf unbekanntem Feld {mk}")
+    for s in st.get("finished") or []:
+        _check(isinstance(s, int) and 0 <= s < seats, f"{where}: finished enthält unbekannten Platz {s}")
+    res = st.get("result")
+    if res:
+        _check(all(isinstance(w, int) and 0 <= w < seats for w in res.get("winners", [])), f"{where}: result.winners ungültig")
 
 
 def check_game(game: GameDef, games: int = 10, max_steps: int = 4000, settings: Optional[dict] = None,
@@ -88,6 +123,11 @@ def _check_variant(game: GameDef, vid: str, games: int, max_steps: int, settings
                 _check(m.get("type") == "EVENT" and m.get("seq") == seq + 1, f"{where}: Ereignisnummer {m.get('seq')} ≠ {seq + 1}")
                 seq = m["seq"]
                 _check(isinstance(m["event"].get("type"), str), f"{where}: Ereignis ohne Typ")
+                if m["event"]["type"] == "NOTE":
+                    _check_text(m["event"].get("text"), room.seats, f"{where}: NOTE")
+                    for k, t in (m["event"].get("you") or {}).items():
+                        _check(str(k).isdigit() and int(k) < room.seats, f"{where}: NOTE.you für unbekannten Platz {k}")
+                        _check_text(t, room.seats, f"{where}: NOTE.you")
                 json.dumps(m)
                 for mid in room.members:
                     json.dumps(room.personalize(m, mid))
@@ -107,7 +147,9 @@ def _check_variant(game: GameDef, vid: str, games: int, max_steps: int, settings
                         _check(a.get("piece") in room.pieces and a.get("to") in fields,
                                f"Partie {n}: Zug auf unbekanntes Feld/Figur {a}")
             for seat in list(range(room.seats)) + [None]:
-                json.dumps(room.play_state(seat))
+                st = room.play_state(seat)
+                json.dumps(st)
+                check_display(st, room.seats, fields, f"{vid} Partie {n}")
             movers = room.rules.to_move(room)
             _check(movers, f"Partie {n}: niemand am Zug, aber Partie läuft")
             seat = movers[0] if len(movers) == 1 else rng.choice(movers)   # mehrere gleichzeitig (Tandem)
@@ -129,4 +171,5 @@ def _check_variant(game: GameDef, vid: str, games: int, max_steps: int, settings
         _check(room.status == "finished", f"Partie {n}: endet nicht sauber")
         _check(room.variant_id == vid, f"Partie {n}: Variante nach Speichern/Laden verloren")
         json.dumps(room.state())
+        check_display(room.play_state(), room.seats, fields, f"{vid} Partie {n} Ende")
     return stats

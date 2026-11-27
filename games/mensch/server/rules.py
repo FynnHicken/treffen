@@ -197,6 +197,9 @@ class MenschRules(Rules):
             room.pieces[victim] = {"field": home, "held_by": None}
             events.append({"type": "PIECE_MOVED", "piece": victim, "from": frm, "to": home, "by": "rules",
                            "path": [home], "reason": "captured"})
+            vseat = room.layout["pieces"][victim]["seat"]
+            events.append({"type": "NOTE", "text": f"💥 {{p{vseat}}} wurde rausgeworfen!",
+                           "you": {str(vseat): "💥 Du wurdest rausgeworfen!"}})
         frm = room.pieces[piece]["field"]
         room.pieces[piece] = {"field": to, "held_by": None}
         # Der Zug selbst zuerst (Animation), danach die geschlagene Figur
@@ -259,4 +262,12 @@ class MenschRules(Rules):
         g = dict(room.game or {})
         if g.get("phase") == "move" and g.get("turn") is not None:
             g["moves"] = [{"piece": m["piece"], "to": m["to"]} for m in self.moves(room, g["turn"])]
+        # Statuszeile (zeigt der Tisch selbst, Engine 2.3)
+        if g.get("phase") == "roll":
+            left = g.get("rolls_left", 0)
+            tries = f" (noch {left} Versuche für eine 6)" if left > 1 else ""
+            g["say"] = {"me": f"Du bist dran – greif den Becher und würfle!{tries}", "all": "{who} würfelt …"}
+        elif g.get("phase") == "move":
+            g["say"] = {"me": f"Du hast eine {g.get('dice')} – zieh eine leuchtende Figur.",
+                        "all": f"{{who}} hat eine {g.get('dice')} und zieht …"}
         return g

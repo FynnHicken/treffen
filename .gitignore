@@ -40,6 +40,8 @@ build/
 games/monopoly/data/
 games/mensch/data/
 games/schach/data/
+games/dame/data/
+games/maumau/data/
 *.sqlite3
 *.sqlite3-*
 gtp-postgres-data/
@@ -55,3 +57,7 @@ games/mensch/static/
 games/mensch/tests/ui/shots/
 games/schach/static/
 games/schach/tests/ui/shots/
+games/dame/static/
+games/dame/tests/ui/shots/
+games/maumau/static/
+games/maumau/tests/ui/shots/

@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Tuple
 
 from layout import V_COLORS, V_FORWARD, V_NAMES, V_TRAY, VALUE, v_name, v_valid, v_xy
 from tabletop_server.rules import GameRules
+from rules import show
 
 KNIGHT = [(1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)]
 KING = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
@@ -354,7 +355,12 @@ class VierRules(GameRules):
         g = {k: v for k, v in (room.game or {}).items() if k != "moved"}
         if g.get("phase") == "move" and g.get("turn") is not None:
             g["moves"] = [{"piece": a["piece"], "to": a["to"]} for a in self.actions(room, g["turn"])]
-        return g
+        checks = list(g.get("checks") or []) if g.get("phase") == "move" else []
+        board = self.board(room) if checks else {}
+        in_check = [s for s in range(4) if (k := self.king_sq(board, s)) is not None and v_name(*k) in checks]
+        if isinstance(g.get("points"), list):
+            g["scores"] = list(g["points"])
+        return show(g, [g.get("last")], checks, in_check)
 
     # ---------- Computer ----------
     def bot_action(self, room, seat: int) -> Optional[dict]:

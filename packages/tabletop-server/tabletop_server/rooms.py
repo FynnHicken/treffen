@@ -36,10 +36,14 @@ class Variant:
     seat_angles: Lage der Plätze um den Tisch in Grad (0 = unten, im Uhrzeigersinn von oben gesehen; 90 = links).
       Ohne Angabe gleichmäßig verteilt. So sitzen Partner nebeneinander (Teamschach, Tandem).
     players: (von, bis) – bei „automatisch“ wählt der Tisch die kleinste Variante, in die alle Sitzenden passen.
+    seat_names: Name jedes Platzes („Weiß“, „Rot“ …) – zeigt der Tisch in Statuszeile, Siegerehrung, an leeren Plätzen.
+    min_players: so viele müssen sitzen (Menschen + Computer), damit es losgeht (Standard: GameDef.min_players).
+    lobby: ein Satz für die Lobby („Weiß sitzt vorn …“) – der Tisch zeigt ihn dem Host über dem Start-Knopf.
     """
 
     def __init__(self, variant_id: str, title: str, seat_colors: List[str], layout: Optional[dict] = None,
-                 rules=None, seat_angles: Optional[List[float]] = None, players: Optional[tuple] = None, hint: str = ""):
+                 rules=None, seat_angles: Optional[List[float]] = None, players: Optional[tuple] = None, hint: str = "",
+                 seat_names: Optional[List[str]] = None, min_players: Optional[int] = None, lobby: str = ""):
         self.id = variant_id
         self.title = title
         self.seat_colors = list(seat_colors)   # Länge = Anzahl Sitzplätze
@@ -50,6 +54,11 @@ class Variant:
         self.seat_angles = [float(a) for a in seat_angles] if seat_angles else None
         self.players = tuple(players) if players else (1, len(self.seat_colors))
         self.hint = hint
+        if seat_names is not None and len(seat_names) != len(self.seat_colors):
+            raise ValueError(f"Variante {variant_id}: seat_names passt nicht zur Zahl der Plätze")
+        self.seat_names = list(seat_names) if seat_names else None
+        self.min_players = min_players
+        self.lobby = lobby
 
     @property
     def seats(self) -> int:
@@ -74,13 +83,13 @@ class GameDef:
     def __init__(self, game_id: str, title: str, seat_colors: Optional[List[str]] = None, min_players: int = 2,
                  layout: Optional[dict] = None, rules=None, version: str = "1.0.0",
                  variants: Optional[List[Variant]] = None, auto_variant: bool = False,
-                 variant_label: str = "Spielvariante"):
+                 variant_label: str = "Spielvariante", seat_names: Optional[List[str]] = None, lobby: str = ""):
         self.id = game_id
         self.title = title
         self.version = version
         self.min_players = min_players
         if variants is None:
-            variants = [Variant("standard", title, seat_colors or [], layout, rules)]
+            variants = [Variant("standard", title, seat_colors or [], layout, rules, seat_names=seat_names, lobby=lobby)]
         if not variants or len({v.id for v in variants}) != len(variants):
             raise ValueError("Varianten brauchen eindeutige IDs")
         self.variants: Dict[str, Variant] = {v.id: v for v in variants}
@@ -222,8 +231,16 @@ class Room:
     def game_info(self) -> dict:
         v = self.variant
         return {**self.game_def.info(), "seats": v.seats, "seat_colors": v.seat_colors, "seat_angles": v.seat_angles,
+                "seat_names": v.seat_names, "min_players": self.min_players(), "lobby": v.lobby,
                 "variant": v.id, "variant_title": v.title, "rules_api": v.rules.api_version if v.rules else None,
                 "variants": [x.info() for x in self.game_def.variants.values()]}
+
+    def min_players(self) -> int:
+        """So viele müssen sitzen, damit der Host starten kann (Variante, sonst Spiel/Regeln)."""
+        v = self.variant
+        if v.min_players is not None:
+            return v.min_players
+        return max(getattr(self.rules, "min_players", 2) if self.rules else 2, self.game_def.min_players)
 
     def _wanted_variant(self, extra: int = 0) -> Variant:
         choice = self.settings().get("variant") if len(self.game_def.variants) > 1 else None
@@ -460,7 +477,7 @@ class Room:
         if not self.rules or member_id != self.host_id or self.status != "lobby":
             return []
         players = [m for m in self.members.values() if m.seat is not None]
-        if len(players) < max(self.rules.min_players, self.game_def.min_players):
+        if len(players) < self.min_players():
             return []
         if hasattr(self.rules, "can_start") and not self.rules.can_start(self):
             return []

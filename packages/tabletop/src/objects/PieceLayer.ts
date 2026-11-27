@@ -19,8 +19,8 @@ import type { FieldSpec, Layout, PieceSpec, TableState } from '../net/state';
 import { knock, lift, vibrate } from '../audio/sfx';
 
 export interface PieceLayerOptions {
-    /** Höhe der Oberfläche, auf der Figuren stehen (z. B. Brettoberkante) */
-    surfaceY: number;
+    /** Höhe der Oberfläche, auf der Figuren stehen (z. B. Brettoberkante); Funktion = kann sich ändern (anderes Brett) */
+    surfaceY: number | (() => number);
     /** 3D-Objekt für eine Figur (Ursprung = Mitte des Fußes) */
     createMesh: (id: string, spec: PieceSpec, layout: Layout) => THREE.Object3D;
     /** Wie hoch eine gehaltene Figur schwebt */
@@ -62,6 +62,10 @@ export class PieceLayer {
     private layout: Layout | null = null;
     private lastState: TableState | null = null;
     private readonly lift: number;
+    private get surfaceY(): number {
+        const s = this.opts.surfaceY;
+        return typeof s === 'function' ? s() : s;
+    }
     private spacing = 0.8;
 
     constructor(private table: TableScene, private client: TableClient, private opts: PieceLayerOptions) {
@@ -86,7 +90,7 @@ export class PieceLayer {
             if (!p?.hold) return;
             const v = this.vis.get(p.hold);
             if (v && v.mode === 'held' && this.lastState?.pieces[p.hold]?.held_by === from) {
-                v.goal.set(p.x, this.opts.surfaceY + this.lift, p.z);
+                v.goal.set(p.x, this.surfaceY + this.lift, p.z);
                 this.kick();
             }
         });
@@ -168,7 +172,7 @@ export class PieceLayer {
 
     fieldPos(fieldId: string): THREE.Vector3 {
         const f: FieldSpec | undefined = this.layout?.fields[fieldId];
-        return new THREE.Vector3(f?.x ?? 0, this.opts.surfaceY, f?.z ?? 0);
+        return new THREE.Vector3(f?.x ?? 0, this.surfaceY, f?.z ?? 0);
     }
 
     private place(v: Vis): void {
@@ -215,7 +219,7 @@ export class PieceLayer {
             r.visible = i < fields.length;
             if (r.visible) {
                 const p = this.fieldPos(fields[i]);
-                r.position.set(p.x, this.opts.surfaceY + 0.004, p.z);
+                r.position.set(p.x, this.surfaceY + 0.004, p.z);
             }
         });
         this.table.invalidate();
@@ -235,7 +239,7 @@ export class PieceLayer {
             if (!this.hintRings.has(id)) this.hintRings.set(id, this.ring(0xfff4d6, 0.29, 0.36, 0.7));
             const v = this.vis.get(id), r = this.hintRings.get(id)!;
             const p = v && v.mode === 'rest' ? v.pos : this.fieldPos(s!.pieces[id].field);
-            r.position.set(p.x, this.opts.surfaceY + 0.004, p.z);
+            r.position.set(p.x, this.surfaceY + 0.004, p.z);
             r.visible = v !== this.dragging && v !== this.selected;
         }
         this.table.invalidate();
@@ -275,7 +279,7 @@ export class PieceLayer {
         const hint = this.hintRings.get(id);
         if (hint) hint.visible = false;
         v.mode = 'drag';
-        v.goal.copy(v.pos).setY(this.opts.surfaceY + this.lift);
+        v.goal.copy(v.pos).setY(this.surfaceY + this.lift);
         this.client.grab(id);
         lift();
         vibrate(8);
@@ -299,12 +303,12 @@ export class PieceLayer {
         const v = this.dragging;
         if (!v) return;
         this.dragDist = Math.max(this.dragDist, this.downAt.distanceTo(new THREE.Vector2(ev.clientX, ev.clientY)));
-        const p = this.table.pickPlane(ev.clientX, ev.clientY, this.opts.surfaceY);
+        const p = this.table.pickPlane(ev.clientX, ev.clientY, this.surfaceY);
         if (!p) return;
         const lim = this.table.tableSize / 2 - 0.4;
         p.x = THREE.MathUtils.clamp(p.x, -lim, lim);
         p.z = THREE.MathUtils.clamp(p.z, -lim, lim);
-        v.goal.set(p.x, this.opts.surfaceY + this.lift, p.z);
+        v.goal.set(p.x, this.surfaceY + this.lift, p.z);
         this.updateSnap(v, p);
         this.client.sendPresence({ x: p.x, z: p.z, down: true, hold: v.id });
         this.kick();
@@ -313,7 +317,7 @@ export class PieceLayer {
     /** Erlaubtes Ziel unter dem Finger (großzügig: bis 0,6 Feldbreiten daneben) */
     private nearestCandidate(id: string, clientX: number, clientY: number): string | null {
         const s = this.lastState;
-        const p = this.table.pickPlane(clientX, clientY, this.opts.surfaceY);
+        const p = this.table.pickPlane(clientX, clientY, this.surfaceY);
         if (!s || !p) return null;
         let best: string | null = null, bestD = this.spacing * 0.6;
         for (const fid of this.candidates(id)) {
@@ -361,7 +365,7 @@ export class PieceLayer {
             this.snapField = best;
             if (best) {
                 const fp = this.fieldPos(best);
-                this.snapRing.position.set(fp.x, this.opts.surfaceY + 0.006, fp.z);
+                this.snapRing.position.set(fp.x, this.surfaceY + 0.006, fp.z);
                 vibrate(4);
             }
             this.snapRing.visible = !!best;
@@ -387,7 +391,7 @@ export class PieceLayer {
                 // Mehrere Ziele: Figur bleibt angehoben, Ziele leuchten – nächster Tipp wählt
                 this.selected = v;
                 v.mode = 'selected';
-                v.goal.copy(this.fieldPos(this.lastState?.pieces[v.id]?.field ?? '')).setY(this.opts.surfaceY + this.lift * 0.6);
+                v.goal.copy(this.fieldPos(this.lastState?.pieces[v.id]?.field ?? '')).setY(this.surfaceY + this.lift * 0.6);
                 this.showTargets(legal);
                 this.kick();
                 return;
@@ -434,7 +438,7 @@ export class PieceLayer {
         const v = this.vis.get(id);
         if (!v || v === this.dragging) return;
         v.mode = 'held';
-        v.goal.copy(v.pos).setY(this.opts.surfaceY + this.lift);
+        v.goal.copy(v.pos).setY(this.surfaceY + this.lift);
         this.kick();
     }
 
@@ -463,7 +467,7 @@ export class PieceLayer {
         v.hop = {
             from: v.pos.clone(), to: to.clone(), t: 0,
             dur: opt?.dur ?? HOP_DURATION + Math.min(0.35, dist * 0.04),
-            height: opt?.height ?? Math.max(0.15, Math.min(0.6, dist * 0.12)) + Math.max(0, v.pos.y - this.opts.surfaceY) * 0.4,
+            height: opt?.height ?? Math.max(0.15, Math.min(0.6, dist * 0.12)) + Math.max(0, v.pos.y - this.surfaceY) * 0.4,
             sound
         };
         this.kick();

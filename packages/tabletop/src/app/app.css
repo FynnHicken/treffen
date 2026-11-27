@@ -226,10 +226,6 @@ html, body {
     background: var(--accent); color: #2a1608; font-weight: 800; font-size: 16px; cursor: pointer;
 }
 
-/* ---- Schach ---- */
-.status .check { color: #ff8a7a; margin-left: 6px; letter-spacing: 0.02em; }
-.gameover-card .reason { margin: -4px 0 16px; opacity: 0.8; }
-.gameover-card h2 .tt-avatar { width: 30px; height: 30px; margin: -4px 8px -6px 0; }
 .versions {
     position: fixed;
     right: max(10px, env(safe-area-inset-right));
@@ -239,4 +235,11 @@ html, body {
     opacity: 0.35;
     pointer-events: none;
 }
-.status .points { opacity: 0.75; font-size: 0.85em; }
+
+/* ---- Standard-Anzeige (Engine 2.3): Warnhinweise, Punkte, Ergebnis ---- */
+.status .alert { color: #ff8a7a; margin-left: 6px; letter-spacing: 0.02em; }
+.status .scores { opacity: 0.75; font-size: 0.85em; }
+.status .tt-avatar.small, .toast .tt-avatar { width: 18px; height: 18px; margin: -3px 5px -3px 0; }
+.gameover-card .reason { margin: -4px 0 16px; opacity: 0.8; }
+.gameover-card h2 .tt-avatar { width: 30px; height: 30px; margin: -4px 8px -6px 0; }
+.gameover-card small { opacity: 0.7; }

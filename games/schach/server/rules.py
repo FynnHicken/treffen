@@ -24,6 +24,15 @@ from layout import COLORS, SHORT
 from tabletop_server.rules import GameRules
 from stockfish_uci import engine
 
+
+def show(g: dict, lasts, checks, alerts) -> dict:
+    """Standard-Anzeige der Engine (2.3): markierte Felder (letzter Zug, König im Schach) und „Schach!“ am Platz."""
+    marks = [{"field": f, "kind": "last"} for mv in lasts if mv for f in (mv["from"], mv["to"])]
+    marks += [{"field": k, "kind": "alert"} for k in checks if k]
+    g["marks"] = marks
+    g["alerts"] = {str(s): "Schach!" for s in alerts}
+    return g
+
 KIND_OF = {v: k for k, v in SHORT.items()}      # "Q" → "queen"
 # Stärke des Computers (Hausregel bot_level). Stockfish: Bedenkzeit (ms), Elo-Grenze bzw. „Skill Level“.
 STOCKFISH_LEVELS = {
@@ -206,7 +215,9 @@ class SchachRules(GameRules):
         g = {k: v for k, v in (room.game or {}).items() if k != "history"}
         if g.get("phase") == "move" and g.get("turn") is not None:
             g["moves"] = [{"piece": a["piece"], "to": a["to"]} for a in self.actions(room, g["turn"])]
-        return g
+        check = bool(g.get("check")) and g.get("phase") == "move"
+        return show(g, [g.get("last")], [g.get("king")] if check else [],
+                    [g["turn"]] if check and g.get("turn") is not None else [])
 
     # ---------- Computer ----------
     def bot_action(self, room, seat: int) -> Optional[dict]:

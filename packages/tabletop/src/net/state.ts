@@ -81,7 +81,20 @@ export interface PlayState {
     to_move?: number[];
     /** erlaubte Züge des Spielers am Zug (nur in phase 'move') */
     moves?: { piece: string; to: string }[];
+    /** Standard-Anzeige (Engine 2.3, siehe tabletop_server/rules.py): Statuszeile, Warnungen, Punkte, Markierungen */
+    say?: { me?: string; all?: string };
+    alerts?: Record<string, string>;
+    scores?: number[];
+    scores_label?: string;
+    marks?: Mark[];
+    result?: { winners: number[]; reason?: string; text?: string } | null;
     [key: string]: unknown;
+}
+
+/** Markiertes Feld: letzter Zug, Warnung (König im Schach), Hinweis */
+export interface Mark {
+    field: string;
+    kind: 'last' | 'alert' | 'hint' | string;
 }
 
 /** Spiel + aktuelle Variante (Engine 2.1: Plätze, Farben und Lage gehören zur Variante) */
@@ -92,6 +105,12 @@ export interface GameInfo {
     seat_colors: string[];
     /** Lage der Plätze in Grad (0 = unten, im Uhrzeigersinn); null = gleichmäßig */
     seat_angles?: number[] | null;
+    /** Namen der Plätze („Weiß“, „Rot“) – Engine 2.3 */
+    seat_names?: string[] | null;
+    /** so viele müssen sitzen, damit es losgeht */
+    min_players?: number;
+    /** Satz für die Lobby (Host) */
+    lobby?: string;
     variant?: string;
     variant_title?: string;
     variants?: { id: string; title: string; seats: number }[];
@@ -129,6 +148,7 @@ export type TableEvent =
     | { type: 'GAME_UPDATED'; status: TableState['status']; play: PlayState | null }
     | { type: 'DICE_ROLLED'; by: string; values: number[]; throw: ThrowSpec }
     | { type: 'SETTINGS_UPDATED'; settings: Record<string, SettingValue> }
+    | { type: 'NOTE'; text: string; you?: Record<string, string> }
     | {
         type: 'BOARD_CHANGED'; variant: string; game: GameInfo; layout: Layout; pieces: Record<string, PieceState>;
         members: Member[]; settings: Record<string, SettingValue>; settings_schema: Record<string, SettingSpec>;

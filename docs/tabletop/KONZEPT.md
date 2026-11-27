@@ -1,6 +1,6 @@
 # Treffen-Spieltisch – Konzept
 
-> Stand: 2026-11-27 · Status: **M1–M5 ✅ · Engine 2.0.0 (§12) · Mensch (`/mensch/`) und Schach (`/schach/`) im Hub** · Änderungen: [`packages/CHANGELOG.md`](../../packages/CHANGELOG.md)
+> Stand: 2026-11-27 · Status: **M1–M5 ✅ · Engine 2.3.0 (§12) · Mensch (`/mensch/`) und Schach (`/schach/`) im Hub, Dame als Vorlage** · Änderungen: [`packages/CHANGELOG.md`](../../packages/CHANGELOG.md)
 
 ## 1. Ziel
 
@@ -135,10 +135,13 @@ Typen, Figuren (Modell, Farben), Würfel-Anzahl, Sitzplätze. Der Tisch baut dar
 | **M5 Fertig** ✅ | Im Hub (`/mensch/`, Host per Ticket), Hausregeln in der Lobby (⚙️), Spielstände in SQLite, Zuschauer, ein Becher für alle; 2D-Prototyp entfernt |
 | **E2.0 Engine 2** ✅ | Versionsnummer, Regel-API 2 (Aktionen), Ansicht je Platz, `PIECE_CHANGED`, Antippen → Ziel antippen, Pflicht-Prüfung für alle Spiele; **Schach** als zweites Spiel (§12) |
 | **E2.1 Spielvarianten** ✅ | Mehrere Bretter je Spiel (`Variant`), automatisch nach Spielerzahl, Lage der Plätze frei, mehrere Plätze gleichzeitig am Zug, Figuren nach Regeln; **Mensch für 4/6/8**, Schach-Varianten (§12.7) |
-| E2.2 Ein Server für alle | Alle Tisch-Spiele in einem Container, `game.json` je Spiel, Hub liest die Spieleliste vom Server (§12.5) |
-| E2.3 Karten | Karte, Stapel, Hand (aufgefächert am eigenen Platz, nur für den Besitzer sichtbar); erstes Kartenspiel (Mau-Mau) |
-| E2.4 Eingreifen & Marker | Eingreifen außerhalb des eigenen Zugs, Zähler/Marker/Geld; ein Spiel im Stil von Munchkin mit eigenen Karten |
-| später | Freier Modus (Einstellung), Raster-/Hex-Bretter aus Daten, `createTableApp` (gemeinsames Client-Gerüst), Monopoly v2 |
+| **E2.2 Gleichzeitig** ✅ | Mehrere Computer gleichzeitig am Zug kommen reihum dran (Tandem), Variante + Hausregeln in einer Nachricht |
+| **E2.3 Spieltisch-App** ✅ | `startTable()`: Oberfläche, Statuszeile, Siegerehrung, Markierungen aus Daten der Regeln; Standard-Brett und -Figuren; Brett-Hilfen (Raster, Hex, Laufbahn, Ablagen); **Dame** als Vorlage ohne Client-Code (§12.5) |
+| E2.4 Karten & Zonen | Karte, Stapel (mischen, ziehen), Hand (aufgefächert am eigenen Platz, nur für den Besitzer sichtbar), Ablagen mit mehreren Gegenständen; erstes Kartenspiel |
+| E2.5 Freier Tisch | Hausregel „Regeln prüfen: aus“ – alle dürfen alles bewegen wie am echten Tisch; Spiele nur aus Material |
+| E2.6 Am Tisch | Schachuhr/Zugzeit, Zug zurücknehmen (mit Zustimmung), Verlauf, Zähler/Marker/Geld |
+| E2.7 Ein Server für alle | Alle Tisch-Spiele in einem Container, `game.json` je Spiel, Hub liest die Spieleliste vom Server (§12.5) |
+| später | Eingreifen außerhalb des eigenen Zugs, Spiel im Stil von Munchkin mit eigenen Karten, Monopoly v2 |
 
 ## 10. Lokal ausprobieren (ohne Python/Node auf dem Host)
 
@@ -245,15 +248,24 @@ Der Status oben ist eine Zeile („Du bist am Zug“), kein Erklärtext. Einstel
 
 ### 12.5 Neues Spiel hinzufügen (heute)
 
-1. `games/<spiel>/server/`: `layout.py` (Felder, Figuren), `rules.py` (`GameRules`), `main.py` (`GameDef(…, version=…)`).
-2. `games/<spiel>/client/`: wie `games/schach/client` (Brett zeichnen, Figuren-Modelle, kurze HUD-Zeile).
-3. Tests: `tests/test_rules.py` (ruft am Ende `check_game`), `tests/ui/<spiel>_smoke.py`.
-4. Einbinden: `Dockerfile`, Dienst in `docker-compose.yml`, `party-hub/nginx-locations.conf` + `fly_nginx.conf`,
+**Vorlage: `games/dame/`** – kopieren und umbauen. Seit Engine 2.3 braucht ein Spiel:
+
+1. `server/layout.py`: Felder und Figuren aus den Brett-Hilfen (`tabletop_server.boards`: `grid`, `hexgrid`,
+   `ring_track`, `tray`, `layout`). Figuren nennen nur ihre Art (`pawn`, `disc`, `king`, `stone`, `flip`, `cube`, `cone`,
+   `ring`) und Farbe – die Engine baut die Modelle.
+2. `server/rules.py`: `GameRules` (§12.2). Für die Anzeige nur Daten in den Spielstand: `say`, `alerts`, `scores`,
+   `marks`, `result`/`finished`; Hinweise als Ereignis `NOTE` (Doku im Kopf von `tabletop_server/rules.py`).
+3. `server/main.py`: `GameDef(…, seat_names=[…], lobby="…", version=…)` bzw. `Variant(…)` je Spielart.
+4. `client/src/main.ts`: `startTable({ id, title })` – fertig. Eigenes Brett/eigene Figuren nur, wenn das Standard-Holzbrett
+   nicht passt (`board: (layout, ctx) => …`, `piece: (id, spec, layout) => …`, Beispiele: Mensch, Schach).
+   `index.html` enthält nur das Skript; `package.json`, `tsconfig.json`, `vite.config.ts` aus der Vorlage (Port anpassen).
+5. Tests: `tests/test_rules.py` (ruft am Ende `check_game`), `tests/ui/<spiel>_smoke.py`.
+6. Einbinden in den Hub: `Dockerfile`, Dienst in `docker-compose.yml`, `party-hub/nginx-locations.conf` + `fly_nginx.conf`,
    `Dockerfile.fly` + `fly_entrypoint.sh`, Hub (`partyState.games`, `votes`, `getGameUrl`, `SLOT_GAMES`, Titelbild
    `party-hub/assets/cover_<spiel>.jpg`), `KNOWN_GAME_IDS` in `party-server/server.js`, CI-Schritte.
 
-Schritt 4 schrumpft mit **E2.1** (ein Container für alle Tisch-Spiele, `game.json`, Hub liest die Liste vom Server)
-auf „Ordner anlegen“.
+Schritt 6 schrumpft mit **E2.7** (ein Container für alle Tisch-Spiele, `game.json`, Hub liest die Liste vom Server)
+auf „Ordner anlegen“. Dame ist bisher nur Vorlage (läuft lokal und in der CI, noch nicht im Hub).
 
 ### 12.6 Was die Engine für welche Spiele noch braucht
 
@@ -265,7 +277,8 @@ auf „Ordner anlegen“.
 | Mehrere Bretter je Spiel, Platzzahl/Lage je Brett, mehrere gleichzeitig am Zug, Figuren wechseln den Besitzer | ✅ 2.1 | Mensch 6/8, Teamschach, Tandem, Vierschach |
 | Karten, Stapel, Hand (Client + Aktionen) | E2.3 | Mau-Mau, Rommé, Kniffel-Block |
 | Eingreifen außerhalb des Zugs, Marker/Zähler/Geld | E2.4 | Spiele im Stil von Munchkin, Catan, Monopoly v2 |
-| Bretter aus Daten (Raster, Hex), Plättchen mit Drehung | später | Go, Catan, Carcassonne-artige Legespiele |
+| Oberfläche/Statuszeile/Siegerehrung aus Daten, Standard-Brett und -Figuren, Raster/Hex/Laufbahn aus Daten | ✅ 2.3 | Dame, Mühle, Go, Reversi, Halma |
+| Plättchen mit Drehung | später | Carcassonne-artige Legespiele |
 | Freier Modus ohne Regeln | später | beliebige Spiele „wie am echten Tisch“ |
 
 ### 12.7 Spielvarianten (Engine 2.1)

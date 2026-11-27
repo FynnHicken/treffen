@@ -21,6 +21,7 @@ from typing import Dict, List, Optional, Tuple
 from chess import VALUE as CP, Move, Position, sq_index, sq_name
 from layout import RESERVE_SLOTS, SHORT, TANDEM_SEATS, TANDEM_TEAMS
 from tabletop_server.rules import GameRules
+from rules import show
 
 KIND_OF = {v: k for k, v in SHORT.items()}
 SEAT_SIDE = {seat: side for side, seat in TANDEM_SEATS.items()}       # Platz → (Brett, "w"/"b")
@@ -239,7 +240,11 @@ class TandemRules(GameRules):
         g = {k: v for k, v in (room.game or {}).items()}
         if seat is not None and g.get("phase") == "move":
             g["moves"] = [{"piece": a["piece"], "to": a["to"]} for a in self.actions(room, seat)]
-        return g
+        boards = g.get("boards") or {}
+        playing = g.get("phase") == "move"
+        checked = [b for b in "AB" if playing and boards.get(b, {}).get("check")]
+        return show(g, [boards[b].get("last") for b in "AB" if b in boards], [boards[b].get("king") for b in checked],
+                    [self.mover(room, b) for b in checked])
 
     # ---------- Computer ----------
     def bot_action(self, room, seat: int) -> Optional[dict]:

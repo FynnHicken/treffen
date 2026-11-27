@@ -7,39 +7,7 @@
     <title>Mensch ärgere dich nicht</title>
 </head>
 <body>
-    <div id="table"></div>
-
-    <header class="hud">
-        <button class="hud-room" id="room-btn" title="Link zum Raum kopieren">
-            <span class="hud-dot" id="conn-dot"></span>
-            Raum <strong id="room-code">——</strong>
-            <span class="hud-copy">🔗</span>
-        </button>
-        <div class="hud-title">Mensch ärgere dich nicht</div>
-    </header>
-
-    <!-- Oben mittig: Status und darunter der Start-Knopf (unten läge er über der eigenen Namensgravur) -->
-    <div class="top-center">
-        <div class="status" id="status" hidden></div>
-        <button class="start-btn" id="start-btn" hidden>▶ Spiel starten</button>
-    </div>
-    <div class="gameover" id="gameover" hidden></div>
-    <button class="roll-btn" id="roll-btn" hidden title="Würfeln (oder den Becher greifen und schütteln)">🎲 Würfeln</button>
-
-    <p class="versions" id="versions"></p>
-    <p class="hint" id="hint">Becher greifen &amp; schütteln = würfeln · Ziehen: drehen · Zwei Finger: zoomen · Doppeltipp: zurück</p>
-
-    <div class="welcome" id="welcome" hidden>
-        <form class="welcome-card" id="welcome-form">
-            <h1>Mensch ärgere dich nicht</h1>
-            <p>Wie heißt du?</p>
-            <input id="name-input" maxlength="24" autocomplete="nickname" placeholder="Dein Name" required>
-            <button type="submit">An den Tisch setzen</button>
-        </form>
-    </div>
-
-    <div class="toast" id="toast" hidden></div>
-
+    <!-- Oberfläche baut die Spieltisch-App der Engine (packages/tabletop/src/app/startTable.ts) -->
     <script type="module" src="./src/main.ts"></script>
 </body>
 </html>
