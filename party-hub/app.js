@@ -957,9 +957,143 @@ function applyHubSettingsUI() {
     }
 }
 
+let _treffenUpdateState = null;
+let _treffenUpdateAutoChecked = false;
+
+function renderTreffenUpdaterUI(state) {
+    const verEl = document.getElementById("hubUpdaterVersion");
+    const selEl = document.getElementById("hubUpdateChannel");
+    const statusEl = document.getElementById("hubUpdaterStatus");
+    const applyBtn = document.getElementById("hubApplyUpdateBtn");
+    const settingsBtn = document.getElementById("hubSettingsBtn");
+    if (!state) return;
+
+    if (settingsBtn) {
+        settingsBtn.classList.toggle("has-update", Boolean(partyState.isHost && state.has_update));
+    }
+    if (verEl) {
+        const runtimeLabel = state.runtime === "fly" ? "Fly.io" : (state.runtime === "unraid" ? "Unraid" : "Docker");
+        const shaPart = state.installed_short ? ` · ${state.installed_short}` : "";
+        verEl.textContent = `v${state.installed_version || "1.0.0"}${shaPart} (${runtimeLabel})`;
+    }
+    if (selEl && Array.isArray(state.channels)) {
+        selEl.innerHTML = state.channels.map(c =>
+            `<option value="${escapeHtml(c.id)}">${escapeHtml(c.label)}</option>`
+        ).join("");
+        if (state.channel && state.channel.id) selEl.value = state.channel.id;
+        selEl.disabled = Boolean(state.locked_by_env);
+    }
+    if (statusEl) {
+        statusEl.className = "hub-updater-status";
+        if (state.error) {
+            statusEl.classList.add("is-err");
+            statusEl.textContent = `⚠️ Update-Prüfung fehlgeschlagen: ${state.error}`;
+        } else if (state.update_in_progress) {
+            statusEl.classList.add("is-update");
+            statusEl.textContent = "⏳ Update läuft auf dem Server – Container startet gleich neu…";
+        } else if (state.has_update) {
+            statusEl.classList.add("is-update");
+            const dateStr = state.latest_date ? new Date(state.latest_date).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }) : "";
+            statusEl.innerHTML =
+                `<strong>🆕 Update verfügbar (${escapeHtml(state.latest_short)})</strong><br>` +
+                `${escapeHtml(state.latest_message || "Neuer Stand auf GitHub")}` +
+                `${dateStr ? ` <span class="muted">(${escapeHtml(dateStr)})</span>` : ""}` +
+                (!state.can_apply_webhook ? `<br><span class="muted">${state.runtime === "fly" ? "Auf Fly.io per flyctl deploy ausrollen." : "Für 1-Klick-Update auf Unraid TREFFEN_UPDATE_WEBHOOK_URL setzen."}</span>` : "");
+        } else if (!state.installed_sha) {
+            statusEl.innerHTML =
+                `Stand auf GitHub (${escapeHtml(state.channel?.branch || "main")}): <strong>${escapeHtml(state.latest_short || "–")}</strong><br>` +
+                `<span class="muted">${escapeHtml(state.latest_message || "")}</span>`;
+        } else {
+            statusEl.classList.add("is-ok");
+            statusEl.innerHTML =
+                `✅ Aktuell (${escapeHtml(state.latest_short)})<br>` +
+                `<span class="muted">${escapeHtml(state.latest_message || "")}</span>`;
+        }
+    }
+    if (applyBtn) {
+        const showApply = Boolean(state.has_update && state.can_apply_webhook && !state.update_in_progress);
+        applyBtn.style.display = showApply ? "inline-flex" : "none";
+    }
+}
+
+window.checkTreffenUpdate = async function(force = false) {
+    const btn = document.getElementById("hubCheckUpdateBtn");
+    const statusEl = document.getElementById("hubUpdaterStatus");
+    if (btn && force) btn.disabled = true;
+    if (statusEl && force) statusEl.textContent = "🔍 Prüfe GitHub…";
+    try {
+        const resp = await fetch(`/party-ws/update/status${force ? "?force=1" : ""}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        _treffenUpdateState = await resp.json();
+        renderTreffenUpdaterUI(_treffenUpdateState);
+    } catch (err) {
+        if (statusEl) {
+            statusEl.className = "hub-updater-status is-err";
+            statusEl.textContent = `⚠️ Update-Status nicht erreichbar (${err?.message || err})`;
+        }
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+};
+
+window.changeTreffenUpdateChannel = async function(channelId) {
+    const statusEl = document.getElementById("hubUpdaterStatus");
+    if (statusEl) statusEl.textContent = "🔄 Wechsle Update-Kanal…";
+    try {
+        const resp = await fetch("/party-ws/update/channel", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...(partyState.gameTicket ? { "Authorization": `Bearer ${partyState.gameTicket}` } : {})
+            },
+            body: JSON.stringify({ channel: channelId, ticket: partyState.gameTicket || "" })
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+        _treffenUpdateState = data;
+        renderTreffenUpdaterUI(data);
+        showToast(`Update-Kanal: ${data.channel?.label || channelId}`);
+    } catch (err) {
+        showToast(`⚠️ ${err?.message || err}`);
+        if (_treffenUpdateState) renderTreffenUpdaterUI(_treffenUpdateState);
+    }
+};
+
+window.applyTreffenUpdate = async function() {
+    const applyBtn = document.getElementById("hubApplyUpdateBtn");
+    const statusEl = document.getElementById("hubUpdaterStatus");
+    if (applyBtn) applyBtn.disabled = true;
+    if (statusEl) {
+        statusEl.className = "hub-updater-status is-update";
+        statusEl.textContent = "⏳ Starte Unraid-Update…";
+    }
+    try {
+        const channelId = _treffenUpdateState?.channel?.id || "";
+        const resp = await fetch("/party-ws/update/apply", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...(partyState.gameTicket ? { "Authorization": `Bearer ${partyState.gameTicket}` } : {})
+            },
+            body: JSON.stringify({ channel: channelId, ticket: partyState.gameTicket || "" })
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+        showToast("🚀 Update auf Unraid gestartet!");
+        if (statusEl) statusEl.textContent = `⏳ ${data.message}`;
+        if (applyBtn) applyBtn.style.display = "none";
+    } catch (err) {
+        showToast(`⚠️ ${err?.message || err}`);
+        if (applyBtn) applyBtn.disabled = false;
+        if (_treffenUpdateState) renderTreffenUpdaterUI(_treffenUpdateState);
+    }
+};
+
 window.openHubSettingsModal = function() {
     if (!partyState.isHost) return;
     renderHubSettings();
+    if (_treffenUpdateState) renderTreffenUpdaterUI(_treffenUpdateState);
+    checkTreffenUpdate(false);
     const modal = document.getElementById("hubSettingsModal");
     if (modal) modal.style.display = "flex";
 };
@@ -972,6 +1106,10 @@ window.closeHubSettingsModal = function() {
 function updateHostPermissionsUI() {
     const isHost = !!partyState.isHost;
     applyHubSettingsUI();
+    if (isHost && !_treffenUpdateAutoChecked) {
+        _treffenUpdateAutoChecked = true;
+        checkTreffenUpdate(false);
+    }
 
     renderHubTiles();
 

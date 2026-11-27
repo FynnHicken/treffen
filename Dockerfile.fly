@@ -133,6 +133,12 @@ COPY fly_nginx.conf /etc/nginx/nginx.conf
 COPY fly_entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+ARG TREFFEN_COMMIT_SHA=""
+ARG TREFFEN_BUILD_DATE=""
+ENV TREFFEN_COMMIT_SHA=${TREFFEN_COMMIT_SHA}
+ENV TREFFEN_BUILD_DATE=${TREFFEN_BUILD_DATE}
+RUN node -e 'require("fs").writeFileSync("/app/BUILD_INFO.json", JSON.stringify({sha: process.env.TREFFEN_COMMIT_SHA || "", builtAt: process.env.TREFFEN_BUILD_DATE || new Date().toISOString()}))'
+
 EXPOSE 8080
 ENV PORT=8080
 

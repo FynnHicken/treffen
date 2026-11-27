@@ -6,7 +6,7 @@
     <title>Treffen – Dein Spieleabend</title>
     <link rel="stylesheet" href="styles.css?v=2.6">
     <link rel="stylesheet" href="themes.css?v=2.5">
-    <link rel="stylesheet" href="hub.css?v=3">
+    <link rel="stylesheet" href="hub.css?v=4">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Orbitron:wght@600;800&family=Plus+Jakarta+Sans:wght@600;800&display=swap" rel="stylesheet">
@@ -430,6 +430,25 @@
             <div class="modal-content hub-settings-list" id="hubSettingsList">
                 <!-- Populated dynamically -->
             </div>
+            <div class="hub-updater-box" id="hubUpdaterBox">
+                <div class="hub-updater-head">
+                    <span class="hub-updater-title">🔄 Software-Update</span>
+                    <span class="hub-updater-version" id="hubUpdaterVersion">v1.0.0</span>
+                </div>
+                <div class="hub-updater-row">
+                    <label for="hubUpdateChannel">Update-Kanal</label>
+                    <select id="hubUpdateChannel" class="setting-input" onchange="changeTreffenUpdateChannel(this.value)">
+                        <option value="stable">Stabil (FynnHicken/main)</option>
+                        <option value="upstream">Upstream (NobleBrains/main)</option>
+                        <option value="experimentell">Experimentell (FynnHicken/exp.)</option>
+                    </select>
+                </div>
+                <div class="hub-updater-status" id="hubUpdaterStatus">Lade Update-Status…</div>
+                <div class="hub-updater-actions">
+                    <button type="button" class="btn-outline small" id="hubCheckUpdateBtn" onclick="checkTreffenUpdate(true)">🔍 Nach Updates suchen</button>
+                    <button type="button" class="btn-outline cyan small" id="hubApplyUpdateBtn" onclick="applyTreffenUpdate()" style="display: none;">⬇️ Update installieren</button>
+                </div>
+            </div>
             <div class="modal-footer">
                 <button class="btn-primary-launch" onclick="closeHubSettingsModal()">Fertig</button>
             </div>
@@ -440,7 +459,7 @@
     <div class="toast" id="toast">Link kopiert!</div>
 
     <script src="avatar.js?v=1"></script>
-    <script src="app.js?v=schach2"></script>
+    <script src="app.js?v=schach3"></script>
     <script src="tiles.js?v=2"></script>
 </body>
 </html>
