@@ -20,11 +20,19 @@ export interface FieldSpec {
     kind: string;
     color?: string;
     index?: number;
+    /** Zone (Engine 2.4): mehrere Gegenstände auf einem Feld – Stapel, Hand eines Platzes, Auslage */
+    zone?: 'stack' | 'hand' | 'row' | string;
+    owner?: number;
+    up?: boolean;
+    /** Hand/Auslage: Blickrichtung in Grad (wie seat_angles) */
+    angle?: number;
+    hidden?: boolean;
 }
 
 export interface PieceSpec {
     kind: string;
-    seat: number;
+    /** Besitzer (null = niemand, z. B. Karten) */
+    seat: number | null;
     color?: string;
     field: string;   // Startfeld
 }
@@ -54,6 +62,12 @@ export interface PieceState {
     held_by: string | null;
     /** Art, falls sie sich im Spiel geändert hat (z. B. Bauer → Dame); sonst gilt PieceSpec.kind */
     kind?: string | null;
+    /** Reihenfolge auf einer Zone (oben = größte Zahl) */
+    order?: number;
+    /** offen liegend */
+    up?: boolean;
+    /** Vorderseite (Schlüssel in layout.cards) – nur, wenn ich sie sehen darf */
+    show?: string | null;
 }
 
 export type SettingValue = boolean | number | string;
@@ -88,6 +102,8 @@ export interface PlayState {
     scores_label?: string;
     marks?: Mark[];
     result?: { winners: number[]; reason?: string; text?: string } | null;
+    /** Knöpfe je Platz (Engine 2.4): Aktionen mit `label`, z. B. „Weiter“, Farbe wünschen */
+    acts?: Record<string, ({ type: string; label: string } & Record<string, unknown>)[]>;
     [key: string]: unknown;
 }
 
@@ -143,7 +159,12 @@ export type TableEvent =
     | { type: 'HOST_CHANGED'; host_id: string | null }
     | { type: 'PIECE_GRABBED'; piece: string; by: string }
     | { type: 'PIECE_RELEASED'; piece: string }
-    | { type: 'PIECE_MOVED'; piece: string; from: string; to: string; by: string; path?: string[]; capture?: string | null; reason?: string }
+    | {
+        type: 'PIECE_MOVED'; piece: string; from: string; to: string; by: string; path?: string[]; capture?: string | null;
+        reason?: string; order?: number; up?: boolean; show?: string | null;
+    }
+    | { type: 'PIECE_FLIPPED'; piece: string; up: boolean; show?: string | null }
+    | { type: 'STACK_SHUFFLED'; field: string; order: Record<string, number> }
     | { type: 'PIECE_CHANGED'; piece: string; kind: string; by?: string; reason?: string }
     | { type: 'GAME_UPDATED'; status: TableState['status']; play: PlayState | null }
     | { type: 'DICE_ROLLED'; by: string; values: number[]; throw: ThrowSpec }
@@ -168,8 +189,22 @@ export function applyEvent(state: TableState, ev: TableEvent): TableState {
             return withPiece(state, ev.piece, { held_by: ev.by });
         case 'PIECE_RELEASED':
             return withPiece(state, ev.piece, { held_by: null });
-        case 'PIECE_MOVED':
-            return withPiece(state, ev.piece, { field: ev.to, held_by: null });
+        case 'PIECE_MOVED': {
+            const patch: Partial<PieceState> = { field: ev.to, held_by: null };
+            if (ev.order !== undefined) patch.order = ev.order;
+            if (ev.up !== undefined) patch.up = ev.up;
+            if (ev.show !== undefined || state.pieces[ev.piece]?.show) patch.show = ev.show ?? null;   // nicht mehr sichtbar → vergessen
+            return withPiece(state, ev.piece, patch);
+        }
+        case 'PIECE_FLIPPED':
+            return withPiece(state, ev.piece, { up: ev.up, show: ev.show ?? null });
+        case 'STACK_SHUFFLED': {
+            const pieces = { ...state.pieces };
+            for (const [id, order] of Object.entries(ev.order)) {
+                if (pieces[id]) pieces[id] = { ...pieces[id], order, show: pieces[id].up ? pieces[id].show : null };
+            }
+            return { ...state, pieces };
+        }
         case 'PIECE_CHANGED':
             return withPiece(state, ev.piece, { kind: ev.kind === state.layout.pieces[ev.piece]?.kind ? null : ev.kind });
         case 'GAME_UPDATED':

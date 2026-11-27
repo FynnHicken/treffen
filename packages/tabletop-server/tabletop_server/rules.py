@@ -13,6 +13,12 @@ Alles, was ein Spieler tun kann, ist eine **Aktion** (ein Dict mit `type`). Der 
 Weitere Felder an einer Aktion (z. B. "path", "capture") reicht der Tisch durch. Neue Typen (Karten …)
 kommen in späteren MINOR-Versionen dazu; bestehende Spiele merken davon nichts.
 
+Ab Engine 2.4 darf eine Aktion jeden anderen Typ haben ({"type": "pass"}, {"type": "choose", "suit": "♥"} …).
+Mit `"label": "Weiter"` und `action_buttons = True` an den Regeln zeigt der Tisch sie als Knopf; der Client schickt
+sie als ACT, der Raum gibt sie an `apply` (nur einfache Werte, Regeln prüfen gegen `actions`).
+Karten, Stapel, Hände: siehe tabletop_server/cards.py – `room.move_piece(id, feld, up=…)` legt Gegenstände (auch
+auf Zonen) und sorgt dafür, dass verdeckte Vorderseiten nur bei denen ankommen, die sie sehen dürfen.
+
     class MeineRegeln(GameRules):
         def setup(self, room) -> list: ...                  # Anfangsaufstellung, room.game füllen
         def actions(self, room, seat) -> list: ...          # was dieser Platz gerade tun darf
@@ -66,6 +72,8 @@ class GameRules:
     min_players: int = 2
     #: True: alle sehen denselben Spielstand (view wird nur einmal berechnet, kein Geheimwissen)
     shared_view: bool = False
+    #: True: Aktionen mit "label" erscheinen als Knöpfe am Tisch (Engine 2.4)
+    action_buttons: bool = False
 
     def setup(self, room) -> List[dict]:
         raise NotImplementedError

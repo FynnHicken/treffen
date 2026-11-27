@@ -226,7 +226,86 @@ class Room:
         return self.variant.seats
 
     def _reset_pieces(self) -> None:
-        self.pieces = {pid: {"field": p["field"], "held_by": None} for pid, p in self.layout.get("pieces", {}).items()}
+        self.pieces = {}
+        for pid, p in self.layout.get("pieces", {}).items():
+            d = {"field": p["field"], "held_by": None}
+            for k in ("order", "up"):
+                if k in p:
+                    d[k] = p[k]
+            self.pieces[pid] = d
+
+    # ---------- Zonen und Karten (Engine 2.4, siehe cards.py) ----------
+    def zone_of(self, field: str) -> Optional[str]:
+        return (self.layout.get("fields", {}).get(field) or {}).get("zone")
+
+    def visible_to(self, pid: str, seat: Optional[int]) -> bool:
+        """Darf dieser Platz die Vorderseite sehen? Offen → alle; in der eigenen Hand → der Besitzer.
+        Regeln können das mit can_see(room, seat, pid) → True/False/None ändern."""
+        p = self.pieces.get(pid) or {}
+        if p.get("face") is None:
+            return False
+        if p.get("up"):
+            return True
+        if seat is None:
+            return False
+        hook = getattr(self.rules, "can_see", None)
+        if hook:
+            r = hook(self, seat, pid)
+            if r is not None:
+                return bool(r)
+        f = self.layout.get("fields", {}).get(p["field"]) or {}
+        return f.get("zone") == "hand" and f.get("owner") == seat
+
+    def _reveal(self, ev: dict, pid: str) -> dict:
+        """Vorderseite ins Ereignis: offen für alle (`show`), sonst nur für die, die sie sehen dürfen (`secret`)."""
+        face = self.pieces[pid].get("face")
+        if face is None:
+            return ev
+        if self.pieces[pid].get("up"):
+            ev["show"] = face
+        else:
+            sec = {str(s): {"show": face} for s in range(self.seats) if self.visible_to(pid, s)}
+            if sec:
+                ev["secret"] = sec
+        return ev
+
+    def move_piece(self, pid: str, to: str, up: Optional[bool] = None, reason: Optional[str] = None,
+                   by: str = "rules", path: Optional[list] = None) -> List[dict]:
+        """Gegenstand auf ein Feld legen (für Regeln) → [PIECE_MOVED]. Auf einer Zone kommt er obenauf; `up`
+        (offen/verdeckt) folgt der Zone, wenn nicht angegeben. Die Vorderseite sieht nur, wer darf."""
+        p = self.pieces[pid]
+        frm = p["field"]
+        f = self.layout.get("fields", {}).get(to) or {}
+        if f.get("zone"):
+            p["order"] = max((q.get("order", 0) for k, q in self.pieces.items() if q["field"] == to and k != pid),
+                             default=-1) + 1
+            if up is None:
+                up = bool(f.get("up", False))
+        p["field"], p["held_by"] = to, None
+        if up is not None:
+            p["up"] = bool(up)
+        ev = {"type": "PIECE_MOVED", "piece": pid, "from": frm, "to": to, "by": by, "path": path or [to]}
+        for k in ("order", "up"):
+            if k in p:
+                ev[k] = p[k]
+        if reason:
+            ev["reason"] = reason
+        return [self._reveal(ev, pid)]
+
+    def flip_piece(self, pid: str, up: bool) -> List[dict]:
+        """Umdrehen (für Regeln) → [PIECE_FLIPPED]."""
+        self.pieces[pid]["up"] = bool(up)
+        return [self._reveal({"type": "PIECE_FLIPPED", "piece": pid, "up": bool(up)}, pid)]
+
+    def public_pieces(self, seat: Optional[int]) -> Dict[str, dict]:
+        """Figuren/Karten für einen Platz – ohne Vorderseiten, die er nicht sehen darf."""
+        out = {}
+        for pid, p in self.pieces.items():
+            d = {k: v for k, v in p.items() if k != "face"}
+            if p.get("face") is not None and self.visible_to(pid, seat):
+                d["show"] = p["face"]
+            out[pid] = d
+        return out
 
     def game_info(self) -> dict:
         v = self.variant
@@ -281,7 +360,7 @@ class Room:
         self.game = None
         return [self.next_event({
             "type": "BOARD_CHANGED", "variant": new.id, "game": self.game_info(), "layout": self.layout,
-            "pieces": {pid: dict(p) for pid, p in self.pieces.items()},
+            "pieces": self.public_pieces(None),
             "members": [m.to_dict(self) for m in sorted(self.members.values(), key=lambda m: m.joined_at)],
             "settings": self.settings(), "settings_schema": self.settings_schema(),
         })]
@@ -305,6 +384,12 @@ class Room:
         if isinstance(st, dict) and "to_move" not in st:
             # Wer gerade handeln darf (Engine 2.1) – bei Tandem-Schach zwei Plätze gleichzeitig
             st = {**st, "to_move": list(self.rules.to_move(self))}
+        if isinstance(st, dict) and getattr(self.rules, "action_buttons", False) and "acts" not in st:
+            # Aktionen mit `label` zeigt der Tisch als Knöpfe (Engine 2.4) – je Platz nur die eigenen
+            seats = [seat] if seat is not None and not self.rules.shared_view else \
+                ([] if not self.rules.shared_view else list(self.rules.to_move(self)))
+            acts = {str(s): [a for a in self.rules.actions(self, s) if a.get("label")] for s in seats}
+            st = {**st, "acts": {k: v for k, v in acts.items() if v}}
         return st
 
     def seat_of(self, member_id: str) -> Optional[int]:
@@ -314,13 +399,16 @@ class Room:
     def personalize(self, msg: dict, member_id: str) -> dict:
         """Nachricht für ein Mitglied: aus `views` die eigene Ansicht als `play` einsetzen."""
         ev = msg.get("event") if msg.get("type") == "EVENT" else None
-        if not ev or "views" not in ev:
+        if not ev or ("views" not in ev and "secret" not in ev):
             return msg
         seat = self.seat_of(member_id)
-        ev = {k: v for k, v in ev.items() if k != "views"}
+        out = {k: v for k, v in ev.items() if k not in ("views", "secret")}
         if seat is not None:
-            ev["play"] = msg["event"]["views"].get(str(seat), ev.get("play"))
-        return {**msg, "event": ev}
+            if "views" in ev:
+                out["play"] = ev["views"].get(str(seat), out.get("play"))
+            if "secret" in ev:
+                out.update(ev["secret"].get(str(seat)) or {})     # z. B. die eigene Handkarte
+        return {**msg, "event": out}
 
     # ---------- Zustand ----------
     def state(self, seat: Optional[int] = None) -> dict:
@@ -330,7 +418,7 @@ class Room:
             "host_id": self.host_id,
             "members": [m.to_dict(self) for m in sorted(self.members.values(), key=lambda m: m.joined_at)],
             "layout": self.layout,
-            "pieces": {pid: dict(p) for pid, p in self.pieces.items()},
+            "pieces": self.public_pieces(seat),
             "last_roll": self.last_roll,
             "status": self.status if self.rules else None,
             "play": self.play_state(seat),
@@ -545,8 +633,7 @@ class Room:
             "members": [{"id": m.id, "name": m.name, "seat": m.seat, "is_bot": m.is_bot, "joined_at": m.joined_at,
                          "avatar": m.avatar}
                         for m in self.members.values()],
-            "pieces": {pid: ({"field": p["field"], "kind": p["kind"]} if p.get("kind") else {"field": p["field"]})
-                       for pid, p in self.pieces.items()},
+            "pieces": {pid: {k: v for k, v in p.items() if k != "held_by" and v is not None} for pid, p in self.pieces.items()},
             "last_roll": self.last_roll, "status": self.status, "state": self.game,
             "settings": dict(self.game_settings), "created_at": self.created_at,
         }
@@ -578,6 +665,9 @@ class Room:
                 room.pieces[pid] = {"field": p["field"], "held_by": None}
                 if isinstance(p.get("kind"), str):
                     room.pieces[pid]["kind"] = p["kind"]
+                for k, typ in (("order", int), ("up", bool), ("face", str)):
+                    if isinstance(p.get(k), typ):
+                        room.pieces[pid][k] = p[k]
         room.last_roll = data.get("last_roll")
         room.status = data.get("status", "lobby")
         room.game = data.get("state")
@@ -632,6 +722,18 @@ class Room:
     def bot_move(self, seat: int) -> List[dict]:
         """Planen + ausführen in einem Schritt (Tests, schnelle Regeln)."""
         return self.bot_apply(seat, self.bot_plan(seat))
+
+    def act(self, member_id: str, act) -> List[dict]:
+        """Aktion ohne Figur (Knopf am Tisch, z. B. „Weiter“, Farbe wünschen) – nur einfache Werte, Regeln prüfen."""
+        m = self.members.get(member_id)
+        if not self.rules or self.status != "playing" or not m or m.seat is None or not isinstance(act, dict):
+            return []
+        t = act.get("type")
+        if not isinstance(t, str) or t in ("roll", "move") or len(t) > 32:
+            return []
+        clean = {k: v for k, v in act.items() if isinstance(k, str) and len(k) <= 32 and k != "label"
+                 and isinstance(v, (str, int, float, bool)) and len(str(v)) <= 64}
+        return self.apply_action(member_id, m.seat, clean)
 
     def apply_action(self, by: str, seat: int, action: dict) -> List[dict]:
         """Aktion (außer Würfeln) durch die Regeln; None/ungültig → keine Ereignisse."""

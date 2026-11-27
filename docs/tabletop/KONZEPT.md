@@ -1,6 +1,6 @@
 # Treffen-Spieltisch – Konzept
 
-> Stand: 2026-11-27 · Status: **M1–M5 ✅ · Engine 2.3.0 (§12) · Mensch (`/mensch/`) und Schach (`/schach/`) im Hub, Dame als Vorlage** · Änderungen: [`packages/CHANGELOG.md`](../../packages/CHANGELOG.md)
+> Stand: 2026-11-27 · Status: **M1–M5 ✅ · Engine 2.4.0 (§12) · Mensch (`/mensch/`) und Schach (`/schach/`) im Hub, Dame und Mau-Mau als Vorlagen** · Änderungen: [`packages/CHANGELOG.md`](../../packages/CHANGELOG.md)
 
 ## 1. Ziel
 
@@ -137,7 +137,7 @@ Typen, Figuren (Modell, Farben), Würfel-Anzahl, Sitzplätze. Der Tisch baut dar
 | **E2.1 Spielvarianten** ✅ | Mehrere Bretter je Spiel (`Variant`), automatisch nach Spielerzahl, Lage der Plätze frei, mehrere Plätze gleichzeitig am Zug, Figuren nach Regeln; **Mensch für 4/6/8**, Schach-Varianten (§12.7) |
 | **E2.2 Gleichzeitig** ✅ | Mehrere Computer gleichzeitig am Zug kommen reihum dran (Tandem), Variante + Hausregeln in einer Nachricht |
 | **E2.3 Spieltisch-App** ✅ | `startTable()`: Oberfläche, Statuszeile, Siegerehrung, Markierungen aus Daten der Regeln; Standard-Brett und -Figuren; Brett-Hilfen (Raster, Hex, Laufbahn, Ablagen); **Dame** als Vorlage ohne Client-Code (§12.5) |
-| E2.4 Karten & Zonen | Karte, Stapel (mischen, ziehen), Hand (aufgefächert am eigenen Platz, nur für den Besitzer sichtbar), Ablagen mit mehreren Gegenständen; erstes Kartenspiel |
+| **E2.4 Karten & Zonen** ✅ | Karte, Stapel (mischen, ziehen), Hand (aufgefächert am eigenen Platz, nur für den Besitzer sichtbar), Auslage; geheime Vorderseiten; Knöpfe für Aktionen ohne Figur; **Mau-Mau** als Vorlage (§12.8) |
 | E2.5 Freier Tisch | Hausregel „Regeln prüfen: aus“ – alle dürfen alles bewegen wie am echten Tisch; Spiele nur aus Material |
 | E2.6 Am Tisch | Schachuhr/Zugzeit, Zug zurücknehmen (mit Zustimmung), Verlauf, Zähler/Marker/Geld |
 | E2.7 Ein Server für alle | Alle Tisch-Spiele in einem Container, `game.json` je Spiel, Hub liest die Spieleliste vom Server (§12.5) |
@@ -265,7 +265,7 @@ Der Status oben ist eine Zeile („Du bist am Zug“), kein Erklärtext. Einstel
    `party-hub/assets/cover_<spiel>.jpg`), `KNOWN_GAME_IDS` in `party-server/server.js`, CI-Schritte.
 
 Schritt 6 schrumpft mit **E2.7** (ein Container für alle Tisch-Spiele, `game.json`, Hub liest die Liste vom Server)
-auf „Ordner anlegen“. Dame ist bisher nur Vorlage (läuft lokal und in der CI, noch nicht im Hub).
+auf „Ordner anlegen“. Dame und Mau-Mau sind bisher nur Vorlagen (laufen lokal und in der CI, noch nicht im Hub).
 
 ### 12.6 Was die Engine für welche Spiele noch braucht
 
@@ -275,7 +275,7 @@ auf „Ordner anlegen“. Dame ist bisher nur Vorlage (läuft lokal und in der C
 | Aktionen, Art wechseln, Antippen → Ziel, Computer mit Bedenkzeit | ✅ 2.0 | Schach, Dame, Mühle, Halma, Reversi |
 | Ansicht je Platz (Geheimes) | ✅ 2.0 (Server) | Grundlage für alle Kartenspiele |
 | Mehrere Bretter je Spiel, Platzzahl/Lage je Brett, mehrere gleichzeitig am Zug, Figuren wechseln den Besitzer | ✅ 2.1 | Mensch 6/8, Teamschach, Tandem, Vierschach |
-| Karten, Stapel, Hand (Client + Aktionen) | E2.3 | Mau-Mau, Rommé, Kniffel-Block |
+| Karten, Stapel, Hand, Auslage, geheime Vorderseiten, Knöpfe (Aktionen ohne Figur) | ✅ 2.4 | Mau-Mau, Rommé, Skat, Uno-artige Spiele |
 | Eingreifen außerhalb des Zugs, Marker/Zähler/Geld | E2.4 | Spiele im Stil von Munchkin, Catan, Monopoly v2 |
 | Oberfläche/Statuszeile/Siegerehrung aus Daten, Standard-Brett und -Figuren, Raster/Hex/Laufbahn aus Daten | ✅ 2.3 | Dame, Mühle, Go, Reversi, Halma |
 | Plättchen mit Drehung | später | Carcassonne-artige Legespiele |
@@ -307,6 +307,24 @@ GAME = GameDef("mensch", "Mensch ärgere dich nicht", version="1.1.0", auto_vari
 
 Schach (Engine 2.2): `klassisch` (2), `team` (4, `seat_angles=[20, -20, 160, 200]`), `tandem` (4, zwei Bretter), `vierer`
 (4, Kreuzbrett) – Details in `games/schach/README.md`.
+
+### 12.8 Karten, Stapel, Hände (Engine 2.4)
+
+Vorlage: `games/maumau/`. Bausteine in `tabletop_server/cards.py` (Doku im Kopf der Datei):
+
+```python
+fields = {"deck": zone(-0.55, 0, "stack"), "pile": zone(0.55, 0, "stack", up=True)}
+fields |= {f"hand-{s}": zone(*seat_point(s, n, 4.55), "hand", owner=s, angle=s * 360 / n) for s in range(n)}
+LAYOUT = layout(fields, card_pieces(32, "deck"), shape="round", size=3.4, surface="felt") | {"cards": french_deck(32)}
+# Regeln: deal_new(room, "deck", list(CARDS)); room.move_piece(top(room, "deck"), f"hand-{s}"); shuffle(room, "deck")
+```
+
+- **Geheimes bleibt beim Server**: Die Vorderseite (`face`) steht nie im Layout und verlässt den Server nur als `show`
+  an die, die sie sehen dürfen. Die Pflicht-Prüfung prüft das für jedes Spiel.
+- **Am Tisch**: Karte aus der Hand auf die Ablage ziehen oder antippen (ein Ziel → sofort), Stapel antippen = ziehen
+  (oberste Karte hat das Ziel „eigene Hand“). Die eigene Hand ist sortiert, gekippt und größer; spielbare Karten rücken vor.
+- **Knöpfe** nur für echte Entscheidungen ohne Handgriff (Farbe wünschen, „Weiter“): Aktion mit `label`, Regeln mit
+  `action_buttons = True`.
 
 Hinweis: Kommerzielle Spiele (Munchkin, Catan …) nur als **eigene Umsetzung der Mechanik** mit eigenen Karten,
 Texten und Grafiken – keine Kopie von Kartentexten, Namen oder Bildern.

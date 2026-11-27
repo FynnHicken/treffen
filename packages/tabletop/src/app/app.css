@@ -133,10 +133,7 @@ html, body {
 }
 
 .toast {
-    position: fixed;
-    top: 70px;
-    left: 50%;
-    transform: translateX(-50%);
+    /* unter Statuszeile und Knöpfen (in .top-center), verdeckt nichts */
     padding: 10px 16px;
     border-radius: 12px;
     background: var(--panel);
@@ -243,3 +240,13 @@ html, body {
 .gameover-card .reason { margin: -4px 0 16px; opacity: 0.8; }
 .gameover-card h2 .tt-avatar { width: 30px; height: 30px; margin: -4px 8px -6px 0; }
 .gameover-card small { opacity: 0.7; }
+
+/* ---- Knöpfe der Regeln (Engine 2.4): „Weiter“, Farbe wünschen … ---- */
+.acts { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; pointer-events: auto; }
+.acts[hidden] { display: none; }
+.acts button {
+    min-height: 44px; padding: 10px 16px; border: 1px solid rgba(255, 220, 170, 0.35); border-radius: 999px;
+    background: var(--accent); color: #2a1608; font: 700 15px system-ui, sans-serif; cursor: pointer;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+.acts button:active { transform: scale(0.96); }

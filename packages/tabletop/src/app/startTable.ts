@@ -26,6 +26,7 @@ import { ENGINE_VERSION } from '../version';
 import { setupHud, movers, type Hud, type HudContext, type HudTexts } from './hud';
 import { createGenericBoard } from '../boards/generic';
 import { createPiece } from '../objects/pieces';
+import { createCard } from '../objects/cards';
 
 export interface BoardContext {
     table: TableScene;
@@ -53,7 +54,7 @@ export interface TableAppOptions {
     title: string;
     /** Brett aus dem Layout (Standard: Holzbrett mit runden bzw. eckigen Feldern, siehe boards/generic.ts) */
     board?: (layout: Layout, ctx: BoardContext) => THREE.Object3D | BoardHandle;
-    /** Modell einer Figur (Standard: nach `kind` – pawn, disc, stone, cube, …, siehe objects/pieces.ts) */
+    /** Modell einer Figur (Standard: nach `kind` – pawn, disc, stone, cube, …, siehe objects/pieces.ts; card → Karte) */
     piece?: (id: string, spec: PieceSpec, layout: Layout) => THREE.Object3D;
     /** Figuren-Oberfläche, wenn das Brett sie nicht meldet */
     surfaceY?: number;
@@ -97,6 +98,8 @@ function shell(o: TableAppOptions): void {
     </header>
     <div class="top-center">
         <div class="status" id="status" hidden></div>
+        <div class="acts" id="acts" hidden></div>
+        <div class="toast" id="toast" hidden></div>
         <button class="start-btn" id="start-btn" hidden>▶ ${start} starten</button>
     </div>
     <div class="gameover" id="gameover" hidden></div>
@@ -110,8 +113,7 @@ function shell(o: TableAppOptions): void {
             <input id="name-input" maxlength="24" autocomplete="nickname" placeholder="Dein Name" required>
             <button type="submit">An den Tisch setzen</button>
         </form>
-    </div>
-    <div class="toast" id="toast" hidden></div>`;
+    </div>`;
     for (const el of [...div.children]) document.body.appendChild(el);
 }
 
@@ -222,7 +224,8 @@ export async function startTable(o: TableAppOptions): Promise<TableApp> {
     const pieces = new PieceLayer(table, client, {
         surfaceY: () => surfaceY,
         liftHeight: o.liftHeight,
-        createMesh: o.piece ?? ((id, spec, layout) => createPiece(spec, layout)),
+        createMesh: o.piece ?? ((id, spec, layout) => spec.kind === 'card'
+            ? createCard(client.state?.pieces[id]?.show ?? null, layout) : createPiece(spec, layout)),
     });
 
     const hud = setupHud(client, o.texts ?? {}, o.status);

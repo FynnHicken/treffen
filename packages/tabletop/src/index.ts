@@ -31,3 +31,6 @@ export type { Hud, HudContext, HudTexts } from './app/hud';
 export { createGenericBoard, GENERIC_THICKNESS } from './boards/generic';
 export { createPiece, colorOf } from './objects/pieces';
 export { MarkLayer } from './objects/MarkLayer';
+// Engine 2.4: Karten, Stapel, Hände
+export { createCard, CARD_W, CARD_H, CARD_T } from './objects/cards';
+export type { CardFace } from './objects/cards';

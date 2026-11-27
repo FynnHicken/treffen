@@ -6,8 +6,9 @@
  *   size | w, d       Maße der Platte (Tisch-Einheiten)           shape: "square" (Standard) | "round"
  *   spacing           Feldabstand (Größe der Felder)               cells: "round" (Standard) | "square" (Schachbrett)
  *   wood              Farbe der Platte (Standard Ahorn)            lines: [[feldA, feldB], …] Linien zwischen Feldern
- *   frame             Randbreite (nur dekorativ)
+ *   frame             Randbreite (nur dekorativ)              surface: "wood" (Standard) | "felt" (Spielmatte, Kartenspiele)
  * Felder: x, z, color (Palette-Name oder #rrggbb; ohne: dezenter Kreis), hidden: true → nicht malen (Ablagen).
+ * Zonen (Engine 2.4): Stapel als Kartenumriss gemalt, Hände und Auslagen nicht (die liegen am Platz).
  * Server-Hilfen dazu: tabletop_server.boards (grid, hexgrid, ring_track, line_board …).
  */
 import * as THREE from 'three';
@@ -59,7 +60,8 @@ export function createGenericBoard(layout: Layout, ctx: BoardContext): BoardHand
     grad.addColorStop(1, `#${new THREE.Color(wood).multiplyScalar(0.86).getHexString()}`);
     g.fillStyle = grad;
     g.fillRect(0, 0, cw, cd);
-    for (let i = 0; i < 60; i++) {                 // leichte Maserung
+    const felt = b.surface === 'felt';
+    for (let i = 0; i < (felt ? 0 : 60); i++) {    // leichte Maserung (Filz: keine)
         g.strokeStyle = `rgba(80,45,15,${0.03 + (i % 5) * 0.01})`;
         g.lineWidth = 1 + (i % 3);
         g.beginPath();
@@ -81,8 +83,17 @@ export function createGenericBoard(layout: Layout, ctx: BoardContext): BoardHand
         g.beginPath(); g.moveTo(X(fa.x), Z(fa.z)); g.lineTo(X(fc.x), Z(fc.z)); g.stroke();
     }
     const square = b.cells === 'square';
-    for (const f of Object.values(layout.fields) as (typeof layout.fields[string] & { hidden?: boolean })[]) {
-        if (f.hidden) continue;
+    for (const f of Object.values(layout.fields)) {
+        if (f.hidden || f.zone === 'hand' || f.zone === 'row') continue;
+        if (f.zone === 'stack') {                    // Kartenumriss (0,62 × 0,88 wie objects/cards.ts)
+            const cw2 = 0.66 * k, ch2 = 0.92 * k;
+            g.strokeStyle = 'rgba(255,255,255,0.28)';
+            g.lineWidth = Math.max(2, 0.025 * k);
+            g.setLineDash([0.06 * k, 0.05 * k]);
+            g.strokeRect(X(f.x) - cw2 / 2, Z(f.z) - ch2 / 2, cw2, ch2);
+            g.setLineDash([]);
+            continue;
+        }
         const c = color(f.color);
         if (square) {
             g.fillStyle = c ?? 'rgba(60,35,15,0.25)';
@@ -98,7 +109,7 @@ export function createGenericBoard(layout: Layout, ctx: BoardContext): BoardHand
         }
     }
     if (square) {                                    // Rahmen um das Feld-Raster
-        const fs = Object.values(layout.fields).filter(f => !(f as { hidden?: boolean }).hidden);
+        const fs = Object.values(layout.fields).filter(f => !f.hidden && !f.zone);
         if (fs.length) {
             const x0 = Math.min(...fs.map(f => f.x)) - S / 2, x1 = Math.max(...fs.map(f => f.x)) + S / 2;
             const z0 = Math.min(...fs.map(f => f.z)) - S / 2, z1 = Math.max(...fs.map(f => f.z)) + S / 2;
@@ -112,7 +123,8 @@ export function createGenericBoard(layout: Layout, ctx: BoardContext): BoardHand
     tex.anisotropy = ctx.anisotropy;
     const top = new THREE.Mesh(
         round ? new THREE.CircleGeometry(w / 2 - 0.01, 96) : new THREE.PlaneGeometry(w - 0.02, d - 0.02),
-        new THREE.MeshPhysicalMaterial({ map: tex, roughness: 0.45, clearcoat: 0.6, clearcoatRoughness: 0.25 })
+        felt ? new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 })
+            : new THREE.MeshPhysicalMaterial({ map: tex, roughness: 0.45, clearcoat: 0.6, clearcoatRoughness: 0.25 })
     );
     if (round) tex.center.set(0.5, 0.5);
     top.rotation.x = -Math.PI / 2;
