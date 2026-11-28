@@ -86,6 +86,7 @@ export interface SettingSpec {
 /** Spielstand der Regeln (spielspezifisch; diese Felder nutzt der Tisch selbst) */
 export interface PlayState {
     turn: number | null;
+    cup_seat?: number | null;
     phase: 'roll' | 'move' | 'over' | string;
     rolls_left?: number;
     dice?: number | null;

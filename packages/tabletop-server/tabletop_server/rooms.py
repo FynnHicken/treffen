@@ -204,6 +204,7 @@ class Room:
         self.pieces: Dict[str, dict] = {}
         self._reset_pieces()
         self.last_roll: Optional[dict] = None
+        self.free_cup_seat: Optional[int] = None
         self._rng = random.SystemRandom()       # Würfel: nicht vorhersagbar
         # Spielablauf (nur mit Regeln): lobby → playing → finished
         self.status = "lobby"
@@ -548,7 +549,10 @@ class Room:
         throw = {"power": round(power, 3), "seed": self._rng.getrandbits(31), "seat": m.seat}
         self.last_roll = {"by": member_id, "values": values, "throw": throw, "at": now}
         events = [self.next_event({"type": "DICE_ROLLED", "by": member_id, "values": values, "throw": throw})]
-        if self.rules and self.status == "playing" and not self.free:
+        if self.free:
+            self.free_cup_seat = m.seat
+            events.append(self._play_event())
+        elif self.rules and self.status == "playing":
             evs = self.rules.apply(self, m.seat, {"type": "roll", "values": values}) or []
             events += [self.next_event(e) for e in evs]
             events.append(self._play_event())
@@ -631,29 +635,91 @@ class Room:
         return bool(self.rules) and self.status == "playing" and bool(self.game_def.free_play) \
             and self.game_settings.get("free") is True
 
+    def _free_cup_seat(self, seats: List[int]) -> Optional[int]:
+        if not seats:
+            return None
+        if self.free_cup_seat in seats:
+            return self.free_cup_seat
+        host_m = self.members.get(self.host_id) if self.host_id else None
+        if host_m and host_m.seat in seats:
+            return host_m.seat
+        return seats[0]
+
     def _free_state(self, seat: Optional[int]) -> dict:
         seats = sorted(m.seat for m in self.members.values() if m.seat is not None)
+        cup_seat = self._free_cup_seat(seats)
         stacks = [fid for fid, f in self.layout.get("fields", {}).items()
                   if f.get("zone") == "stack" and sum(1 for p in self.pieces.values() if p["field"] == fid) >= 2]
-        acts = [{"type": "shuffle", "field": fid,
-                 "label": "🔀 " + (self.layout["fields"][fid].get("label") or ("Stapel mischen" if len(stacks) == 1 else f"Mischen: {fid}"))}
-                for fid in stacks]
-        return {"free": True, "phase": "free", "turn": None, "to_move": [],
-                "say": {"all": "Freies Spiel – alle am Tisch dürfen alles bewegen."},
-                "acts": {str(s): acts for s in seats if acts and (seat is None or s == seat)}}
+        stack_acts = [{"type": "shuffle", "field": fid,
+                       "label": "🔀 " + (self.layout["fields"][fid].get("label") or ("Stapel mischen" if len(stacks) == 1 else f"Mischen: {fid}"))}
+                      for fid in stacks]
+        acts_by_seat = {}
+        for s in seats:
+            if seat is not None and s != seat:
+                continue
+            s_acts = list(stack_acts)
+            if len(seats) >= 2 and self.layout.get("dice"):
+                if s == cup_seat:
+                    s_acts.append({"type": "pass_cup", "label": "🎲 Becher weitergeben"})
+                else:
+                    s_acts.append({"type": "take_cup", "label": "🎲 Becher nehmen"})
+            if s_acts:
+                acts_by_seat[str(s)] = s_acts
+        return {"free": True, "phase": "free", "turn": None, "to_move": [], "cup_seat": cup_seat,
+                "say": {"all": "Freies Spiel – alle dürfen alles bewegen, schlagen & den Becher weitergeben."},
+                "acts": acts_by_seat}
 
     def _free_drop(self, member_id: str, piece_id: str, field_id) -> List[dict]:
         fields = self.layout.get("fields", {})
+        piece_specs = self.layout.get("pieces", {})
         p = self.pieces[piece_id]
         f = fields.get(field_id) if isinstance(field_id, str) else None
         if f is None or (field_id == p["field"] and not f.get("zone")):
             return self.release(member_id, piece_id)
-        if not f.get("zone") and any(o["field"] == field_id for oid, o in self.pieces.items() if oid != piece_id):
-            return self.release(member_id, piece_id)
+        occupied_by = [oid for oid, o in self.pieces.items() if oid != piece_id and o["field"] == field_id]
+        if not f.get("zone") and occupied_by:
+            other_id = occupied_by[0]
+            my_seat = piece_specs.get(piece_id, {}).get("seat")
+            other_seat = piece_specs.get(other_id, {}).get("seat")
+            # Eigene Figur nicht schlagen
+            if my_seat is not None and other_seat is not None and my_seat == other_seat:
+                return self.release(member_id, piece_id)
+            # Gegner-Figur im freien Spiel schlagen → zurück auf deren Start-/Heimfeld
+            occupied_fields = {o["field"] for oid, o in self.pieces.items() if oid != other_id}
+            start_f = piece_specs.get(other_id, {}).get("field")
+            home_field = start_f if (start_f and start_f not in occupied_fields) else None
+            if not home_field and other_seat is not None:
+                home_field = next(
+                    (fid for fid, fs in fields.items()
+                     if fs.get("seat") == other_seat and fs.get("zone") in ("home", "bench", "jail") and fid not in occupied_fields),
+                    None,
+                )
+            if not home_field and other_seat is not None:
+                home_field = next(
+                    (fid for fid, fs in fields.items() if fs.get("seat") == other_seat and fid not in occupied_fields),
+                    None,
+                )
+            if not home_field:
+                return self.release(member_id, piece_id)
+            evs = self.move_piece(other_id, home_field, reason="captured", by=member_id)
+            evs += self.move_piece(piece_id, field_id, by=member_id)
+            return [self.next_event(e) for e in evs] + [self._play_event()]
         return [self.next_event(e) for e in self.move_piece(piece_id, field_id, by=member_id)] + [self._play_event()]
 
     def _free_act(self, member_id: str, act: dict) -> List[dict]:
         t = act.get("type")
+        m = self.members.get(member_id)
+        if t == "pass_cup":
+            seats = sorted(x.seat for x in self.members.values() if x.seat is not None)
+            if len(seats) >= 2:
+                cur = self._free_cup_seat(seats)
+                idx = seats.index(cur) if cur in seats else 0
+                self.free_cup_seat = seats[(idx + 1) % len(seats)]
+                return [self._play_event()]
+            return []
+        if t == "take_cup" and m and m.seat is not None:
+            self.free_cup_seat = m.seat
+            return [self._play_event()]
         if t == "flip":
             pid = act.get("piece")
             p = self.pieces.get(pid) if isinstance(pid, str) else None

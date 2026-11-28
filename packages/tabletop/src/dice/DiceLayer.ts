@@ -145,6 +145,7 @@ export class DiceLayer {
         const s = this.client.state;
         if (!s) return null;
         const seated = s.members.filter(m => m.seat !== null).map(m => m.seat as number).sort((a, b) => a - b);
+        if (s.status === 'playing' && s.play?.cup_seat != null) return s.play.cup_seat;
         if (s.status === 'playing' && s.play?.turn != null) return s.play.turn;
         if (s.status === 'finished' && this.cupSeat !== null) return this.cupSeat;
         if (this.lobbyHolder !== null && seated.includes(this.lobbyHolder)) return this.lobbyHolder;
@@ -165,7 +166,7 @@ export class DiceLayer {
         let delta = angleOf(this.cupPosition(seat)) - from;
         while (delta <= -Math.PI) delta += Math.PI * 2;
         while (delta > Math.PI) delta -= Math.PI * 2;
-        this.travel = { from, delta, t: 0, dur: 0.45 + Math.abs(delta) / Math.PI * 0.5 };
+        this.travel = { from, delta, t: 0, dur: 0.28 + Math.abs(delta) / Math.PI * 0.27 };
         this.cupSeat = seat;
         this.animate();
     }

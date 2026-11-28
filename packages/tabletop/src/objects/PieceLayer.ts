@@ -282,16 +282,23 @@ export class PieceLayer {
         return s.play?.free ? true : spec.seat === me.seat;       // freies Spiel: alles anfassen
     }
 
-    /** Erlaubte Ziele (mit Regeln) bzw. alle freien Felder (freier Tisch) */
+    /** Erlaubte Ziele (mit Regeln) bzw. alle freien Felder (+ Gegner im freien Spiel) */
     private candidates(id: string): string[] {
         const s = this.lastState;
         if (!s) return [];
         const legal = this.client.legalTargets(id);
         if (legal !== null) return legal;
-        const occupied = new Set(Object.entries(s.pieces).filter(([pid]) => pid !== id).map(([, ps]) => ps.field));
-        // Zonen (Stapel, Hand, Auslage) nehmen immer noch etwas auf
-        return Object.entries(s.layout.fields).filter(([f, spec]) => spec.zone ? f !== s.pieces[id]?.field || spec.zone !== 'stack'
-            : !occupied.has(f)).map(([f]) => f);
+        const mySeat = s.layout.pieces[id]?.seat;
+        const occupantSeat = new Map<string, number | undefined>();
+        for (const [pid, ps] of Object.entries(s.pieces)) {
+            if (pid !== id) occupantSeat.set(ps.field, s.layout.pieces[pid]?.seat);
+        }
+        // Zonen (Stapel, Hand, Auslage) nehmen immer noch etwas auf; im freien Spiel darf man gegnerische Figuren schlagen
+        return Object.entries(s.layout.fields).filter(([f, spec]) => {
+            if (spec.zone) return f !== s.pieces[id]?.field || spec.zone !== 'stack';
+            if (!occupantSeat.has(f)) return true;
+            return !!s.play?.free && mySeat !== undefined && occupantSeat.get(f) !== mySeat;
+        }).map(([f]) => f);
     }
 
     private ring(color: number, inner: number, outer: number, opacity: number): THREE.Mesh {
