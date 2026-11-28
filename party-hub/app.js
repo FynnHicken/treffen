@@ -1099,7 +1099,7 @@ window.applyTreffenUpdate = async function() {
     if (applyBtn) applyBtn.disabled = true;
     if (statusEl) {
         statusEl.className = "hub-updater-status is-update";
-        statusEl.textContent = "⏳ Starte Unraid-Update…";
+        statusEl.textContent = "⏳ Starte Update…";
     }
     try {
         const channelId = _treffenUpdateState?.channel?.id || "";
@@ -1113,7 +1113,7 @@ window.applyTreffenUpdate = async function() {
         });
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-        showToast("🚀 Update auf Unraid gestartet!");
+        showToast("🚀 Update gestartet!");
         if (statusEl) statusEl.textContent = `⏳ ${data.message}`;
         if (applyBtn) applyBtn.style.display = "none";
     } catch (err) {
