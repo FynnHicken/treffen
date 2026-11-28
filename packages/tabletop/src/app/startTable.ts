@@ -20,10 +20,12 @@ import { SeatLabels } from '../ui/SeatLabels';
 import { SettingsPanel } from '../ui/SettingsPanel';
 import { PieceLayer } from '../objects/PieceLayer';
 import { MarkLayer } from '../objects/MarkLayer';
+import { ClockLayer } from '../objects/ClockLayer';
 import { DiceLayer, type Obstacle } from '../dice/DiceLayer';
 import { unlockAudioOnGesture } from '../audio/sfx';
 import { ENGINE_VERSION } from '../version';
 import { setupHud, movers, type Hud, type HudContext, type HudTexts } from './hud';
+import { setupTalk, type Talk } from './talk';
 import { createGenericBoard } from '../boards/generic';
 import { createPiece } from '../objects/pieces';
 import { createCard } from '../objects/cards';
@@ -77,6 +79,8 @@ export interface TableApp {
     labels: SeatLabels;
     pieces: PieceLayer;
     marks: MarkLayer;
+    clock: ClockLayer;
+    talk: Talk;
     dice: DiceLayer | null;
     hud: Hud;
     readonly board: BoardHandle | null;
@@ -228,7 +232,9 @@ export async function startTable(o: TableAppOptions): Promise<TableApp> {
             ? createCard(client.state?.pieces[id]?.show ?? null, layout) : createPiece(spec, layout)),
     });
 
-    const hud = setupHud(client, o.texts ?? {}, o.status);
+    const clock = new ClockLayer(table, client);
+    const hud = setupHud(client, o.texts ?? {}, o.status, seat => clock.remaining(seat));
+    const talk = setupTalk(table, client, hud.ctx);
     client.onState(s => {
         const p = s.status === 'playing' || s.status === 'finished' ? s.play : null;
         marks.set(s.layout, p?.marks);
@@ -244,7 +250,7 @@ export async function startTable(o: TableAppOptions): Promise<TableApp> {
     setTimeout(() => document.getElementById('hint')?.classList.add('fade'), 6000);
 
     app = {
-        table, client, presence, labels, pieces, marks, hud,
+        table, client, presence, labels, pieces, marks, hud, clock, talk,
         get dice() { return dice; },
         get board() { return board; },
     };

@@ -26,6 +26,7 @@ export class TableClient {
     private eventListeners = new Set<Listener<TableEvent>>();
     private presenceListeners = new Set<(from: string, p: PresenceData | null) => void>();
     private connectionListeners = new Set<Listener<boolean>>();
+    private reactionListeners = new Set<(from: string, emoji: string) => void>();
     private errorListeners = new Set<(err: any) => void>();
     private lastPresenceSent = 0;
     private pendingPresence: PresenceData | null = null;
@@ -119,15 +120,35 @@ export class TableClient {
         const s = this.state;
         if (!s || !this.me || this.me.seat === null) return false;
         if (!s.status || s.status === 'lobby') return true;      // freier Tisch / Lobby: zum Ausprobieren
+        if (s.status === 'playing' && s.play?.free) return true;  // freies Spiel: jederzeit
         return this.myTurn && s.play?.phase === 'roll' && (s.play.rolls_left ?? 0) > 0;
     }
 
     /** Erlaubte Ziele einer Figur (null = freier Tisch, jedes freie Feld) */
     legalTargets(piece: string): string[] | null {
         const s = this.state;
-        if (!s?.status) return null;
+        if (!s?.status || (s.status === 'playing' && s.play?.free)) return null;     // freies Spiel: jedes Feld
         if (!this.myTurn) return [];               // erlaubte Züge liefern die Regeln (in jeder Phase, Engine 2.4)
         return (s.play?.moves ?? []).filter(m => m.piece === piece).map(m => m.to);
+    }
+
+    /** Reaktion am eigenen Platz (Engine 2.7): 👍 👏 😂 … – flüchtig, für alle sichtbar */
+    react(emoji: string): void {
+        this.socket.send({ action: 'REACT', emoji });
+    }
+
+    onReaction(fn: (from: string, emoji: string) => void): () => void {
+        this.reactionListeners.add(fn);
+        return () => this.reactionListeners.delete(fn);
+    }
+
+    /** Zug zurücknehmen erbitten bzw. beantworten (Engine 2.6, Hausregel) */
+    undo(): void {
+        this.socket.send({ action: 'UNDO' });
+    }
+
+    undoAnswer(yes: boolean): void {
+        this.socket.send({ action: 'UNDO_ANSWER', yes });
     }
 
     /** Aktion ohne Figur (Knopf am Tisch, Engine 2.4) – die Regeln prüfen */
@@ -218,6 +239,9 @@ export class TableClient {
                 break;
             case 'PRESENCE':
                 for (const fn of this.presenceListeners) fn(msg.from, msg.p);
+                break;
+            case 'REACTION':
+                for (const fn of this.reactionListeners) fn(msg.from, msg.emoji);
                 break;
             case 'ERROR':
                 console.warn('Server:', msg.code, msg.message);

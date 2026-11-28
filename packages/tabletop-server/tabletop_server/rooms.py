@@ -6,6 +6,7 @@ Protokoll (Server → Client):
   PRESENCE {from, p}                Zeiger/„hält etwas“ eines anderen Mitglieds (ungeprüft, nicht gespeichert)
   ERROR    {code, message}          nur an den Absender
 """
+import copy
 import random
 import re
 import time
@@ -78,12 +79,15 @@ class GameDef:
         und wechselt in der Lobby von selbst, wenn jemand dazukommt oder geht.
     rules: GameRules (API 2) oder Rules (API 1, wird übersetzt) oder None (freier Tisch).
     version: Version des Spiels selbst (SemVer) – steht mit der Engine-Version in /api/health und im Client.
+    free_play: Hausregel „Freies Spiel“ anbieten (Engine 2.5, Standard: aus) – dann prüft der Tisch keine Regeln,
+      alle am Tisch dürfen alles bewegen, würfeln, Karten umdrehen und Stapel mischen. Aufgebaut wird wie gewohnt.
     """
 
     def __init__(self, game_id: str, title: str, seat_colors: Optional[List[str]] = None, min_players: int = 2,
                  layout: Optional[dict] = None, rules=None, version: str = "1.0.0",
                  variants: Optional[List[Variant]] = None, auto_variant: bool = False,
-                 variant_label: str = "Spielvariante", seat_names: Optional[List[str]] = None, lobby: str = ""):
+                 variant_label: str = "Spielvariante", seat_names: Optional[List[str]] = None, lobby: str = "",
+                 free_play: bool = True, undo: bool = True):
         self.id = game_id
         self.title = title
         self.version = version
@@ -96,6 +100,8 @@ class GameDef:
         self.default_variant = variants[0]
         self.auto_variant = bool(auto_variant) and len(variants) > 1
         self.variant_label = variant_label
+        self.free_play = free_play
+        self.undo = undo
         # Für einfache Spiele und ältere Aufrufer: Werte der Standard-Variante
         self.seat_colors = self.default_variant.seat_colors
         self.layout = self.default_variant.layout
@@ -203,6 +209,10 @@ class Room:
         self.status = "lobby"
         self.game: Optional[dict] = None        # Spielstand der Regeln (wer dran ist, Würfe übrig, …)
         self.game_settings: dict = {}
+        # Engine 2.6: Bedenkzeit (Schachuhr) und Züge zurücknehmen
+        self.clock: Optional[dict] = None       # {"left": {"0": Sek.}, "running": [Plätze], "since": Zeit}
+        self.history: List[dict] = []           # Stände vor jedem Zug (für „zurücknehmen“)
+        self.undo_ask: Optional[dict] = None    # {"by": Mitglied, "seat": Platz, "need": [Mitglieder], "yes": [...]}
 
     # ---------- Variante (Brett, Plätze, Regeln) ----------
     @property
@@ -369,6 +379,10 @@ class Room:
         return next((m for m in self.members.values() if m.seat == seat), None)
 
     def _play_event(self) -> dict:
+        self._clock_update()
+        return self._play_event_raw()
+
+    def _play_event_raw(self) -> dict:
         """GAME_UPDATED – bei Spielen mit Geheimwissen mit einer Ansicht je Platz (`views`, nur für den Versand;
         app.py schickt jedem Mitglied nur seine eigene als `play`)."""
         ev = {"type": "GAME_UPDATED", "status": self.status, "play": self.play_state()}
@@ -380,10 +394,16 @@ class Room:
         """Spielstand aus Sicht eines Platzes (None = Zuschauer)."""
         if not self.rules or self.game is None:
             return None
+        if self.free:
+            return self._free_state(seat)
         st = self.rules.view(self, None if self.rules.shared_view else seat)
         if isinstance(st, dict) and "to_move" not in st:
             # Wer gerade handeln darf (Engine 2.1) – bei Tandem-Schach zwei Plätze gleichzeitig
             st = {**st, "to_move": list(self.rules.to_move(self))}
+        if isinstance(st, dict) and self.clock and self.status in ("playing", "finished"):
+            st = {**st, "clock": self.clock_view()}
+        if isinstance(st, dict) and self.status == "playing" and self.settings().get("undo"):
+            st = {**st, "undoable": sorted({h["seat"] for h in self.history}), "undo_ask": self._undo_public()}
         if isinstance(st, dict) and getattr(self.rules, "action_buttons", False) and "acts" not in st:
             # Aktionen mit `label` zeigt der Tisch als Knöpfe (Engine 2.4) – je Platz nur die eigenen
             seats = [seat] if seat is not None and not self.rules.shared_view else \
@@ -515,7 +535,7 @@ class Room:
             return []
         if self.rules and self.status == "finished":
             return []
-        if self.rules and self.status == "playing" and not self.can_roll(m.seat):
+        if self.rules and self.status == "playing" and not self.free and not self.can_roll(m.seat):
             return []
         try:
             power = min(1.0, max(0.0, float(power)))
@@ -528,7 +548,7 @@ class Room:
         throw = {"power": round(power, 3), "seed": self._rng.getrandbits(31), "seat": m.seat}
         self.last_roll = {"by": member_id, "values": values, "throw": throw, "at": now}
         events = [self.next_event({"type": "DICE_ROLLED", "by": member_id, "values": values, "throw": throw})]
-        if self.rules and self.status == "playing":
+        if self.rules and self.status == "playing" and not self.free:
             evs = self.rules.apply(self, m.seat, {"type": "roll", "values": values}) or []
             events += [self.next_event(e) for e in evs]
             events.append(self._play_event())
@@ -571,6 +591,10 @@ class Room:
             return []
         events = self.release_all_everyone()
         self.status = "playing"
+        self.history, self.undo_ask = [], None
+        minutes = self.settings().get("clock", 0) if "clock" in self.settings_schema() else 0
+        self.clock = {"left": {str(s): minutes * 60.0 for s in range(self.seats)}, "running": [], "since": time.time()} \
+            if minutes and not self.free else None
         events += [self.next_event(e) for e in self.rules.setup(self)]
         self.last_roll = None
         return events + [self._play_event()]
@@ -591,8 +615,58 @@ class Room:
         vs = self.game_def.variant_setting()
         if vs:
             out["variant"] = vs
+        if self.rules and self.game_def.free_play:
+            out["free"] = FREE_SETTING
+        if self.rules and getattr(self.rules, "uses_clock", False):
+            out["clock"] = CLOCK_SETTING
+        if self.rules and self.rules.shared_view and self.game_def.undo:
+            out["undo"] = UNDO_SETTING
         out.update(getattr(self.rules, "settings_schema", None) or {})
         return out
+
+    # ---------- Freies Spiel (Engine 2.5) ----------
+    @property
+    def free(self) -> bool:
+        """Freies Spiel läuft: keine Regelprüfung, alle am Tisch dürfen alles."""
+        return bool(self.rules) and self.status == "playing" and bool(self.game_def.free_play) \
+            and self.game_settings.get("free") is True
+
+    def _free_state(self, seat: Optional[int]) -> dict:
+        seats = sorted(m.seat for m in self.members.values() if m.seat is not None)
+        stacks = [fid for fid, f in self.layout.get("fields", {}).items()
+                  if f.get("zone") == "stack" and sum(1 for p in self.pieces.values() if p["field"] == fid) >= 2]
+        acts = [{"type": "shuffle", "field": fid,
+                 "label": "🔀 " + (self.layout["fields"][fid].get("label") or ("Stapel mischen" if len(stacks) == 1 else f"Mischen: {fid}"))}
+                for fid in stacks]
+        return {"free": True, "phase": "free", "turn": None, "to_move": [],
+                "say": {"all": "Freies Spiel – alle am Tisch dürfen alles bewegen."},
+                "acts": {str(s): acts for s in seats if acts and (seat is None or s == seat)}}
+
+    def _free_drop(self, member_id: str, piece_id: str, field_id) -> List[dict]:
+        fields = self.layout.get("fields", {})
+        p = self.pieces[piece_id]
+        f = fields.get(field_id) if isinstance(field_id, str) else None
+        if f is None or (field_id == p["field"] and not f.get("zone")):
+            return self.release(member_id, piece_id)
+        if not f.get("zone") and any(o["field"] == field_id for oid, o in self.pieces.items() if oid != piece_id):
+            return self.release(member_id, piece_id)
+        return [self.next_event(e) for e in self.move_piece(piece_id, field_id, by=member_id)] + [self._play_event()]
+
+    def _free_act(self, member_id: str, act: dict) -> List[dict]:
+        t = act.get("type")
+        if t == "flip":
+            pid = act.get("piece")
+            p = self.pieces.get(pid) if isinstance(pid, str) else None
+            if not p or p["held_by"] not in (None, member_id):
+                return []
+            return [self.next_event({**e, "by": member_id}) for e in self.flip_piece(pid, not p.get("up"))] + [self._play_event()]
+        if t == "shuffle":
+            fid = act.get("field")
+            if not isinstance(fid, str) or self.zone_of(fid) != "stack":
+                return []
+            from .cards import shuffle
+            return [self.next_event(e) for e in shuffle(self, fid)] + [self._play_event()]
+        return []
 
     def settings(self) -> dict:
         """Aktuelle Werte – fehlende/ungültige fallen auf den Standard zurück."""
@@ -636,6 +710,7 @@ class Room:
             "pieces": {pid: {k: v for k, v in p.items() if k != "held_by" and v is not None} for pid, p in self.pieces.items()},
             "last_roll": self.last_roll, "status": self.status, "state": self.game,
             "settings": dict(self.game_settings), "created_at": self.created_at,
+            "clock": self._clock_saved(), "history": self.history[-40:],
         }
 
     @classmethod
@@ -672,9 +747,111 @@ class Room:
         room.status = data.get("status", "lobby")
         room.game = data.get("state")
         room.game_settings = dict(data.get("settings") or {})
+        c = data.get("clock")
+        if isinstance(c, dict) and isinstance(c.get("left"), dict):
+            room.clock = {"left": {str(k): float(v) for k, v in c["left"].items()}, "running": [], "since": time.time()}
+            room._clock_update()                # Zeit, in der der Server weg war, zählt nicht
+        room.history = [h for h in (data.get("history") or []) if isinstance(h, dict) and "seat" in h][-40:]
         room.created_at = float(data.get("created_at", now))
         room.empty_since = now
         return room
+
+    # ---------- Bedenkzeit (Engine 2.6) ----------
+    def _clock_update(self, now: Optional[float] = None) -> None:
+        """Verbrauchte Zeit den laufenden Uhren abziehen, dann laufen die Uhren derer, die jetzt handeln dürfen."""
+        c = self.clock
+        if not c:
+            return
+        now = time.time() if now is None else now
+        for s in c["running"]:
+            c["left"][str(s)] = max(0.0, c["left"].get(str(s), 0.0) - (now - c["since"]))
+        c["since"] = now
+        c["running"] = list(self.rules.to_move(self)) if self.status == "playing" and self.rules and self.game else []
+
+    def clock_view(self, now: Optional[float] = None) -> Optional[dict]:
+        c = self.clock
+        if not c:
+            return None
+        now = time.time() if now is None else now
+        left = {k: round(max(0.0, v - ((now - c["since"]) if int(k) in c["running"] else 0)), 2) for k, v in c["left"].items()}
+        return {"left": left, "running": list(c["running"])}
+
+    def _clock_saved(self) -> Optional[dict]:
+        v = self.clock_view()
+        return {"left": v["left"]} if v else None
+
+    def check_clock(self, now: Optional[float] = None) -> List[dict]:
+        """Ist bei jemandem die Zeit abgelaufen? → Partie verloren (Regeln können on_timeout selbst regeln)."""
+        if not self.clock or self.status != "playing":
+            return []
+        now = time.time() if now is None else now
+        view = self.clock_view(now)
+        out = next((s for s in view["running"] if view["left"][str(s)] <= 0), None)
+        if out is None:
+            return []
+        self._clock_update(now)
+        hook = getattr(self.rules, "on_timeout", None)
+        evs = hook(self, out) if hook else None
+        if evs is None:
+            g = self.game
+            players = g.get("seats") or sorted(m.seat for m in self.members.values() if m.seat is not None)
+            winners = [s for s in players if s != out]
+            g.update(phase="over", turn=None, finished=winners + [out],
+                     result={"winners": winners, "reason": "time", "text": "Zeit abgelaufen"})
+            self.status = "finished"
+            evs = []
+        evs.append({"type": "NOTE", "text": "⏱ {p%d}: Zeit abgelaufen" % out, "you": {str(out): "⏱ Deine Zeit ist abgelaufen"}})
+        return [self.next_event(e) for e in evs] + [self._play_event()]
+
+    # ---------- Zug zurücknehmen (Engine 2.6) ----------
+    def _snapshot(self, seat: int) -> dict:
+        return {"seat": seat, "game": copy.deepcopy(self.game),
+                "pieces": {pid: {k: v for k, v in p.items() if k != "held_by"} for pid, p in self.pieces.items()}}
+
+    def _undo_public(self) -> Optional[dict]:
+        a = self.undo_ask
+        if not a:
+            return None
+        return {"seat": a["seat"], "by": a["by"], "need": list(a["need"]), "yes": list(a["yes"])}
+
+    def undo_request(self, member_id: str) -> List[dict]:
+        """Zug zurücknehmen: alle anderen Menschen am Tisch müssen zustimmen (Computer stimmen immer zu)."""
+        m = self.members.get(member_id)
+        if not m or m.seat is None or self.status != "playing" or self.free or not self.settings().get("undo"):
+            return []
+        if self.undo_ask or not any(h["seat"] == m.seat for h in self.history):
+            return []
+        need = [o.id for o in self.members.values() if o.seat is not None and o.id != member_id and not o.is_bot
+                and o.connected]
+        if not need:
+            return self._undo(m.seat)
+        self.undo_ask = {"by": member_id, "seat": m.seat, "need": need, "yes": []}
+        return [self.next_event({"type": "UNDO_ASKED", "by": member_id, "seat": m.seat}), self._play_event_raw()]
+
+    def undo_answer(self, member_id: str, yes) -> List[dict]:
+        a = self.undo_ask
+        if not a or member_id not in a["need"] or member_id in a["yes"]:
+            return []
+        if yes is not True:
+            self.undo_ask = None
+            return [self.next_event({"type": "UNDO_CLEARED", "reason": "declined", "by": member_id}), self._play_event_raw()]
+        a["yes"].append(member_id)
+        if set(a["yes"]) >= set(a["need"]):
+            return self._undo(a["seat"])
+        return [self._play_event_raw()]
+
+    def _undo(self, seat: int) -> List[dict]:
+        """Stand vor dem letzten Zug dieses Platzes wiederherstellen (spätere Züge anderer gehen mit zurück)."""
+        idx = max(i for i, h in enumerate(self.history) if h["seat"] == seat)
+        snap = self.history[idx]
+        self.history = self.history[:idx]
+        self.undo_ask = None
+        self.game = copy.deepcopy(snap["game"])
+        self.pieces = {pid: {**copy.deepcopy(p), "held_by": None} for pid, p in snap["pieces"].items()}
+        events = [self.next_event({"type": "STATE_RESTORED", "by_seat": seat, "pieces": self.public_pieces(None)}),
+                  self.next_event({"type": "NOTE", "text": "↩️ {p%d} nimmt den Zug zurück" % seat,
+                                   "you": {str(seat): "↩️ Du nimmst den Zug zurück"}})]
+        return events + [self._play_event()]
 
     def release_all_everyone(self) -> List[dict]:
         return [e for mid in list(self.members) for e in self.release_all(mid)]
@@ -682,8 +859,8 @@ class Room:
     def auto_member(self, away_grace_sec: float, now: Optional[float] = None) -> Optional["Member"]:
         """Wer als Nächstes vom Computer gespielt wird: Bots und lange Getrennte unter denen, die handeln dürfen.
         Sind es mehrere (Tandem: beide Bretter), kommen sie reihum dran – sonst spielte immer nur der erste."""
-        if not self.rules or self.status != "playing" or not self.game:
-            return None
+        if not self.rules or self.status != "playing" or not self.game or self.free:
+            return None                     # freies Spiel: Computer spielen nicht mit
         now = time.time() if now is None else now
         cands = []          # (Stelle in to_move, Mitglied) – jede Stelle ist eine eigene „Spur“ (Tandem: ein Brett)
         for lane, seat in enumerate(self.rules.to_move(self)):
@@ -733,17 +910,25 @@ class Room:
             return []
         clean = {k: v for k, v in act.items() if isinstance(k, str) and len(k) <= 32 and k != "label"
                  and isinstance(v, (str, int, float, bool)) and len(str(v)) <= 64}
+        if self.free:
+            return self._free_act(member_id, clean) if m.connected else []
         return self.apply_action(member_id, m.seat, clean)
 
     def apply_action(self, by: str, seat: int, action: dict) -> List[dict]:
         """Aktion (außer Würfeln) durch die Regeln; None/ungültig → keine Ereignisse."""
+        snap = self._snapshot(seat) if self.settings().get("undo") and action.get("type") != "roll" else None
         try:
             evs = self.rules.apply(self, seat, action)
         except (KeyError, TypeError, ValueError):
             evs = None
         if evs is None:
             return []
+        if snap:
+            self.history = (self.history + [snap])[-40:]
         out = []
+        if self.undo_ask:                       # Stand hat sich geändert → Frage nach dem Zurücknehmen erledigt
+            self.undo_ask = None
+            out.append(self.next_event({"type": "UNDO_CLEARED", "reason": "moved"}))
         for e in evs:
             e.setdefault("by", by)
             out.append(self.next_event(e))
@@ -756,6 +941,8 @@ class Room:
         spec = self.layout.get("pieces", {}).get(piece_id)
         if not (m and m.connected and m.seat is not None and spec):
             return False
+        if self.free:
+            return True                     # freies Spiel: wer am Tisch sitzt, darf alles anfassen
         if self.rules:
             # API 2: allein die Regeln entscheiden (Figuren können den Besitzer wechseln, Teams teilen sich Figuren)
             if self.rules.api_version < 2 and spec.get("seat") != m.seat:
@@ -792,6 +979,8 @@ class Room:
         p = self.pieces.get(piece_id) if isinstance(piece_id, str) else None
         if not p or p["held_by"] != member_id:
             return []
+        if self.free:
+            return self._free_drop(member_id, piece_id, field_id)
         if self.rules:
             m = self.members.get(member_id)
             out = self.apply_action(member_id, m.seat, {"type": "move", "piece": piece_id, "to": field_id}) \
@@ -827,6 +1016,19 @@ class Room:
         return events
 
 
+FREE_SETTING = {"default": False, "label": "Freies Spiel (ohne Regeln)",
+                "hint": "Wie am echten Tisch: alle dürfen alles bewegen und würfeln, ihr achtet selbst auf die Regeln. "
+                        "Karte doppelt antippen = umdrehen. Computer spielen nicht mit."}
+
+
+CLOCK_SETTING = {"default": 0, "label": "Bedenkzeit je Spieler", "choices": [0, 1, 3, 5, 10, 15, 30],
+                 "labels": {"0": "ohne Uhr", "1": "1 Minute", "3": "3 Minuten", "5": "5 Minuten", "10": "10 Minuten",
+                            "15": "15 Minuten", "30": "30 Minuten"},
+                 "hint": "Schachuhr am Tisch: Wessen Zeit abläuft, verliert."}
+UNDO_SETTING = {"default": False, "label": "Züge zurücknehmen (mit Zustimmung)",
+                "hint": "Wer sich verzogen hat, darf fragen – die anderen am Tisch müssen zustimmen."}
+
+
 def valid_setting(spec: dict, value) -> bool:
     """Passt ein Wert zur Einstellung? Typ wie der Standardwert; bei Zahlen min/max, bei Auswahl choices."""
     default = spec.get("default")
@@ -835,6 +1037,8 @@ def valid_setting(spec: dict, value) -> bool:
     if isinstance(default, int):
         if isinstance(value, bool) or not isinstance(value, int):
             return False
+        if "choices" in spec:
+            return value in spec["choices"]
         return spec.get("min", value) <= value <= spec.get("max", value)
     if "choices" in spec:
         return value in spec["choices"] and not isinstance(value, bool)

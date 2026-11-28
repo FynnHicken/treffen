@@ -74,6 +74,9 @@ class GameRules:
     shared_view: bool = False
     #: True: Aktionen mit "label" erscheinen als Knöpfe am Tisch (Engine 2.4)
     action_buttons: bool = False
+    #: True: Hausregel „Bedenkzeit“ (Schachuhr) anbieten (Engine 2.6). Zeit läuft für alle in to_move; abgelaufen →
+    #: verloren, außer die Regeln entscheiden selbst: on_timeout(room, seat) → Ereignisse (Partie beenden!)
+    uses_clock: bool = False
 
     def setup(self, room) -> List[dict]:
         raise NotImplementedError

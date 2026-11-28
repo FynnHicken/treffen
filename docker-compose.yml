@@ -184,6 +184,24 @@ services:
     networks:
       - party-net
 
+  # =========================================================================
+  # Mau-Mau (Treffen-Spieltisch, 3D-Karten)
+  # =========================================================================
+  maumau:
+    build:
+      context: .
+      dockerfile: games/maumau/Dockerfile
+    container_name: maumau
+    restart: unless-stopped
+    environment:
+      - TREFFEN_TICKET_SECRET=${TREFFEN_TICKET_SECRET:-}
+    volumes:
+      - ./data/maumau:/app/data
+    ports:
+      - "8098:8098"
+    networks:
+      - party-net
+
 networks:
   party-net:
     driver: bridge

@@ -74,6 +74,12 @@ jobs:
       - name: Spielvarianten (Brett wächst mit, Plätze rücken zusammen, Speichern/Laden)
         working-directory: /tmp
         run: python -I "$GITHUB_WORKSPACE/packages/tabletop-server/tests/test_variants.py"
+      - name: Freies Spiel (Hausregel ohne Regelprüfung, Karten umdrehen, mischen)
+        working-directory: /tmp
+        run: python -I "$GITHUB_WORKSPACE/packages/tabletop-server/tests/test_free.py"
+      - name: Schachuhr und Zug zurücknehmen
+        working-directory: /tmp
+        run: python -I "$GITHUB_WORKSPACE/packages/tabletop-server/tests/test_table.py"
       - name: Pflicht-Prüfung aller Tisch-Spiele (Engine-Version, Computer-Partien, Speichern/Laden)
         working-directory: /tmp
         run: python -I "$GITHUB_WORKSPACE/packages/tabletop-server/tests/test_conformance.py" 10
@@ -134,13 +140,13 @@ jobs:
         run: |
           docker run --rm --network=host -v "$PWD/games/schach":/work:ro -v /tmp/tisch-shots:/shots -w /work treffen-ui-test \
             python -u tests/ui/variants_smoke.py http://127.0.0.1:8096 /shots
-      - name: Dame im Browser (Spieltisch-App der Engine 2.3, Desktop + Handy, Computer-Partie)
+      - name: Dame im Browser (Spieltisch-App, Schachuhr, Zurücknehmen, Desktop + Handy, Computer-Partie)
         run: |
           (cd /tmp && TABLETOP_DB= TABLETOP_BOT_SPEED=5 python -u "$GITHUB_WORKSPACE/games/dame/server/main.py" > /tmp/dame.log 2>&1 &)
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8097/api/health >/dev/null && break; sleep 1; done
           docker run --rm --network=host -v "$PWD/games/dame":/work:ro -v /tmp/tisch-shots:/shots -w /work treffen-ui-test \
             python -u tests/ui/dame_smoke.py http://127.0.0.1:8097 /shots
-      - name: Mau-Mau im Browser (Karten, Hände verdeckt, antippen, Knöpfe, sechs Computer)
+      - name: Mau-Mau im Browser (Karten, Hände verdeckt, antippen, Knöpfe, freies Spiel, sechs Computer)
         run: |
           (cd /tmp && TABLETOP_DB= TABLETOP_BOT_SPEED=5 python -u "$GITHUB_WORKSPACE/games/maumau/server/main.py" > /tmp/maumau.log 2>&1 &)
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8098/api/health >/dev/null && break; sleep 1; done
@@ -202,6 +208,11 @@ jobs:
           TREFFEN_TICKET_SECRET=ci-test-secret docker compose -f docker-compose.yml up -d --force-recreate schach
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/schach/api/health >/dev/null && break; sleep 1; done
           docker run --rm --network=host -v "$PWD/party-hub/tests":/t:ro -v /tmp/shots:/shots treffen-ui-test python -u /t/schach_via_hub.py http://127.0.0.1:8000 /shots
+      - name: Mau-Mau über den Hub (Host per Ticket, Gast am Handy, Avatare, verdeckte Karten)
+        run: |
+          TREFFEN_TICKET_SECRET=ci-test-secret docker compose -f docker-compose.yml up -d --force-recreate maumau
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/maumau/api/health >/dev/null && break; sleep 1; done
+          docker run --rm --network=host -v "$PWD/party-hub/tests":/t:ro -v /tmp/shots:/shots treffen-ui-test python -u /t/maumau_via_hub.py http://127.0.0.1:8000 /shots
       - name: skribbl über den Hub (Handy, Avatare, Spielstart)
         run: |
           TREFFEN_TICKET_SECRET=ci-test-secret docker compose -f docker-compose.yml up -d --force-recreate skribbl

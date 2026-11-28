@@ -98,6 +98,40 @@ async def main():
         await anna.screenshot(path=f"{OUT}/dame_zug.png")
         await ben.screenshot(path=f"{OUT}/dame_handy.png")
 
+        # Engine 2.6: Schachuhr + Zug zurücknehmen (mit Zustimmung)
+        await anna.evaluate(f"{T}.client.newRound()")
+        await until(anna, f"{T}.client.state.status === 'lobby'")
+        await anna.evaluate(f"{T}.client.setSettings({{clock: 5, undo: true}})")
+        await until(anna, f"{T}.client.state.settings.clock === 5 && {T}.client.state.settings.undo === true")
+        await anna.click("#start-btn")
+        ok(await until(anna, f"{T}.client.state.status === 'playing' && !!{T}.client.state.play.clock"), "Partie mit Uhr")
+        ok(await until(anna, f"{T}.clock.active && {T}.clock.remaining(0) < 300"), "Weiß' Uhr läuft")
+        ok(await until(anna, "document.querySelector('#status .tt-clock')?.textContent.includes('⏱')"), "eigene Zeit in der Statuszeile")
+        await until(anna, f"{T}.pieces.isResting()", 10)             # Steine sind nach dem Aufbau zurückgehüpft
+        piece = await anna.evaluate(f"Object.entries({T}.client.state.pieces).find(([k, v]) => v.field === 'c3')[0]")
+        await drag(anna, piece, "d4")
+        ok(await until(anna, f"{T}.client.state.pieces['{piece}'].field === 'd4'"), "Zug gemacht")
+        ok(await until(anna, f"{T}.client.state.play.clock.running[0] === 1"), "Uhr gedrückt: jetzt läuft Schwarz")
+        await anna.screenshot(path=f"{OUT}/dame_uhr.png")
+        ok(await until(anna, "document.querySelector('#acts button[data-undo]') !== null"), "Knopf „Zurücknehmen“")
+        await anna.click("#acts button[data-undo]")
+        ok(await until(ben, "document.querySelector('#acts button[data-undo-yes]') !== null"), "Ben wird gefragt")
+        await ben.screenshot(path=f"{OUT}/dame_zuruecknehmen_handy.png")
+        await ben.tap("#acts button[data-undo-yes]")
+        ok(await until(anna, f"{T}.client.state.pieces['{piece}'].field === 'c3'"), "Ben stimmt zu → Stein wieder auf c3")
+        ok(await until(anna, f"{T}.client.myTurn"), "Weiß ist wieder dran")
+
+        # Engine 2.7: Reaktion am Platz + Verlauf
+        await ben.tap(".talk-btn[data-open='bar']")
+        await ben.tap(".talk-bar button[data-emoji='👍']")
+        ok(await until(anna, "[...document.querySelectorAll('.talk-float')].some(e => e.textContent === '👍' && e.dataset.who === 'Ben')", 5),
+           "Bens 👍 steigt bei Anna über seinem Platz auf")
+        await anna.click(".talk-btn[data-open='log']")
+        log = await anna.inner_text(".talk-log")
+        ok("c3 → d4" in log and "zurück" in log, f"Verlauf: Zug und Zurücknehmen ({log[:80]!r})")
+        await anna.screenshot(path=f"{OUT}/dame_verlauf.png")
+        await anna.click(".talk-btn[data-open='log']")
+
         # Gegen den Computer bis zum Ende
         await anna.evaluate(f"{T}.client.newRound()")
         c2, ec = await open_player(browser, "Cara", ROOM + "C", viewport={"width": 1100, "height": 760})

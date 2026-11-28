@@ -8,6 +8,7 @@ import { escapeHtml } from '@treffen/boardgame-kit';
 import { avatarImgHtml } from '../ui/avatar';
 import type { TableClient } from '../net/TableClient';
 import type { PlayState, TableState } from '../net/state';
+import { formatClock } from '../objects/ClockLayer';
 
 export interface HudTexts {
     /** „Spiel“ oder „Partie“ – für „▶ Spiel starten“, „Neue Runde/Partie“ */
@@ -57,7 +58,7 @@ export interface Hud {
 
 /** Baut die Standard-Anzeige. `status` kann die Statuszeile eines Spiels ersetzen (null = Standard). */
 export function setupHud(client: TableClient, texts: HudTexts,
-    status?: (s: TableState, ctx: HudContext) => string | null): Hud {
+    status?: (s: TableState, ctx: HudContext) => string | null, clockLeft?: (seat: number) => number | null): Hud {
     const ctx = hudContext(client);
     const el = (id: string) => document.getElementById(id)!;
     const statusEl = el('status'), startBtn = el('start-btn') as HTMLButtonElement, over = el('gameover');
@@ -65,7 +66,12 @@ export function setupHud(client: TableClient, texts: HudTexts,
     // Knöpfe für Aktionen ohne Figur (Engine 2.4): „Weiter“, Farbe wünschen … – kommen als `acts` von den Regeln
     let actsKey = '';
     actsEl.addEventListener('click', ev => {
-        const i = (ev.target as HTMLElement).closest('button')?.dataset.i;
+        const btn = (ev.target as HTMLElement).closest('button');
+        if (btn?.dataset.lobby !== undefined) { client.newRound(); return; }
+        if (btn?.dataset.undo !== undefined) { client.undo(); return; }
+        if (btn?.dataset.undoYes !== undefined) { client.undoAnswer(true); return; }
+        if (btn?.dataset.undoNo !== undefined) { client.undoAnswer(false); return; }
+        const i = btn?.dataset.i;
         const a = i !== undefined ? client.myActs[Number(i)] : undefined;
         if (a) { client.act(a); navigator.vibrate?.(8); }
     });
@@ -162,15 +168,31 @@ export function setupHud(client: TableClient, texts: HudTexts,
                 : `Mindestens ${need} Spieler (+ Computer)`;
 
         const acts = client.myActs;
-        const key = JSON.stringify(acts);
+        const lobbyBtn = s.status === 'playing' && !!s.play?.free && client.isHost;     // freies Spiel endet beim Host
+        // Zurücknehmen (Hausregel): fragen, bzw. die Frage eines anderen beantworten
+        const ask = s.status === 'playing' ? s.play?.undo_ask ?? null : null;
+        const mySeat = client.me?.seat;
+        let undoHtml = '';
+        if (ask && ask.need.includes(client.you) && !ask.yes.includes(client.you)) {
+            undoHtml = `<span class="ask">↩️ ${ctx.who(s, ask.seat)} möchte den Zug zurücknehmen</span>`
+                + '<button data-undo-yes>Ja</button><button data-undo-no class="quiet">Nein</button>';
+        } else if (ask && ask.by === client.you) {
+            undoHtml = '<span class="ask">↩️ Warte auf Zustimmung …</span>';
+        } else if (!ask && mySeat != null && (s.play?.undoable ?? []).includes(mySeat) && !client.me?.is_bot) {
+            undoHtml = '<button data-undo class="quiet">↩️ Zurücknehmen</button>';
+        }
+        const key = JSON.stringify(acts) + lobbyBtn + undoHtml;
         if (key !== actsKey) {
             actsKey = key;
-            actsEl.innerHTML = acts.map((a, i) => `<button data-i="${i}">${escapeHtml(a.label)}</button>`).join('');
-            actsEl.hidden = !acts.length;
+            actsEl.innerHTML = acts.map((a, i) => `<button data-i="${i}">${escapeHtml(a.label)}</button>`).join('')
+                + undoHtml + (lobbyBtn ? '<button data-lobby class="quiet">🏁 Zurück in die Lobby</button>' : '');
+            actsEl.hidden = !acts.length && !lobbyBtn && !undoHtml;
         }
 
-        const text = status?.(s, ctx) ?? defaultStatus(s);
+        let text = status?.(s, ctx) ?? defaultStatus(s);
+        if (text && s.status === 'playing' && s.play?.clock && mySeat != null && clockLeft) text += ' <span class="tt-clock"></span>';
         statusEl.innerHTML = text;
+        tickClock();
         statusEl.hidden = !text;
         statusEl.classList.toggle('mine', client.myTurn && s.status === 'playing');
 
@@ -181,6 +203,16 @@ export function setupHud(client: TableClient, texts: HudTexts,
             over.hidden = true;
         }
     });
+
+    // Eigene Bedenkzeit in der Statuszeile (zählt selbst herunter, ohne neu zu zeichnen)
+    function tickClock(): void {
+        const span = statusEl.querySelector('.tt-clock') as HTMLElement | null, seat = client.me?.seat;
+        if (!span || seat == null || !clockLeft) return;
+        const left = clockLeft(seat);
+        span.textContent = left === null ? '' : `⏱ ${formatClock(left)}`;
+        span.classList.toggle('low', left !== null && left < 20);
+    }
+    setInterval(tickClock, 250);
 
     // Spürbar statt Text
     let alerted = false;

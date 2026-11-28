@@ -19,7 +19,7 @@ from tandem import TandemRules  # noqa: E402
 from vierer import VierRules  # noqa: E402
 from stockfish_uci import find_binary  # noqa: E402
 
-GAME_VERSION = "1.3.0"     # Version des Spiels (SemVer); 1.2.0: Teamschach, Tandem, Vierschach; 1.3.0: Engine-App 2.3
+GAME_VERSION = "1.4.0"     # 1.2.0: Teamschach, Tandem, Vierschach; 1.3.0: Engine-App 2.3; 1.4.0: Schachuhr (Engine 2.6)
 
 GAME = GameDef(
     "schach",

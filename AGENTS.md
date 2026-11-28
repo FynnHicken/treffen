@@ -21,12 +21,13 @@ Räumen, Host, Abstimmung, synchronem Start) bettet mehrere Multiplayer-Spiele p
 | **Monopoly 3D** | `games/monopoly/` | Python FastAPI + Three.js | 8090 | `/monopoly/` |
 | **Mensch ärgere dich nicht** (Spieltisch 3D) | `games/mensch/` + `packages/tabletop*` | Python FastAPI + Three.js | 8095 | `/mensch/` |
 | **Schach** (Spieltisch 3D) | `games/schach/` + `packages/tabletop*` | Python FastAPI + Three.js | 8096 | `/schach/` |
+| **Mau-Mau** (Spieltisch 3D, Karten) | `games/maumau/` + `packages/tabletop*` | Python FastAPI + Three.js | 8098 | `/maumau/` |
 
 **Fokus des Nutzers: Monopoly perfektionieren – und daraus einen Brettspiel-Baukasten machen**, damit weitere
 Brettspiele möglichst viel Code (Rendering, Verbindung, UI) übernehmen: [`packages/boardgame-kit/README.md`](packages/boardgame-kit/README.md).
 **Neu (2026-11-26): Treffen-Spieltisch** – spielneutrales 3D-Brettspiel-Framework, erstes Spiel Mensch ärgere dich nicht.
 Konzept & Fahrplan: [`docs/tabletop/KONZEPT.md`](docs/tabletop/KONZEPT.md). Code: `packages/tabletop` (Client-Engine),
-`packages/tabletop-server` (Python), Spiele `games/mensch/` und `games/schach/`. **M1–M5 ✅, Engine 2.4.0** – im Hub unter `/mensch/` (2–8 Spieler) und `/schach/` (klassisch, Team, Tandem, Vierschach), mit Regeln, Computergegnern, Hausregeln und gespeicherten Spielständen. Neues Tisch-Spiel anlegen: [`docs/tabletop/KONZEPT.md` §12.5](docs/tabletop/KONZEPT.md), Engine-Änderungen: [`packages/CHANGELOG.md`](packages/CHANGELOG.md). Entscheidungen des Nutzers: Spielgefühl hat
+`packages/tabletop-server` (Python), Spiele `games/mensch/` und `games/schach/`. **M1–M5 ✅, Engine 2.7.0** – im Hub unter `/mensch/` (2–8 Spieler) und `/schach/` (klassisch, Team, Tandem, Vierschach), mit Regeln, Computergegnern, Hausregeln und gespeicherten Spielständen. Neues Tisch-Spiel anlegen: [`docs/tabletop/KONZEPT.md` §12.5](docs/tabletop/KONZEPT.md), Engine-Änderungen: [`packages/CHANGELOG.md`](packages/CHANGELOG.md). Entscheidungen des Nutzers: Spielgefühl hat
 Vorrang, Regeln werden automatisch vom Server mitgeprüft; freier Modus (wie Tabletop Simulator) evtl. später als Einstellung.
 Der Monopoly-Client ist ein Vite-Projekt (`games/monopoly/client/`), das vor dem Deployen gebaut wird (passiert im Docker-Image). → [`games/monopoly/DEVELOPMENT.md`](games/monopoly/DEVELOPMENT.md)
 
@@ -170,6 +171,15 @@ Erledigt und auf `main`:
 20. Karten, Engine 2.4 (2026-11-27): Zonen (Stapel, Hand, Auslage), Karten mit geheimer Vorderseite (nur der Server kennt
     `face`; `show` nur an Berechtigte, Pflicht-Prüfung wacht), Knöpfe für Aktionen ohne Figur (`ACT`). **Mau-Mau 1.0.0**
     (`games/maumau/`) als Vorlage ohne Client-Code, **nicht im Hub**. Konzept §12.8.
+21. Freies Spiel, Engine 2.5 (2026-11-27): Hausregel der Engine für alle Tisch-Spiele (Standard aus): ohne
+    Regelprüfung, alle am Tisch dürfen alles (umdrehen, mischen, würfeln), Computer pausieren. Konzept §12.9.
+22. Schachuhr + Zurücknehmen, Engine 2.6 (2026-11-27): Hausregeln „Bedenkzeit“ (3D-Uhr am Brett, Schach klassisch +
+    Dame) und „Züge zurücknehmen (mit Zustimmung)“ (Spiele ohne Geheimwissen). Konzept §12.10.
+23. Tischgespräch, Engine 2.7 (2026-11-27): Reaktionen (Emoji am Platz, flüchtig) und Verlauf (📜) in jeder
+    Spieltisch-App. Offen (Rückfrage beim Nutzer): Dame in den Hub, ein Container für alle Tisch-Spiele (E2.8).
+24. Mau-Mau im Hub (2026-11-28, Wunsch des Nutzers: „ein pures Kartenspiel ausprobieren“): `/maumau/`, Port 8098,
+    Container `maumau` (Volume `./data/maumau`), auch im Fly-Image; Titelbild aus dem echten Tisch
+    (`games/maumau/tests/ui/make_cover.py`), Test `party-hub/tests/maumau_via_hub.py` in der CI.
 
 16. Hub-Avatare in den Spielen (2026-11-26): Der party-server liefert jeden Avatar als Bild,
     `/party-ws/avatar/<RAUM>/<Hub-Spieler-ID>.svg` (strenge CSP, ETag), und als `.json` ({color, face}) für

@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from layout import LAYOUT, SEAT_COLORS  # noqa: E402
 from rules import DameRules  # noqa: E402
 
-GAME_VERSION = "1.0.0"
+GAME_VERSION = "1.1.0"     # 1.1.0: Schachuhr (Engine 2.6)
 
 GAME = GameDef("dame", "Dame", SEAT_COLORS, min_players=2, layout=LAYOUT, rules=DameRules(), version=GAME_VERSION,
                seat_names=["Weiß", "Schwarz"],

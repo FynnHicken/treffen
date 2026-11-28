@@ -34,3 +34,8 @@ export { MarkLayer } from './objects/MarkLayer';
 // Engine 2.4: Karten, Stapel, Hände
 export { createCard, CARD_W, CARD_H, CARD_T } from './objects/cards';
 export type { CardFace } from './objects/cards';
+// Engine 2.6: Schachuhr
+export { ClockLayer, formatClock } from './objects/ClockLayer';
+// Engine 2.7: Tischgespräch (Reaktionen, Verlauf)
+export { setupTalk, screenOf, REACTIONS } from './app/talk';
+export type { Talk } from './app/talk';

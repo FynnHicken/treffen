@@ -44,6 +44,12 @@ if [ -f /app/schach/games/schach/server/main.py ]; then
     cd /app/schach && PORT=8096 HOST=0.0.0.0 python3 games/schach/server/main.py &
 fi
 
+# 4d. Mau-Mau (Python on port 8098)
+if [ -f /app/maumau/games/maumau/server/main.py ]; then
+    echo "Starting maumau..."
+    cd /app/maumau && PORT=8098 HOST=0.0.0.0 python3 games/maumau/server/main.py &
+fi
+
 # 5. Codenames (Python on port 5000)
 if [ -d /app/codenames/codenames ]; then
     echo "Starting codenames..."

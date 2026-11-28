@@ -250,3 +250,36 @@ html, body {
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
 }
 .acts button:active { transform: scale(0.96); }
+.acts button.quiet { background: var(--panel); color: var(--ink); }
+.acts .ask { flex-basis: 100%; text-align: center; font-size: 14px; padding: 0 4px; }
+.acts .ask .tt-avatar { width: 20px; height: 20px; margin: -3px 5px -3px 0; }
+.status .tt-clock { margin-left: 8px; font-variant-numeric: tabular-nums; opacity: 0.9; }
+.status .tt-clock.low { color: #ff8a7a; font-weight: 700; }
+
+/* ---- Tischgespräch (Engine 2.7): Reaktionen und Verlauf, unten links ---- */
+.talk { position: fixed; left: max(12px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; align-items: flex-start; gap: 8px; z-index: 5; }
+.talk-btns { display: flex; gap: 8px; }
+.talk-btn { width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255, 220, 170, 0.25);
+    background: var(--panel); font-size: 20px; cursor: pointer; backdrop-filter: blur(6px); }
+.talk-btn[hidden] { display: none; }
+.talk-bar { display: flex; flex-wrap: wrap; gap: 4px; max-width: min(320px, calc(100vw - 24px)); padding: 6px;
+    border-radius: 14px; background: var(--panel); backdrop-filter: blur(6px); }
+.talk-bar[hidden], .talk-log[hidden] { display: none; }
+.talk-bar button { width: 44px; height: 44px; border: 0; border-radius: 10px; background: transparent; font-size: 24px; cursor: pointer; }
+.talk-bar button:active { transform: scale(0.9); background: rgba(255, 255, 255, 0.1); }
+.talk-log { width: min(320px, calc(100vw - 24px)); max-height: 40vh; overflow: auto; padding: 10px 12px;
+    border-radius: 14px; background: var(--panel); backdrop-filter: blur(6px); font-size: 13px; }
+.talk-log h3 { margin: 0 0 6px; font-size: 13px; opacity: 0.7; font-weight: 600; }
+.talk-log ol { list-style: none; margin: 0; padding: 0; }
+.talk-log li { padding: 4px 0; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+.talk-log .tt-avatar { width: 16px; height: 16px; margin: -3px 4px -3px 0; }
+.talk-float { position: fixed; transform: translate(-50%, -50%); font-size: 44px; pointer-events: none; z-index: 6;
+    animation: talk-rise 2.1s ease-out forwards; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.45)); }
+@keyframes talk-rise {
+    0% { opacity: 0; transform: translate(-50%, -30%) scale(0.5); }
+    15% { opacity: 1; transform: translate(-50%, -60%) scale(1.15); }
+    70% { opacity: 1; transform: translate(-50%, -140%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -190%) scale(0.95); }
+}
+@media (prefers-reduced-motion: reduce) { .talk-float { animation-duration: 1.2s; } }

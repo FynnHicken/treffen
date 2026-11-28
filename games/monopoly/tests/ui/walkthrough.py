@@ -71,6 +71,20 @@ async def settle(page, timeout_s=25):
         await page.wait_for_timeout(500)
 
 
+async def click_free(page, selector, tries=12):
+    """Klicken, auch wenn kurz vorher noch ein Pflicht-Fenster aufgeht (z. B. Steuer nach der Figurenanimation):
+    vor jedem Versuch aufräumen, dann erneut probieren."""
+    for i in range(tries):
+        await page.evaluate(SETTLE_JS)
+        try:
+            await page.click(selector, timeout=3000)
+            return
+        except Exception:
+            if i == tries - 1:
+                raise
+            await page.wait_for_timeout(500)
+
+
 async def run(pw, dev_name, opts):
     browser = await pw.chromium.launch(args=["--use-gl=swiftshader", "--enable-webgl", "--ignore-gpu-blocklist"])
     ctx = await browser.new_context(**opts, locale="de-DE")
@@ -95,13 +109,13 @@ async def run(pw, dev_name, opts):
     await page.click("#btn-roll"); await page.wait_for_timeout(5000)
     await shot(page, f"{dev_name}-4-nach-wurf", report)
     await settle(page)
-    await page.click("#btn-portfolio"); await shot(page, f"{dev_name}-5-besitz", report)
+    await click_free(page, "#btn-portfolio"); await shot(page, f"{dev_name}-5-besitz", report)
     await page.evaluate("window.MonopolyGame.closeModal('modal-portfolio')")
     await settle(page)
-    await page.click("#btn-trade"); await shot(page, f"{dev_name}-6-handel", report)
+    await click_free(page, "#btn-trade"); await shot(page, f"{dev_name}-6-handel", report)
     await page.evaluate("window.MonopolyGame.closeModal('modal-trade')")
     await settle(page)
-    await page.click("#btn-toggle-logs"); await shot(page, f"{dev_name}-7-protokoll", report)
+    await click_free(page, "#btn-toggle-logs"); await shot(page, f"{dev_name}-7-protokoll", report)
     report["console_errors"] = errors[:20]
     await browser.close()
     return report

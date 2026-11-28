@@ -110,7 +110,9 @@ class MauMauRules(GameRules):
         if m["type"] == "choose":
             g["wish"] = m["suit"]
             g["phase"] = "play"
-            return [{"type": "NOTE", "text": f"{{p{seat}}} wünscht sich {m['suit']} {SUITS[m['suit']][0]}"}] + self._advance(room, seat)
+            wish = f"{m['suit']} {SUITS[m['suit']][0]}"
+            return [{"type": "NOTE", "text": f"{{p{seat}}} wünscht sich {wish}", "you": {str(seat): f"Du wünschst dir {wish}"}}] \
+                + self._advance(room, seat)
         if m["type"] == "pass":
             return self._advance(room, seat)
         if m.get("draw"):

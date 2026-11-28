@@ -278,7 +278,7 @@ export class PieceLayer {
         // Mit Regeln entscheiden allein die erlaubten Züge (Team-Figuren, Figuren mit neuem Besitzer);
         // freier Tisch: nur eigene Figuren
         if (targets !== null) return targets.length > 0;
-        return spec.seat === me.seat;
+        return s.play?.free ? true : spec.seat === me.seat;       // freies Spiel: alles anfassen
     }
 
     /** Erlaubte Ziele (mit Regeln) bzw. alle freien Felder (freier Tisch) */
@@ -288,7 +288,9 @@ export class PieceLayer {
         const legal = this.client.legalTargets(id);
         if (legal !== null) return legal;
         const occupied = new Set(Object.entries(s.pieces).filter(([pid]) => pid !== id).map(([, ps]) => ps.field));
-        return Object.keys(s.layout.fields).filter(f => !occupied.has(f));
+        // Zonen (Stapel, Hand, Auslage) nehmen immer noch etwas auf
+        return Object.entries(s.layout.fields).filter(([f, spec]) => spec.zone ? f !== s.pieces[id]?.field || spec.zone !== 'stack'
+            : !occupied.has(f)).map(([f]) => f);
     }
 
     private ring(color: number, inner: number, outer: number, opacity: number): THREE.Mesh {
@@ -350,8 +352,10 @@ export class PieceLayer {
                 this.dragWasSelected = true;               // ausgewählte Figur: weiterziehen oder antippen = zurücklegen
             } else {
                 const field = this.nearestCandidate(sel.id, ev.clientX, ev.clientY);
-                // Ziel angetippt (auch wenn dort eine fremde Figur steht, die geschlagen wird)
-                if (field && !id) {
+                // Ziel angetippt (auch wenn dort eine fremde Figur steht, die geschlagen wird) – oder ein Gegenstand,
+                // der auf einer Ziel-Zone liegt (Karte auf der Ablage: drauflegen statt sie zu greifen)
+                const onZone = !!id && !!field && !!this.layout?.fields[field]?.zone && this.lastState?.pieces[id]?.field === field;
+                if (field && (!id || onZone)) {
                     ev.stopPropagation();
                     ev.preventDefault();
                     this.selected = null;
@@ -492,6 +496,8 @@ export class PieceLayer {
                 return;
             } else {
                 field = null;                       // ausgewählte Figur erneut angetippt → zurücklegen
+                // freies Spiel: Karte doppelt antippen = umdrehen
+                if (this.dragWasSelected && v.kind === 'card' && this.lastState?.play?.free) this.client.act({ type: 'flip', piece: v.id });
             }
         }
         const current = this.lastState?.pieces[v.id]?.field;

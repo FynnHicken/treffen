@@ -37,6 +37,15 @@ RUN cd games/schach/client && npm ci --no-audit --no-fund
 COPY games/schach/client games/schach/client
 RUN cd games/schach/client && npm run build
 
+FROM node:22-alpine AS maumau-client-builder
+WORKDIR /repo
+COPY packages/boardgame-kit packages/boardgame-kit
+COPY packages/tabletop packages/tabletop
+COPY games/maumau/client/package.json games/maumau/client/package-lock.json games/maumau/client/
+RUN cd games/maumau/client && npm ci --no-audit --no-fund
+COPY games/maumau/client games/maumau/client
+RUN cd games/maumau/client && npm run build
+
 # Stockfish 19 (offizielles GitHub-Release, Prüfsumme fest in fetch_stockfish.py; GPL-3.0, Lizenz liegt bei)
 FROM python:3.11-slim AS stockfish
 COPY games/schach/tools/fetch_stockfish.py /tmp/
@@ -106,6 +115,12 @@ COPY packages/tabletop-server ./packages/tabletop-server
 COPY games/schach/server ./games/schach/server
 COPY --from=schach-client-builder /repo/games/schach/static ./games/schach/static
 COPY --from=stockfish /opt/stockfish /opt/stockfish
+
+# 4d. Mau-Mau (gleicher Spieltisch-Server, Karten)
+WORKDIR /app/maumau
+COPY packages/tabletop-server ./packages/tabletop-server
+COPY games/maumau/server ./games/maumau/server
+COPY --from=maumau-client-builder /repo/games/maumau/static ./games/maumau/static
 
 # 5. Codenames
 WORKDIR /app/codenames

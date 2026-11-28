@@ -102,6 +102,13 @@ export interface PlayState {
     scores_label?: string;
     marks?: Mark[];
     result?: { winners: number[]; reason?: string; text?: string } | null;
+    /** Schachuhr (Engine 2.6): verbleibende Sekunden je Platz, laufende Uhren */
+    clock?: { left: Record<string, number>; running: number[] } | null;
+    /** Zurücknehmen (Engine 2.6): Plätze mit zurücknehmbarem Zug, offene Frage */
+    undoable?: number[];
+    undo_ask?: { seat: number; by: string; need: string[]; yes: string[] } | null;
+    /** Freies Spiel (Engine 2.5): keine Regelprüfung, alle dürfen alles */
+    free?: boolean;
     /** Knöpfe je Platz (Engine 2.4): Aktionen mit `label`, z. B. „Weiter“, Farbe wünschen */
     acts?: Record<string, ({ type: string; label: string } & Record<string, unknown>)[]>;
     [key: string]: unknown;
@@ -165,6 +172,7 @@ export type TableEvent =
     }
     | { type: 'PIECE_FLIPPED'; piece: string; up: boolean; show?: string | null }
     | { type: 'STACK_SHUFFLED'; field: string; order: Record<string, number> }
+    | { type: 'STATE_RESTORED'; by_seat: number; pieces: Record<string, PieceState> }
     | { type: 'PIECE_CHANGED'; piece: string; kind: string; by?: string; reason?: string }
     | { type: 'GAME_UPDATED'; status: TableState['status']; play: PlayState | null }
     | { type: 'DICE_ROLLED'; by: string; values: number[]; throw: ThrowSpec }
@@ -198,6 +206,9 @@ export function applyEvent(state: TableState, ev: TableEvent): TableState {
         }
         case 'PIECE_FLIPPED':
             return withPiece(state, ev.piece, { up: ev.up, show: ev.show ?? null });
+        case 'STATE_RESTORED':
+            // Zug zurückgenommen: alle Gegenstände an ihren alten Platz (Spielstand folgt mit GAME_UPDATED)
+            return { ...state, pieces: ev.pieces };
         case 'STACK_SHUFFLED': {
             const pieces = { ...state.pieces };
             for (const [id, order] of Object.entries(ev.order)) {
