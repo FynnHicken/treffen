@@ -140,7 +140,7 @@ docker run -d \
     -e HOST_CONTAINERNAME="$CONTAINER_NAME" \
     -e "TREFFEN_COMMIT_SHA=$REMOTE_SHA" \
     -e "TREFFEN_BUILD_DATE=$BUILD_DATE" \
-    -e "TREFFEN_UPDATE_CHANNEL=$CHANNEL" \
+    -e "TREFFEN_UPDATE_DEFAULT_CHANNEL=$CHANNEL" \
     -e "TREFFEN_UPDATE_WEBHOOK_URL=$WEBHOOK_URL" \
     "${EXTRA_ENV[@]}" \
     --label "net.unraid.docker.managed=dockerman" \

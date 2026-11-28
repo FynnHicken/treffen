@@ -37,6 +37,8 @@ const CHANNEL_STATE_FILE = process.env.TREFFEN_UPDATE_CHANNEL_FILE || '/tmp/tref
 const CACHE_TTL_MS = 60 * 1000;
 
 let activeChannelId = DEFAULT_CHANNEL_ID;
+const envDefault = (process.env.TREFFEN_UPDATE_DEFAULT_CHANNEL || '').trim();
+if (lookupChannel(envDefault)) activeChannelId = lookupChannel(envDefault).id;
 try {
     if (fs.existsSync(CHANNEL_STATE_FILE)) {
         const saved = fs.readFileSync(CHANNEL_STATE_FILE, 'utf8').trim();
