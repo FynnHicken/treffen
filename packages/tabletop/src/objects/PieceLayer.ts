@@ -289,7 +289,7 @@ export class PieceLayer {
         const legal = this.client.legalTargets(id);
         if (legal !== null) return legal;
         const mySeat = s.layout.pieces[id]?.seat;
-        const occupantSeat = new Map<string, number | undefined>();
+        const occupantSeat = new Map<string, number | null | undefined>();
         for (const [pid, ps] of Object.entries(s.pieces)) {
             if (pid !== id) occupantSeat.set(ps.field, s.layout.pieces[pid]?.seat);
         }
@@ -297,7 +297,7 @@ export class PieceLayer {
         return Object.entries(s.layout.fields).filter(([f, spec]) => {
             if (spec.zone) return f !== s.pieces[id]?.field || spec.zone !== 'stack';
             if (!occupantSeat.has(f)) return true;
-            return !!s.play?.free && mySeat !== undefined && occupantSeat.get(f) !== mySeat;
+            return !!s.play?.free && mySeat != null && occupantSeat.get(f) !== mySeat;
         }).map(([f]) => f);
     }
 
