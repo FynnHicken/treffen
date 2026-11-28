@@ -29,55 +29,46 @@ channel_repo_branch() {
 
 if [[ "${1:-}" == "--serve-webhook" ]]; then
     echo "🎧 Starte Treffen Unraid-Update-Webhook auf Port ${WEBHOOK_PORT}..."
-    exec python3 - "$0" "$WEBHOOK_PORT" "$WEBHOOK_SECRET" "$LOG_FILE" <<'PYEOF'
-import http.server, json, os, subprocess, sys, threading
+    NODE_BIN="$(command -v node || echo /usr/local/bin/node)"
+    exec env WEBHOOK_SCRIPT="$0" WEBHOOK_PORT="$WEBHOOK_PORT" WEBHOOK_SECRET="$WEBHOOK_SECRET" WEBHOOK_LOG="$LOG_FILE" "$NODE_BIN" -e '
+const http = require("http");
+const fs = require("fs");
+const { spawn } = require("child_process");
 
-script_path, port, secret, log_file = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
-lock = threading.Lock()
+const scriptPath = process.env.WEBHOOK_SCRIPT;
+const port = parseInt(process.env.WEBHOOK_PORT || "9876", 10);
+const secret = process.env.WEBHOOK_SECRET || "";
+const logFile = process.env.WEBHOOK_LOG || "/tmp/treffen-unraid-update.log";
+let busy = false;
 
-class Handler(http.server.BaseHTTPRequestHandler):
-    def _send(self, code, data):
-        body = json.dumps(data).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+function send(res, code, data) {
+    const body = JSON.stringify(data);
+    res.writeHead(code, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) });
+    res.end(body);
+}
 
-    def do_POST(self):
-        if self.path != "/update":
-            return self._send(404, {"error": "Not found"})
-        if secret:
-            auth = self.headers.get("Authorization", "")
-            if auth != f"Bearer {secret}":
-                return self._send(403, {"error": "Unauthorized"})
-        length = int(self.headers.get("Content-Length", "0") or 0)
-        raw = self.rfile.read(min(length, 8192))
-        try:
-            body = json.loads(raw.decode("utf-8") or "{}")
-        except Exception:
-            body = {}
-        channel = str(body.get("channel") or "stable").strip().lower()
-        if channel not in ("stable", "upstream", "experimentell"):
-            return self._send(400, {"error": "Invalid channel"})
-        if not lock.acquire(blocking=False):
-            return self._send(409, {"error": "Update already running"})
-
-        def run():
-            try:
-                with open(log_file, "ab") as lf:
-                    subprocess.run([script_path, channel, "--force"], stdout=lf, stderr=subprocess.STDOUT, check=False)
-            finally:
-                lock.release()
-
-        threading.Thread(target=run, daemon=True).start()
-        self._send(202, {"ok": True, "message": f"Update ({channel}) auf Unraid gestartet."})
-
-    def log_message(self, fmt, *args):
-        pass
-
-http.server.ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
-PYEOF
+http.createServer((req, res) => {
+    if (req.method !== "POST" || req.url !== "/update") return send(res, 404, { error: "Not found" });
+    if (secret && req.headers["authorization"] !== `Bearer ${secret}`) return send(res, 403, { error: "Unauthorized" });
+    let raw = "";
+    req.on("data", c => { if (raw.length < 8192) raw += c; });
+    req.on("end", () => {
+        let body = {};
+        try { body = JSON.parse(raw || "{}"); } catch {}
+        const channel = String(body.channel || "stable").trim().toLowerCase();
+        if (!["stable", "upstream", "experimentell"].includes(channel)) return send(res, 400, { error: "Invalid channel" });
+        if (busy) return send(res, 409, { error: "Update already running" });
+        busy = true;
+        const out = fs.openSync(logFile, "a");
+        const child = spawn(scriptPath, [channel, "--force"], { detached: true, stdio: ["ignore", out, out] });
+        child.on("exit", () => { busy = false; try { fs.closeSync(out); } catch {} });
+        child.on("error", () => { busy = false; try { fs.closeSync(out); } catch {} });
+        send(res, 202, { ok: true, message: `Update (${channel}) auf Unraid gestartet.` });
+    });
+}).listen(port, "0.0.0.0", () => {
+    console.log(`Webhook bereit auf 0.0.0.0:${port}`);
+});
+'
 fi
 
 CHANNEL="stable"
