@@ -1041,8 +1041,12 @@ function renderTreffenUpdaterUI(state) {
         }
     }
     if (applyBtn) {
-        const showApply = Boolean(state.has_update && state.can_apply_webhook && !state.update_in_progress);
+        const showApply = Boolean(state.can_apply_webhook && !state.update_in_progress);
         applyBtn.style.display = showApply ? "inline-flex" : "none";
+        if (showApply) {
+            applyBtn.disabled = false;
+            applyBtn.textContent = state.has_update ? "⬇️ Update installieren" : "🔄 Branch installieren";
+        }
     }
 }
 
