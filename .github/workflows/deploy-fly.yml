@@ -1,0 +1,64 @@
+name: Deploy Treffen to Fly.io
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Update-Kanal / Branch
+        required: true
+        default: stable
+        type: choice
+        options:
+          - stable
+          - upstream
+          - experimentell
+
+concurrency:
+  group: deploy-fly
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kanal auflösen
+        id: target
+        run: |
+          case "${{ inputs.channel }}" in
+            upstream)
+              echo "repo=NobleBrains/treffen" >> "$GITHUB_OUTPUT"
+              echo "branch=main" >> "$GITHUB_OUTPUT"
+              ;;
+            experimentell)
+              echo "repo=FynnHicken/treffen" >> "$GITHUB_OUTPUT"
+              echo "branch=experimentell" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "repo=FynnHicken/treffen" >> "$GITHUB_OUTPUT"
+              echo "branch=main" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Repository auschecken (${{ steps.target.outputs.repo }}@${{ steps.target.outputs.branch }})
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.target.outputs.repo }}
+          ref: ${{ steps.target.outputs.branch }}
+
+      - name: flyctl einrichten
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Auf Fly.io deployen
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "FEHLER: Secret FLY_API_TOKEN fehlt im GitHub-Repository."
+            exit 1
+          fi
+          SHA="$(git rev-parse HEAD)"
+          BDATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          flyctl deploy --remote-only \
+            --build-arg "TREFFEN_COMMIT_SHA=$SHA" \
+            --build-arg "TREFFEN_BUILD_DATE=$BDATE" \
+            --build-arg "TREFFEN_UPDATE_DEFAULT_CHANNEL=${{ inputs.channel }}"

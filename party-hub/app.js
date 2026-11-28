@@ -1028,7 +1028,7 @@ function renderTreffenUpdaterUI(state) {
                 `<strong>🆕 Update verfügbar (${escapeHtml(state.latest_short)})</strong><br>` +
                 `${escapeHtml(state.latest_message || "Neuer Stand auf GitHub")}` +
                 `${dateStr ? ` <span class="muted">(${escapeHtml(dateStr)})</span>` : ""}` +
-                (!state.can_apply_webhook ? `<br><span class="muted">${state.runtime === "fly" ? "Auf Fly.io per flyctl deploy ausrollen." : "Für 1-Klick-Update auf Unraid TREFFEN_UPDATE_WEBHOOK_URL setzen."}</span>` : "");
+                (!state.can_apply_webhook ? `<br><span class="muted">${state.runtime === "fly" ? "Auf Fly.io für 1-Klick-Update TREFFEN_GITHUB_DEPLOY_TOKEN setzen." : "Für 1-Klick-Update auf Unraid TREFFEN_UPDATE_WEBHOOK_URL setzen."}</span>` : "");
         } else if (!state.installed_sha) {
             statusEl.innerHTML =
                 `Stand auf GitHub (${escapeHtml(state.channel?.branch || "main")}): <strong>${escapeHtml(state.latest_short || "–")}</strong><br>` +

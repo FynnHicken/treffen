@@ -92,7 +92,9 @@ export async function checkForUpdate({ channelId = '', force = false } = {}) {
     const { channel, lockedByEnv } = resolveChannel(channelId);
     const build = readBuildInfo();
     const webhookUrl = (process.env.TREFFEN_UPDATE_WEBHOOK_URL || '').trim();
+    const deployToken = (process.env.TREFFEN_GITHUB_DEPLOY_TOKEN || '').trim();
     const runtime = detectRuntime();
+    const canApply = Boolean(webhookUrl || (runtime === 'fly' && deployToken));
 
     const cached = statusCache.get(channel.id);
     if (!force && cached && (Date.now() - cached.fetchedAt) < CACHE_TTL_MS) {
@@ -106,7 +108,7 @@ export async function checkForUpdate({ channelId = '', force = false } = {}) {
             channels: UPDATE_CHANNELS,
             locked_by_env: lockedByEnv,
             runtime,
-            can_apply_webhook: Boolean(webhookUrl),
+            can_apply_webhook: canApply,
             update_in_progress: updateInProgress,
             cached: true
         };
@@ -162,7 +164,7 @@ export async function checkForUpdate({ channelId = '', force = false } = {}) {
         channels: UPDATE_CHANNELS,
         locked_by_env: lockedByEnv,
         runtime,
-        can_apply_webhook: Boolean(webhookUrl),
+        can_apply_webhook: canApply,
         update_in_progress: updateInProgress,
         latest_sha: latestSha,
         latest_short: latestSha ? latestSha.slice(0, 7) : '',
@@ -183,19 +185,71 @@ export async function checkForUpdate({ channelId = '', force = false } = {}) {
 
 export async function triggerWebhookUpdate(channelId = '') {
     const webhookUrl = (process.env.TREFFEN_UPDATE_WEBHOOK_URL || '').trim();
-    if (!webhookUrl) {
-        return { status: 400, body: { error: 'Kein Unraid-Update-Webhook (TREFFEN_UPDATE_WEBHOOK_URL) konfiguriert.' } };
+    const deployToken = (process.env.TREFFEN_GITHUB_DEPLOY_TOKEN || '').trim();
+    const runtime = detectRuntime();
+
+    if (!webhookUrl && !(runtime === 'fly' && deployToken)) {
+        return {
+            status: 400,
+            body: {
+                error: runtime === 'fly'
+                    ? 'Kein TREFFEN_GITHUB_DEPLOY_TOKEN für Fly.io-Deploy konfiguriert.'
+                    : 'Kein Unraid-Update-Webhook (TREFFEN_UPDATE_WEBHOOK_URL) konfiguriert.'
+            }
+        };
     }
     if (updateInProgress) {
         return { status: 409, body: { error: 'Ein Update läuft bereits.' } };
     }
 
     const { channel } = resolveChannel(channelId);
+    updateInProgress = true;
+
+    // Fly.io: GitHub Actions workflow_dispatch triggern
+    if (!webhookUrl && runtime === 'fly' && deployToken) {
+        const apiBase = (process.env.TREFFEN_GITHUB_API_BASE || 'https://api.github.com').replace(/\/+$/, '');
+        const dispatchRepo = (process.env.TREFFEN_GITHUB_DEPLOY_REPO || 'FynnHicken/treffen').trim();
+        const workflowFile = (process.env.TREFFEN_GITHUB_DEPLOY_WORKFLOW || 'deploy-fly.yml').trim();
+        const dispatchRef = (process.env.TREFFEN_GITHUB_DEPLOY_REF || 'main').trim();
+        const url = `${apiBase}/repos/${dispatchRepo}/actions/workflows/${encodeURIComponent(workflowFile)}/dispatches`;
+
+        try {
+            const resp = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/vnd.github+json',
+                    'Authorization': `Bearer ${deployToken}`,
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Treffen-Updater/1.0'
+                },
+                body: JSON.stringify({ ref: dispatchRef, inputs: { channel: channel.id } }),
+                signal: AbortSignal.timeout(10000)
+            });
+            if (!resp.ok) {
+                const txt = await resp.text();
+                updateInProgress = false;
+                return { status: resp.status, body: { error: `GitHub Actions HTTP ${resp.status}: ${txt.slice(0, 180)}` } };
+            }
+            setTimeout(() => { updateInProgress = false; }, 180000).unref?.();
+            return {
+                status: 202,
+                body: {
+                    ok: true,
+                    channel: channel.id,
+                    message: `Fly.io-Deploy für Kanal „${channel.label}“ per GitHub Actions gestartet (dauert ca. 2–3 Min.).`
+                }
+            };
+        } catch (err) {
+            updateInProgress = false;
+            return { status: 502, body: { error: `GitHub Actions nicht erreichbar: ${err?.message || err}` } };
+        }
+    }
+
+    // Unraid: lokaler Host-Webhook
     const headers = { 'Content-Type': 'application/json' };
     const secret = (process.env.TREFFEN_UPDATE_WEBHOOK_SECRET || '').trim();
     if (secret) headers['Authorization'] = `Bearer ${secret}`;
 
-    updateInProgress = true;
     try {
         const resp = await fetch(webhookUrl, {
             method: 'POST',
