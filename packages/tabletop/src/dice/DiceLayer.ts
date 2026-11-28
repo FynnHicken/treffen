@@ -56,7 +56,17 @@ export class DiceLayer {
     private nextImpact = 0;
     private playing = false;
     private lastRollKey = '';
-    private holding: { power: number; last: THREE.Vector2; t: number; motion: (e: DeviceMotionEvent) => void } | null = null;
+    private holding: {
+        power: number;
+        last: THREE.Vector2;
+        t: number;
+        motion: (e: DeviceMotionEvent) => void;
+        dragging: boolean;
+        dragPos: THREE.Vector3 | null;
+        passTarget: number | null;
+    } | null = null;
+    /** Ziel-Ring am Platz eines Mitspielers, wenn der Becher im freien Spiel herübergezogen wird */
+    private passRing: THREE.Mesh;
     private shakingOthers = new Map<number, number>();      // Sitzplatz → Zeit des letzten Schüttel-Signals
     /** Würfel werden gerade vom Tisch in einen Becher eingesammelt */
     private gather: { seat: number; t: number; from: THREE.Vector3[]; fromQ: THREE.Quaternion[] } | null = null;
@@ -81,6 +91,14 @@ export class DiceLayer {
         this.cup = createCup();
         this.cup.visible = false;
         table.scene.add(this.cup);
+        this.passRing = new THREE.Mesh(
+            new THREE.RingGeometry(0.55, 0.72, 32),
+            new THREE.MeshBasicMaterial({ color: 0xf0c97a, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+        );
+        this.passRing.rotation.x = -Math.PI / 2;
+        this.passRing.position.y = 0.03;
+        this.passRing.visible = false;
+        table.scene.add(this.passRing);
         client.onState(s => this.syncState(s));
         client.onEvent(ev => {
             if (ev.type === 'DICE_ROLLED') {
@@ -364,17 +382,39 @@ export class DiceLayer {
         if (!this.client.canRoll) return;              // nicht dran → Becher bleibt stehen, Kamera darf drehen
         if (!this.cup.visible || !this.table.pickObjects(ev.clientX, ev.clientY, [this.cup]).length) return;
         // In der Lobby darf jeder: der Becher kommt zu einem herüber
+        const startSeat = this.cupSeat;
         this.lobbyHolder = me.seat;
         this.moveCupTo(me.seat);
         ev.stopPropagation();
         ev.preventDefault();
-        this.startShake(ev);
+        this.startShake(ev, startSeat);
     }
 
-    private startShake(ev: PointerEvent): void {
+    /** Im freien Spiel: erkennt, ob der Becher gerade über dem Platz eines anderen Spielers gezogen wird. */
+    private findPassTarget(at: THREE.Vector3): number | null {
+        const s = this.client.state;
+        const me = this.client.me;
+        if (!s || !me || me.seat === null || s.status !== 'playing' || !s.play?.free) return null;
+        let bestSeat: number | null = null;
+        let bestDist = 3.4;
+        const edge = this.table.tableSize / 2 - 1.15;
+        for (const m of s.members) {
+            if (m.seat === null || m.seat === me.seat) continue;
+            const cupPos = this.cupPosition(m.seat);
+            const seatPos = this.table.seatDirection(m.seat).multiplyScalar(edge);
+            const d = Math.min(at.distanceTo(cupPos), at.distanceTo(seatPos));
+            if (d < bestDist) {
+                bestDist = d;
+                bestSeat = m.seat;
+            }
+        }
+        return bestSeat;
+    }
+
+    private startShake(ev: PointerEvent, startSeat: number | null): void {
         const motion = (e: DeviceMotionEvent) => {
             const a = e.acceleration ?? e.accelerationIncludingGravity;
-            if (!a || !this.holding) return;
+            if (!a || !this.holding || this.holding.dragging) return;
             const mag = Math.hypot(a.x ?? 0, a.y ?? 0, a.z ?? 0);
             if (mag > 6) this.addShake(Math.min(0.08, (mag - 6) / 120));
         };
@@ -382,25 +422,88 @@ export class DiceLayer {
         const DME = (window as any).DeviceMotionEvent;
         if (DME?.requestPermission) DME.requestPermission().catch(() => undefined);
         window.addEventListener('devicemotion', motion);
-        this.gatherInto(this.client.me!.seat!);
-        this.holding = { power: 0.25, last: new THREE.Vector2(ev.clientX, ev.clientY), t: performance.now(), motion };
+        const mySeat = this.client.me!.seat!;
+        const myCupPos = this.cupPosition(mySeat);
+        const startPx = new THREE.Vector2(ev.clientX, ev.clientY);
+        const canPass = !!(
+            this.client.state?.status === 'playing' &&
+            this.client.state.play?.free &&
+            this.client.state.members.filter(m => m.seat !== null).length >= 2
+        );
+        this.gatherInto(mySeat);
+        this.holding = {
+            power: 0.25,
+            last: startPx.clone(),
+            t: performance.now(),
+            motion,
+            dragging: false,
+            dragPos: null,
+            passTarget: null,
+        };
         vibrate(6);
         const move = (e: PointerEvent) => {
             if (!this.holding) return;
-            // Schüttelstärke aus der zurückgelegten Strecke (unabhängig von Bildrate/Gerät):
-            // ca. 1500 px Schütteln = volle Kraft
             const p = new THREE.Vector2(e.clientX, e.clientY);
+            const at = this.table.pickPlane(e.clientX, e.clientY, 0);
+            const canDragPass = canPass && (startSeat === mySeat || p.distanceTo(startPx) > 48);
+            if (canDragPass && at) {
+                const rawTarget = this.findPassTarget(at);
+                const target = (startSeat !== mySeat && rawTarget === startSeat) ? null : rawTarget;
+                const away = at.distanceTo(myCupPos);
+                const wasTarget = this.holding.passTarget;
+                const nowDragging = target !== null || (startSeat === mySeat && (this.holding.dragging ? away > 1.6 : away > 2.0));
+                this.holding.dragging = nowDragging;
+                this.holding.dragPos = nowDragging ? at.clone() : null;
+                this.holding.passTarget = target;
+                if (nowDragging) this.travel = null;
+                if (target !== null) {
+                    const tp = this.cupPosition(target);
+                    this.passRing.position.set(tp.x, 0.03, tp.z);
+                    this.passRing.visible = true;
+                    if (wasTarget !== target) vibrate(4);
+                } else {
+                    this.passRing.visible = false;
+                }
+            }
+            // Schüttelstärke aus der zurückgelegten Strecke (unabhängig von Bildrate/Gerät):
+            // ca. 1500 px Schütteln = volle Kraft (nur beim Schütteln, nicht beim Weitergeben)
             const dist = p.distanceTo(this.holding.last);
             this.holding.last.copy(p);
             this.holding.t = performance.now();
-            if (dist > 2) this.addShake(Math.min(0.06, dist / 1500));
-            const at = this.table.pickPlane(e.clientX, e.clientY, 0);
-            if (at) this.client.sendPresence({ x: at.x, z: at.z, down: true, hold: 'cup' });
+            if (!this.holding.dragging && dist > 2) this.addShake(Math.min(0.06, dist / 1500));
+            if (at) {
+                this.client.sendPresence(
+                    this.holding.dragging
+                        ? { x: at.x, z: at.z, down: true }
+                        : { x: at.x, z: at.z, down: true, hold: 'cup' }
+                );
+            }
+            this.animate();
         };
         const up = () => {
             window.removeEventListener('pointermove', move);
             window.removeEventListener('pointerup', up);
             window.removeEventListener('pointercancel', up);
+            this.passRing.visible = false;
+            const h = this.holding;
+            if (h && h.passTarget !== null) {
+                const target = h.passTarget;
+                window.removeEventListener('devicemotion', h.motion);
+                this.holding = null;
+                this.cupBase.set(this.cup.position.x, 0, this.cup.position.z);
+                this.client.act({ type: 'pass_cup', seat: target });
+                this.moveCupTo(target);
+                vibrate(10);
+                this.animate();
+                return;
+            }
+            if (h && h.dragging) {
+                // Mitten auf dem Tisch losgelassen → zurück zum eigenen Platz, ohne zu würfeln
+                window.removeEventListener('devicemotion', h.motion);
+                this.holding = null;
+                this.animate();
+                return;
+            }
             this.throwDice();
         };
         window.addEventListener('pointermove', move);
@@ -530,9 +633,21 @@ export class DiceLayer {
             const base = this.cupBase;
             const seat = this.cupSeat;
             const mine = seat !== null && seat === this.client.me?.seat;
-            const shaking = autoShake || (mine && this.holding) || (seat !== null && now - (this.shakingOthers.get(seat) ?? 0) < 400);
+            const dragging = !!(mine && this.holding?.dragging && this.holding.dragPos);
+            const shaking = !dragging && (autoShake || (mine && this.holding) || (seat !== null && now - (this.shakingOthers.get(seat) ?? 0) < 400));
             cup.rotation.set(0, 0, 0);
-            if (shaking) {
+            if (dragging && this.holding?.dragPos) {
+                const target = this.holding.dragPos;
+                const k = Math.min(1, dt * 22);
+                cup.position.x = THREE.MathUtils.lerp(cup.position.x, target.x, k);
+                cup.position.y = THREE.MathUtils.lerp(cup.position.y, 0.65, k);
+                cup.position.z = THREE.MathUtils.lerp(cup.position.z, target.z, k);
+                cup.rotation.set(0.08, 0, 0.08);
+                if (this.passRing.visible) {
+                    this.passRing.scale.setScalar(1 + Math.sin(now / 140) * 0.07);
+                }
+                busy = true;
+            } else if (shaking) {
                 const amp = mine && this.holding ? 0.04 + this.holding.power * 0.08 : 0.08;
                 cup.position.set(base.x + Math.sin(now / 37) * amp, 0.55 + lift + Math.sin(now / 53) * amp, base.z + Math.cos(now / 41) * amp);
                 cup.rotation.set(Math.sin(now / 45) * amp * 2, 0, Math.cos(now / 39) * amp * 2);

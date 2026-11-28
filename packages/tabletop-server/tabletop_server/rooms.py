@@ -654,19 +654,13 @@ class Room:
                        "label": "🔀 " + (self.layout["fields"][fid].get("label") or ("Stapel mischen" if len(stacks) == 1 else f"Mischen: {fid}"))}
                       for fid in stacks]
         acts_by_seat = {}
-        for s in seats:
-            if seat is not None and s != seat:
-                continue
-            s_acts = list(stack_acts)
-            if len(seats) >= 2 and self.layout.get("dice"):
-                if s == cup_seat:
-                    s_acts.append({"type": "pass_cup", "label": "🎲 Becher weitergeben"})
-                else:
-                    s_acts.append({"type": "take_cup", "label": "🎲 Becher nehmen"})
-            if s_acts:
-                acts_by_seat[str(s)] = s_acts
+        if stack_acts:
+            for s in seats:
+                if seat is not None and s != seat:
+                    continue
+                acts_by_seat[str(s)] = list(stack_acts)
         return {"free": True, "phase": "free", "turn": None, "to_move": [], "cup_seat": cup_seat,
-                "say": {"all": "Freies Spiel – alle dürfen alles bewegen, schlagen & den Becher weitergeben."},
+                "say": {"all": "Freies Spiel – Figuren frei ziehen & schlagen, Becher schütteln oder zum Mitspieler ziehen."},
                 "acts": acts_by_seat}
 
     def _free_drop(self, member_id: str, piece_id: str, field_id) -> List[dict]:
@@ -711,6 +705,10 @@ class Room:
         m = self.members.get(member_id)
         if t == "pass_cup":
             seats = sorted(x.seat for x in self.members.values() if x.seat is not None)
+            target = act.get("seat")
+            if isinstance(target, int) and target in seats:
+                self.free_cup_seat = target
+                return [self._play_event()]
             if len(seats) >= 2:
                 cur = self._free_cup_seat(seats)
                 idx = seats.index(cur) if cur in seats else 0
