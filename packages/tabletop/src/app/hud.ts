@@ -5,6 +5,7 @@
  * {who} {p2} {s2} werden zu HTML (Avatar + Name).
  */
 import { escapeHtml } from '@treffen/boardgame-kit';
+import { turnChime, win } from '../audio/sfx';
 import { avatarImgHtml } from '../ui/avatar';
 import type { TableClient } from '../net/TableClient';
 import type { PlayState, TableState } from '../net/state';
@@ -227,10 +228,16 @@ export function setupHud(client: TableClient, texts: HudTexts,
             const p = ev.play;
             const nowMine = movers(p).includes(seat);
             const wasMine = s.status === 'playing' && movers(s.play).includes(seat);
-            if (nowMine && !wasMine) navigator.vibrate?.([10, 60, 10]);          // du bist dran
+            if (nowMine && !wasMine) {
+                turnChime();
+                navigator.vibrate?.([10, 60, 10]);          // du bist dran
+            }
             const alert = !!p.alerts?.[String(seat)];
             if (alert && !alerted) navigator.vibrate?.([30, 50, 30]);            // z. B. Schach
             alerted = alert;
+        }
+        if (ev.type === 'GAME_UPDATED' && ev.status === 'finished' && s.status !== 'finished') {
+            win();
         }
     });
     client.onError(err => {

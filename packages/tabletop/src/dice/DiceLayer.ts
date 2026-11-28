@@ -12,7 +12,7 @@ import type { TableScene } from '../engine/TableScene';
 import type { TableClient } from '../net/TableClient';
 import type { TableState } from '../net/state';
 import { seededRandom } from '../engine/materials';
-import { knock, vibrate } from '../audio/sfx';
+import { dieBounce, knock, rattle, rolledHigh, vibrate } from '../audio/sfx';
 import { createDie, normalForValue, topValue } from './dieMesh';
 import { createCup } from './cup';
 
@@ -65,6 +65,7 @@ export class DiceLayer {
     /** Wann ich zuletzt selbst den Becher geschüttelt (und losgelassen) habe */
     private lastHandShake = -Infinity;
     private lastRattle = 0;
+    private lastValues: number[] = [];
     /** In wessen Becher liegen die Würfel gerade (unsichtbar)? */
     private inCup: number | null = null;
     private readonly size: number;
@@ -208,6 +209,7 @@ export class DiceLayer {
     }
 
     private startPlayback(values: number[], thr: { power: number; seed: number; seat: number }): void {
+        this.lastValues = values;
         this.recording = this.simulate(values, thr);
         this.dice.forEach(d => { d.visible = true; });
         this.inCup = null;
@@ -412,7 +414,7 @@ export class DiceLayer {
         this.holding.power = Math.min(1, before + amount);
         // Rasseln im Becher, nicht zu oft
         if (Math.floor(before * 25) !== Math.floor(this.holding.power * 25)) {
-            knock(0.18 + this.holding.power * 0.2, 2.4 + Math.random() * 0.6);
+            rattle(0.2 + this.holding.power * 0.22);
             vibrate(5);
         }
         this.animate();
@@ -469,11 +471,12 @@ export class DiceLayer {
                 const i = Math.floor(f);
                 while (this.nextImpact < rec.impacts.length && rec.impacts[this.nextImpact].frame <= i) {
                     const im = rec.impacts[this.nextImpact++];
-                    knock(Math.min(0.75, 0.12 + im.speed / 12), 2.1 + Math.random() * 0.4);
+                    dieBounce(Math.min(0.75, 0.12 + im.speed / 12));
                 }
                 if (i >= rec.frames.length - 1) {
                     this.applyFrame(rec.frames.length - 1, 0);
                     this.playTime = Infinity;
+                    if (this.lastValues.includes(6)) rolledHigh();
                 } else {
                     this.applyFrame(i, f - i);
                     busy = true;
@@ -518,7 +521,7 @@ export class DiceLayer {
                     autoShake = true;
                     if (now - this.lastRattle > 85 + Math.random() * 60) {
                         this.lastRattle = now;
-                        knock(0.2 + Math.random() * 0.12, 2.4 + Math.random() * 0.6);
+                        rattle(0.24 + Math.random() * 0.14);
                     }
                 } else { this.queued = null; this.startPlayback(q.values, q.thr); }
                 busy = true;

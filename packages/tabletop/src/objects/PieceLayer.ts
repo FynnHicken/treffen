@@ -19,7 +19,7 @@ import * as THREE from 'three';
 import type { TableScene } from '../engine/TableScene';
 import type { TableClient } from '../net/TableClient';
 import type { FieldSpec, Layout, PieceSpec, TableState } from '../net/state';
-import { knock, lift, vibrate } from '../audio/sfx';
+import { capture, goal, knock, lift, reject, step, vibrate } from '../audio/sfx';
 import { CARD_H } from './cards';
 
 export interface PieceLayerOptions {
@@ -55,9 +55,10 @@ interface Vis {
     mode: Mode;
     pos: THREE.Vector3;         // aktuelle Position (Fuß)
     goal: THREE.Vector3;        // Ziel beim Folgen (drag/held)
-    hop?: { from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number; height: number; sound: boolean; b0: Base; b1: Base };
+    hop?: { from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number; height: number; sound: boolean; b0: Base; b1: Base; landSound?: 'goal' };
     /** weitere Felder, über die die Figur Feld für Feld hüpft */
     queue?: THREE.Vector3[];
+    stepIdx?: number;
     pendingField?: string;      // eigener Drop, auf Bestätigung wartend
     tilt: THREE.Vector2;
 }
@@ -521,23 +522,27 @@ export class PieceLayer {
         }
         v.pendingField = undefined;
         const target = this.restPose(id, this.lastState ?? undefined, to, order ?? 1e6);
+        const zone = this.layout?.fields[to]?.zone;
         if (reason === 'captured') {
             // Geschlagen: hoher Bogen zurück ins Häuschen
+            capture();
             this.flyTo(v, target, true, { height: 1.4, dur: 0.75 });
             return;
         }
-        if (this.layout?.fields[to]?.zone) {
-            this.flyTo(v, target, true, { height: 0.5 });
+        const landSound = zone === 'goal' ? 'goal' : undefined;
+        if (zone) {
+            this.flyTo(v, target, true, { height: 0.5, landSound });
             return;
         }
         if (path && path.length > 1 && v.mode !== 'held') {
             // Feld für Feld hüpfen (Züge anderer, Computer)
             const pts = path.map(f => this.fieldPos(f));
             v.queue = pts.slice(1);
-            this.flyTo(v, pts[0], true, { height: 0.3, dur: 0.2 });
+            v.stepIdx = 0;
+            this.flyTo(v, pts[0], true, { height: 0.3, dur: 0.2, landSound });
             return;
         }
-        this.flyTo(v, target, true);
+        this.flyTo(v, target, true, { landSound });
     }
 
     private onGrabbedByOther(id: string): void {
@@ -561,11 +566,12 @@ export class PieceLayer {
         if (!v) return;
         v.pendingField = undefined;
         if (this.lastState?.pieces[id]) this.flyTo(v, this.restPose(id), false);
+        reject();
         vibrate([20, 40, 20]);
     }
 
     // ---------- Animation ----------
-    private flyTo(v: Vis, target: THREE.Vector3 | Pose, sound: boolean, opt?: { height?: number; dur?: number; roll?: number }): void {
+    private flyTo(v: Vis, target: THREE.Vector3 | Pose, sound: boolean, opt?: { height?: number; dur?: number; roll?: number; landSound?: 'goal' }): void {
         const to = target instanceof THREE.Vector3 ? target : target.pos;
         const b1: Base = target instanceof THREE.Vector3 ? { ...FLAT }
             : { yaw: target.yaw, pitch: target.pitch, roll: 0, scale: target.scale ?? 1 };
@@ -576,7 +582,8 @@ export class PieceLayer {
             from: v.pos.clone(), to: to.clone(), t: 0,
             dur: opt?.dur ?? HOP_DURATION + Math.min(0.35, dist * 0.04),
             height: opt?.height ?? Math.max(0.15, Math.min(0.6, dist * 0.12)) + Math.max(0, v.pos.y - this.surfaceY) * 0.4,
-            sound
+            sound,
+            landSound: opt?.landSound,
         };
         this.kick();
     }
@@ -605,13 +612,25 @@ export class PieceLayer {
                     v.tilt.multiplyScalar(Math.max(0, 1 - dt * 10));
                     if (h.t >= 1) {
                         const next = v.queue?.shift();
-                        if (h.sound) knock(next || v.queue ? 0.35 : 0.55, next ? 1.1 : 1);
+                        if (h.sound) {
+                            if (next || (v.queue && v.queue.length > 0)) {
+                                step(v.stepIdx ?? 0, false);
+                                v.stepIdx = (v.stepIdx ?? 0) + 1;
+                            } else if (h.landSound === 'goal') {
+                                goal();
+                            } else if (v.stepIdx !== undefined) {
+                                step(v.stepIdx, true);
+                            } else {
+                                knock(0.55, 1);
+                            }
+                        }
                         if (next) {
-                            v.hop = { from: v.pos.clone(), to: next, t: 0, dur: 0.2, height: 0.3, sound: true, b0: { ...v.base }, b1: { ...v.base } };
+                            v.hop = { from: v.pos.clone(), to: next, t: 0, dur: 0.2, height: 0.3, sound: true, b0: { ...v.base }, b1: { ...v.base }, landSound: h.landSound };
                         } else {
                             v.mode = 'rest';
                             v.hop = undefined;
                             v.queue = undefined;
+                            v.stepIdx = undefined;
                             v.tilt.set(0, 0);
                             this.updateHints();
                             // Zone hat sich unterwegs geändert (Hand neu aufgefächert) → nachrücken

@@ -18,7 +18,10 @@ export { SettingsPanel } from './ui/SettingsPanel';
 export { PieceLayer } from './objects/PieceLayer';
 export type { PieceLayerOptions } from './objects/PieceLayer';
 export { createPawn, pawnGeometry, lacqueredWood } from './objects/pawn';
-export { knock, lift, vibrate, setMuted, unlockAudioOnGesture } from './audio/sfx';
+export {
+    knock, lift, step, rattle, dieBounce, rolledHigh, capture, goal, turnChime, reject, win,
+    vibrate, setMuted, unlockAudioOnGesture
+} from './audio/sfx';
 export { DiceLayer } from './dice/DiceLayer';
 export type { DiceLayerOptions, Obstacle } from './dice/DiceLayer';
 export { createDie, topValue } from './dice/dieMesh';
