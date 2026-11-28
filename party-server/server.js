@@ -56,7 +56,7 @@ function defaultHubSettings() {
     return Object.fromEntries(Object.entries(HUB_SETTINGS_SCHEMA).map(([k, v]) => [k, v.default]));
 }
 
-const KNOWN_GAME_IDS = ['skribbol', 'uno', 'codenames', 'price_guess', 'monopoly', 'mensch', 'schach'];
+const KNOWN_GAME_IDS = ['skribbol', 'uno', 'codenames', 'price_guess', 'monopoly', 'mensch', 'schach', 'maumau'];
 const HISTORY_LIMIT = 12; // so viele gestartete Spiele merkt sich ein Raum („Heute gespielt“)
 
 class Room {

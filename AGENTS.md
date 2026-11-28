@@ -21,6 +21,7 @@ Räumen, Host, Abstimmung, synchronem Start) bettet mehrere Multiplayer-Spiele p
 | **Monopoly 3D** | `games/monopoly/` | Python FastAPI + Three.js | 8090 | `/monopoly/` |
 | **Mensch ärgere dich nicht** (Spieltisch 3D) | `games/mensch/` + `packages/tabletop*` | Python FastAPI + Three.js | 8095 | `/mensch/` |
 | **Schach** (Spieltisch 3D) | `games/schach/` + `packages/tabletop*` | Python FastAPI + Three.js | 8096 | `/schach/` |
+| **Mau-Mau** (Spieltisch 3D, Karten) | `games/maumau/` + `packages/tabletop*` | Python FastAPI + Three.js | 8098 | `/maumau/` |
 
 **Fokus des Nutzers: Monopoly perfektionieren – und daraus einen Brettspiel-Baukasten machen**, damit weitere
 Brettspiele möglichst viel Code (Rendering, Verbindung, UI) übernehmen: [`packages/boardgame-kit/README.md`](packages/boardgame-kit/README.md).
@@ -175,7 +176,10 @@ Erledigt und auf `main`:
 22. Schachuhr + Zurücknehmen, Engine 2.6 (2026-11-27): Hausregeln „Bedenkzeit“ (3D-Uhr am Brett, Schach klassisch +
     Dame) und „Züge zurücknehmen (mit Zustimmung)“ (Spiele ohne Geheimwissen). Konzept §12.10.
 23. Tischgespräch, Engine 2.7 (2026-11-27): Reaktionen (Emoji am Platz, flüchtig) und Verlauf (📜) in jeder
-    Spieltisch-App. Offen (Rückfrage beim Nutzer): Dame/Mau-Mau in den Hub, ein Container für alle Tisch-Spiele (E2.8).
+    Spieltisch-App. Offen (Rückfrage beim Nutzer): Dame in den Hub, ein Container für alle Tisch-Spiele (E2.8).
+24. Mau-Mau im Hub (2026-11-28, Wunsch des Nutzers: „ein pures Kartenspiel ausprobieren“): `/maumau/`, Port 8098,
+    Container `maumau` (Volume `./data/maumau`), auch im Fly-Image; Titelbild aus dem echten Tisch
+    (`games/maumau/tests/ui/make_cover.py`), Test `party-hub/tests/maumau_via_hub.py` in der CI.
 
 16. Hub-Avatare in den Spielen (2026-11-26): Der party-server liefert jeden Avatar als Bild,
     `/party-ws/avatar/<RAUM>/<Hub-Spieler-ID>.svg` (strenge CSP, ETag), und als `.json` ({color, face}) für

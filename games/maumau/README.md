@@ -14,4 +14,5 @@ Am Tisch: Karte auf die Ablage ziehen oder antippen, Stapel antippen = Karte zie
 will, tippt „Weiter“. Hausregeln: Kartenzahl zu Beginn, 7 auf 7.
 
 Lokal: `python games/maumau/server/main.py` (Port 8098), Client `games/maumau/client` (`npm run build`).
-Tests: `python -I games/maumau/tests/test_rules.py`, Browser `tests/ui/maumau_smoke.py`. Noch nicht im Hub.
+Tests: `python -I games/maumau/tests/test_rules.py`, Browser `tests/ui/maumau_smoke.py`. Im Hub unter `/maumau/`
+(Container `maumau`, Test über den Hub: `party-hub/tests/maumau_via_hub.py`).

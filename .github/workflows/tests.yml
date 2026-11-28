@@ -208,6 +208,11 @@ jobs:
           TREFFEN_TICKET_SECRET=ci-test-secret docker compose -f docker-compose.yml up -d --force-recreate schach
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/schach/api/health >/dev/null && break; sleep 1; done
           docker run --rm --network=host -v "$PWD/party-hub/tests":/t:ro -v /tmp/shots:/shots treffen-ui-test python -u /t/schach_via_hub.py http://127.0.0.1:8000 /shots
+      - name: Mau-Mau über den Hub (Host per Ticket, Gast am Handy, Avatare, verdeckte Karten)
+        run: |
+          TREFFEN_TICKET_SECRET=ci-test-secret docker compose -f docker-compose.yml up -d --force-recreate maumau
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/maumau/api/health >/dev/null && break; sleep 1; done
+          docker run --rm --network=host -v "$PWD/party-hub/tests":/t:ro -v /tmp/shots:/shots treffen-ui-test python -u /t/maumau_via_hub.py http://127.0.0.1:8000 /shots
       - name: skribbl über den Hub (Handy, Avatare, Spielstart)
         run: |
           TREFFEN_TICKET_SECRET=ci-test-secret docker compose -f docker-compose.yml up -d --force-recreate skribbl
